@@ -21,6 +21,7 @@
 (* Re-export core modules *)
 module Handler = Instrumentation_core.Handler
 module Dispatcher = Instrumentation_core.Dispatcher
+module Value_hooks = Instrumentation_core.Value_hooks
 module Noop = Instrumentation_core.Noop
 module Output = Instrumentation_core.Output
 module Util = Instrumentation_core.Util

@@ -70,7 +70,9 @@ let extend_provenance (prov : json_provenance option) (step : json_step) :
   | Some (src, steps) -> Some (src, steps @ [ step ])
 
 let apply_provenance (prov : json_provenance option) (v : Value.t) : Value.t =
-  match prov with None -> v | Some p -> Value.with_provenance p v
+  match prov with
+  | None -> v
+  | Some p -> Instrumentation_core.Value_hooks.on_created p v
 
 let rec json_to_value ?(provenance : json_provenance option = None)
     (tdenv : TDEnv.t) (expected : typ') (json : Yojson.Safe.t) : parse_result =

@@ -10,6 +10,8 @@ module Branch_coverage = Instrumentation_handlers.Branch_coverage
 module Node_coverage_il = Instrumentation_handlers.Node_coverage_il
 module Node_coverage_sl = Instrumentation_handlers.Node_coverage_sl
 module Positive = Instrumentation_dependency.Positive
+module Provenance_hooks = Instrumentation_dependency.Provenance_hooks
+module Value_hooks = Instrumentation_core.Value_hooks
 module Output = Instrumentation_core.Output
 
 (* Shared level type for node coverage and field deps *)
@@ -48,8 +50,19 @@ let to_handlers config =
           (* Both IL and SL handlers share the same config;
            they self-select based on spec type at init() *)
           [ Node_coverage_il.make cfg; Node_coverage_sl.make cfg ])
-    @ match config.dep_pos with None -> [] | Some cfg -> [ Positive.make cfg ]
+    @
+    match config.dep_pos with
+    | None -> []
+    | Some cfg ->
+        [
+          Positive.make cfg;
+          (module Provenance_hooks.Handler : Instrumentation_core.Handler.S);
+        ]
   in
+  (* Install the value hooks only under dependency analysis, noop otherwise. *)
+  (match config.dep_pos with
+  | None -> Value_hooks.reset ()
+  | Some _ -> Value_hooks.set Provenance_hooks.hooks);
   (* Auto-collect and register static dependencies from all active handlers *)
   List.iter
     (fun (module H : Instrumentation_core.Handler.S) ->

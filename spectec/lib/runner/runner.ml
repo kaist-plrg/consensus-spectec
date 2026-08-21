@@ -83,23 +83,19 @@ let with_instrumentation config spec_type f =
   result
 
 (* Single-run wrappers that set up handlers, init, run, and finish *)
-let eval_il (module T : Target.S) ?(config = Instrumentation.Config.default)
-    spec_il rid values_input filename_target :
-    (Eval_Il.Ctx.t * Il.Value.t list) result =
-  with_instrumentation config (Instrumentation.Static.IlSpec spec_il)
-  @@ fun () -> eval_il_run (module T) spec_il rid values_input filename_target
-
 let eval_sl (module T : Target.S) ?(config = Instrumentation.Config.default)
     spec_sl rid values_input filename_target :
     (Eval_Sl.Ctx.t * Il.Value.t list) result =
   with_instrumentation config (Instrumentation.Static.SlSpec spec_sl)
   @@ fun () -> eval_sl_run (module T) spec_sl rid values_input filename_target
 
-(* Single-run with input spec - includes full init/finish lifecycle *)
+(* Parses inside the instrumentation scope so the value hooks are live when the
+   parser seeds provenance. *)
 let eval_il_with_task (type input) (module T : Task.S with type input = input)
     ?(config = Instrumentation.Config.default) spec_il (input : input) =
+  with_instrumentation config (Instrumentation.Static.IlSpec spec_il) @@ fun () ->
   let* relation, values = T.parse_input ~spec:spec_il input in
-  eval_il (module T.Target) ~config spec_il relation values (T.source input)
+  eval_il_run (module T.Target) spec_il relation values (T.source input)
 
 let eval_sl_with_task (type input) (module T : Task.S with type input = input)
     ?(config = Instrumentation.Config.default) spec_il spec_sl (input : input) =

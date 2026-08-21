@@ -24,7 +24,7 @@ module M : Handler.S = struct
   let on_prem_fields ~prem:_ ~fields:_ ~lookup:_ ~at:_ = ()
   let on_rule_output ~id:_ ~rule_id:_ ~at:_ ~output_exps:_ = ()
   let on_clause_return ~id:_ ~clause_idx:_ ~at:_ ~return_exp:_ = ()
-  let on_func_result ~id:_ ~values:_ ~lookup_clauses:_ = []
+  let on_func_result ~id:_ ~values:_ ~result:_ ~lookup_clauses:_ = ()
   let on_instr ~instr:_ ~at:_ = ()
   let finish () = ()
 end

@@ -16,7 +16,20 @@ module Target : Runner.Target.S = struct
   let spec_dir = spec_dir
   let test_dir = test_base_dir
   let builtins = Builtin_eth.builtins
-  let handler f = f ()
+
+  (* Monotonic across handler calls so vids never repeat in a process. The
+     provenance side table is keyed by vid, so a repeat would alias entries. *)
+  let vid_counter = ref 0
+
+  let handler f =
+    let fresh_vid () =
+      let vid = !vid_counter in
+      incr vid_counter;
+      vid
+    in
+    Lang.Il.Value.GlobalVidProvider.set fresh_vid;
+    f ()
+
   let is_impure_func _ = false
   let is_impure_rel _ = false
   let state_version = ref 0

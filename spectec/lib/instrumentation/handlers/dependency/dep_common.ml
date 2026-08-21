@@ -177,13 +177,17 @@ let rec walk_chain (v : Il.Value.t) (chain : field_step list) :
 
 let chain_provs (chains : field_step list list) (v : Il.Value.t) :
     Il.json_provenance list =
-  if chains = [] then v.note.provenance
+  if chains = [] then Provenance_hooks.provenance_of v
   else
     List.concat_map
       (fun chain ->
+        let fallback = Provenance_hooks.provenance_of v in
         match walk_chain v chain with
-        | Some sub when sub.note.provenance <> [] -> sub.note.provenance
-        | _ -> v.note.provenance)
+        | Some sub -> (
+            match Provenance_hooks.provenance_of sub with
+            | [] -> fallback
+            | sub_provs -> sub_provs)
+        | None -> fallback)
       chains
 
 let elem_provs (rs : readset) (elem : Il.Value.t) : Il.json_provenance list =
@@ -215,8 +219,10 @@ let call_provenance ~(lookup : string -> readset option) (id : string)
       match list_arg with
       | Some ({ it = Il.ListV elems; _ } as lst) ->
           if id = "fold_" then
-            lst.note.provenance
-            @ List.concat_map (fun (e : Il.Value.t) -> e.note.provenance) elems
+            Provenance_hooks.provenance_of lst
+            @ List.concat_map
+                (fun (e : Il.Value.t) -> Provenance_hooks.provenance_of e)
+                elems
           else
             let rs =
               match
@@ -228,6 +234,7 @@ let call_provenance ~(lookup : string -> readset option) (id : string)
               | Some fid -> Option.value ~default:[||] (lookup fid.it)
               | None -> [||]
             in
-            lst.note.provenance @ List.concat_map (elem_provs rs) elems
+            Provenance_hooks.provenance_of lst
+            @ List.concat_map (elem_provs rs) elems
       | _ -> [])
   | _ -> []

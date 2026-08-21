@@ -7,42 +7,7 @@ module Typ = Envs.Il.Typ
 open Error
 open Attempt
 module F = Format
-
-(* Provenance propagation: copy provenance from source value to result value *)
-let propagate_provenance (source : value) (result : value) : value =
-  match source.note.provenance with
-  | [] -> result
-  | provs -> { result with note = { result.note with provenance = provs } }
-
-(* Create a record value and derive per-field provenance from the struct's provenance.
-   Fields that already carry provenance are left untouched; fields without provenance
-   are stamped with (src, steps @ [FieldAccess field_name]) for each struct provenance.
-   The struct itself is stamped with struct_provs. *)
-let make_record_with_field_provs (note : typ') (fields : valuefield list)
-    (struct_provs : json_provenance list) : value =
-  let fields =
-    List.map
-      (fun (atom, value_f) ->
-        if value_f.note.provenance <> [] || struct_provs = [] then
-          (atom, value_f)
-        else
-          let field_name =
-            Atom.string_of_atom atom.it |> String.lowercase_ascii
-          in
-          let field_provs =
-            List.map
-              (fun (src, steps) -> (src, steps @ [ FieldAccess field_name ]))
-              struct_provs
-          in
-          ( atom,
-            {
-              value_f with
-              note = { value_f.note with provenance = field_provs };
-            } ))
-      fields
-  in
-  let v = Value.Make.record note fields in
-  { v with note = { v.note with provenance = struct_provs } }
+module VH = Instrumentation.Value_hooks
 
 (* Assignments *)
 
@@ -141,7 +106,7 @@ let rec assign_exp (ctx : Ctx.t) (exp : exp) (value : value) : Ctx.t =
           let value_sub =
             let typ = Lang.Il.Typ.iterate typ (iters @ [ List ]) in
             let lst = values |> Value.Make.list typ.it in
-            Value.with_merged_provenance [ value ] lst
+            lst |> VH.on_derived ~source:value
           in
           Ctx.add_value ctx (id, iters @ [ List ]) value_sub)
         ctx vars
@@ -209,7 +174,7 @@ let rec upcast (ctx : Ctx.t) (typ : typ) (value : value) : value =
   match typ.it with
   | NumT `IntT -> (
       match value.it with
-      | NumV (`Nat n) -> Value.int n |> propagate_provenance value
+      | NumV (`Nat n) -> Value.int n |> VH.on_derived ~source:value
       | NumV (`Int _) -> value
       | _ -> assert false)
   | VarT (tid, targs) -> (
@@ -230,7 +195,7 @@ let rec upcast (ctx : Ctx.t) (typ : typ) (value : value) : value =
                 values @ [ value ])
               [] typs values
           in
-          Value.Make.tuple typ.it values |> propagate_provenance value
+          Value.Make.tuple typ.it values |> VH.on_derived ~source:value
       | _ -> assert false)
   | _ -> value
 
@@ -240,7 +205,7 @@ let rec downcast (ctx : Ctx.t) (typ : typ) (value : value) : value =
       match value.it with
       | NumV (`Nat _) -> value
       | NumV (`Int i) when Bigint.(i >= zero) ->
-          Value.nat i |> propagate_provenance value
+          Value.nat i |> VH.on_derived ~source:value
       | _ -> assert false)
   | VarT (tid, targs) -> (
       let tparams, deftyp = Ctx.find_typdef ctx tid in
@@ -260,7 +225,7 @@ let rec downcast (ctx : Ctx.t) (typ : typ) (value : value) : value =
                 values @ [ value ])
               [] typs values
           in
-          Value.Make.tuple typ.it values |> propagate_provenance value
+          Value.Make.tuple typ.it values |> VH.on_derived ~source:value
       | _ -> assert false)
   | _ -> value
 
@@ -391,7 +356,7 @@ and eval_bin_exp (note : typ') (ctx : Ctx.t) (binop : binop) (_optyp : optyp)
     | #Bool.binop as binop -> eval_bin_bool note binop value_l value_r
     | #Num.binop as binop -> eval_bin_num note binop value_l value_r
   in
-  let value_res = Value.with_merged_provenance [ value_l; value_r ] value_res in
+  let value_res = VH.on_combined ~sources:[ value_l; value_r ] value_res in
   (ctx, value_res)
 
 (* Comparison expression evaluation *)
@@ -535,7 +500,7 @@ and eval_cat_exp (note : typ') (ctx : Ctx.t) (at : region) (exp_l : exp)
         values_l @ values_r |> Value.Make.list note
     | _ -> error at "concatenation expects either two texts or two lists"
   in
-  let value_res = Value.with_merged_provenance [ value_l; value_r ] value_res in
+  let value_res = VH.on_combined ~sources:[ value_l; value_r ] value_res in
   (ctx, value_res)
 
 (* Membership expression evaluation *)
@@ -556,7 +521,7 @@ and eval_len_exp (note : typ') (ctx : Ctx.t) (exp : exp) : Ctx.t * value =
   let ctx, value = eval_exp ctx exp in
   let len = value |> Value.get_list |> List.length |> Bigint.of_int in
   let value_res = Value.Make.nat note len in
-  (ctx, propagate_provenance value value_res)
+  (ctx, value_res |> VH.on_derived ~source:value)
 
 (* Dot expression evaluation *)
 
@@ -663,9 +628,8 @@ and eval_upd_exp (_note : typ') (ctx : Ctx.t) (exp_b : exp) (path : path)
               else (atom_f, value_f))
             fields
         in
-        let value_updated =
-          make_record_with_field_provs path.note fields value.note.provenance
-        in
+        let value_updated = Value.Make.record path.note fields in
+        let value_updated = VH.on_field_updated ~base:value value_updated in
         eval_update_path ctx value_b path value_updated
     | IdxP (path, exp) ->
         let ctx, value_base = eval_access_path ctx value_b path in
@@ -689,7 +653,9 @@ and eval_upd_exp (_note : typ') (ctx : Ctx.t) (exp_b : exp) (path : path)
           List.rev_append prefix_rev (value_n :: suffix)
           |> Value.Make.list path.note
         in
-        let values_updated = propagate_provenance value_base values_updated in
+        let values_updated =
+          VH.on_derived ~source:value_base values_updated
+        in
         eval_update_path ctx value_b path values_updated
     | SliceP (_path, _exp_l, _exp_h) ->
         failwith "(TODO) update: SliceP update not yet implemented"
@@ -745,27 +711,12 @@ and eval_iter_exp (note : typ') (ctx : Ctx.t) (exp : exp) (iterexp : iterexp) :
         (ctx, []) ctxs_sub
     in
     let value_res = values_rev |> List.rev |> Value.Make.list note in
-    (* Propagate provenance from source list variables to the container *)
-    let source_provs =
-      List.concat_map
-        (fun (id, _typ, iters) ->
-          match Ctx.find_value_opt ctx (id, iters @ [ List ]) with
-          | Some v -> v.note.provenance
-          | None -> [])
+    let source_values =
+      List.filter_map
+        (fun (id, _typ, iters) -> Ctx.find_value_opt ctx (id, iters @ [ List ]))
         vars
     in
-    let value_res =
-      if source_provs = [] then value_res
-      else
-        {
-          value_res with
-          note =
-            {
-              value_res.note with
-              provenance = List.sort_uniq compare source_provs;
-            };
-        }
-    in
+    let value_res = VH.on_combined ~sources:source_values value_res in
     (ctx, value_res)
   in
   let iter, vars = iterexp in
@@ -988,7 +939,7 @@ and eval_iter_prem (ctx : Ctx.t) (prem : prem) (iterexp : iterexp) :
               Lang.Il.Typ.iterate typ_binding (iters_binding @ [ List ])
             in
             values_binding |> Value.Make.list typ.it
-            |> Value.with_merged_provenance source_list_values
+            |> VH.on_combined ~sources:source_list_values
           in
           Ctx.add_value ctx (id_binding, iters_binding @ [ List ]) value_binding)
         ctx vars_binding values_binding
@@ -1070,12 +1021,7 @@ and invoke_rel (ctx : Ctx.t) (id : id) (values_input : value list) :
     in
     (* Fallback: propagate from all relation inputs when an output has no provenance. *)
     let values_output =
-      List.map
-        (fun v ->
-          if v.note.provenance = [] then
-            Value.with_merged_provenance values_input v
-          else v)
-        values_output
+      List.map (fun v -> VH.on_invoke_fallback ~inputs:values_input v) values_output
     in
     Ok (ctx, values_output)
   in
@@ -1211,26 +1157,16 @@ and invoke_func (ctx : Ctx.t) (id : id) (targs : targ list) (args : arg list) :
         invoke_func' ()
       else invoke_func' |> Cache.with_func_cache ctx.cache (id.it, values_input)
     in
-    let value_output =
+    let () =
       let lookup_clauses fid =
         Option.map
           (fun (_, (_, clauses)) -> clauses)
           (Ctx.find_func_opt ctx (fid $ no_region))
       in
-      let provs =
-        Instrumentation.Dispatcher.notify_func_result ~id:id.it
-          ~values:values_input ~lookup_clauses
-      in
-      Value.add_provenance provs value_output
+      Instrumentation.Dispatcher.notify_func_result ~id:id.it
+        ~values:values_input ~result:value_output ~lookup_clauses
     in
-    (* Fallback provenance propagation: when the output has no provenance but
-       inputs do, merge all input provenances into the output.
-       Necessary for builtins where output provenances are computed empty. *)
-    let value_output =
-      if value_output.note.provenance = [] then
-        Value.with_merged_provenance values_input value_output
-      else value_output
-    in
+    let value_output = VH.on_invoke_fallback ~inputs:values_input value_output in
     Ok (ctx, value_output)
   in
   Instrumentation.Dispatcher.notify_func_exit ~id:id.it ~at:id.at;

@@ -5,8 +5,8 @@
 
    Key features:
    - Per-test mutation tracking: mutations are organized by (premise_uid, test_id)
-   - Provenance-based path resolution: uses vnote.provenance attached during
-     JSON loading instead of a shadow symbolic environment
+   - Provenance-based path resolution: reads provenance from the dependency
+     side table (Provenance_hooks), seeded during JSON loading
    - Mutation strategy extraction: generates concrete mutation suggestions
 
    Uses Common module for shared types and utilities.
@@ -256,7 +256,7 @@ let provenance_to_field_path (prov : Il.json_provenance) : field_path =
 
 (* Get the field_paths from a value's provenance list *)
 let provs_of_val (v : Il.Value.t) : field_path list =
-  List.map provenance_to_field_path v.note.provenance
+  List.map provenance_to_field_path (Provenance_hooks.provenance_of v)
 
 (* Check if expression is wrapped in LenE *)
 let is_length_exp (exp : Il.exp) : bool =
@@ -533,7 +533,7 @@ let diagnose_no_mutations (eval : Il.exp -> Il.Value.t) (exp : Il.exp) : string
     match try_eval e with
     | None -> "eval=false"
     | Some v ->
-        let prov = v.note.provenance <> [] in
+        let prov = Provenance_hooks.provenance_of v <> [] in
         let vstr = Il.Print.string_of_value v in
         (* Truncate long values *)
         let vstr =
@@ -649,13 +649,14 @@ module M : Instrumentation_core.Handler.S = struct
   let on_rule_output ~id:_ ~rule_id:_ ~at:_ ~output_exps:_ = ()
   let on_clause_return ~id:_ ~clause_idx:_ ~at:_ ~return_exp:_ = ()
 
-  let on_func_result ~id ~values ~lookup_clauses =
+  let on_func_result ~id ~values ~result ~lookup_clauses =
     let lookup fid =
       match StringMap.find_opt fid !State.readsets with
       | Some rs -> Some rs
       | None -> Option.map readset_of_clauses (lookup_clauses fid)
     in
-    call_provenance ~lookup id values
+    let provs = call_provenance ~lookup id values in
+    Provenance_hooks.add_readset result provs
 
   let finish () =
     Format.fprintf !fmt "\n=== Symbolic Mutations ===\n\n";

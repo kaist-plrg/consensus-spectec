@@ -125,12 +125,11 @@ let notify_clause_return ~id ~clause_idx ~at ~return_exp =
         H.on_clause_return ~id ~clause_idx ~at ~return_exp)
       !handlers
 
-let notify_func_result ~id ~values ~lookup_clauses =
-  if !handlers = [] then []
-  else
-    List.concat_map
+let notify_func_result ~id ~values ~result ~lookup_clauses =
+  if !handlers <> [] then
+    List.iter
       (fun (module H : Handler.S) ->
-        H.on_func_result ~id ~values ~lookup_clauses)
+        H.on_func_result ~id ~values ~result ~lookup_clauses)
       !handlers
 
 let notify_instr ~instr ~at =

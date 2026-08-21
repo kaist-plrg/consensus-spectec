@@ -616,6 +616,11 @@ module Make (Tgt : Runner.Target.S) = struct
                            with _ -> None
                          in
 
+                         (* The value hooks and vid provider must be live before
+                            parsing seeds the inputs. *)
+                         Tgt.handler @@ fun () ->
+                         Dependency.Provenance_hooks.clear ();
+                         Value_hooks.set Dependency.Provenance_hooks.hooks;
                          match
                            ( parse_file
                                ~provenance:(Some (Lang.Il.JsonState, []))
