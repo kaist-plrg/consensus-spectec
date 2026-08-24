@@ -51,7 +51,6 @@ module M : Instrumentation_core.Handler.S = struct
   let on_test_end = Instrumentation_core.Noop.on_test_end
   let on_instr = Instrumentation_core.Noop.on_instr
   let on_prem_exit = Instrumentation_core.Noop.on_prem_exit
-  let on_prem_fields = Instrumentation_core.Noop.on_prem_fields
   let on_rule_output = Instrumentation_core.Noop.on_rule_output
   let on_clause_return = Instrumentation_core.Noop.on_clause_return
   let on_func_result = Instrumentation_core.Noop.on_func_result
@@ -103,7 +102,7 @@ module M : Instrumentation_core.Handler.S = struct
     if !config.level = Full then
       Format.fprintf !fmt "%s  ← [iteration]\n%!" (State.indent ())
 
-  let on_prem_enter ~eval:_ ~prem ~at:_ =
+  let on_prem_enter ~values:_ ~prem ~at:_ =
     if !config.level = Full then
       Format.fprintf !fmt "%s  | -- %s\n%!" (State.indent ())
         (Il.Print.string_of_prem prem |> normalize_whitespace)

@@ -515,8 +515,12 @@ module Make (Tgt : Runner.Target.S) = struct
 
              (* Initialize static analysis for positive dependency handler *)
              let static_spec = Instrumentation_static.Static.IlSpec spec_il in
-             Instrumentation_static.Type_tree.init static_spec;
-             Instrumentation_static.Mutator_analysis.init static_spec;
+             List.iter
+               (fun (module M : Instrumentation_static.Static.S) ->
+                 Instrumentation_static.Static.register (module M))
+               (Instrumentation.Dependency.Positive.static_dependencies ());
+             Instrumentation_static.Static.reset_all ();
+             Instrumentation_static.Static.init_all static_spec;
 
              (* Try to resolve test_id to an existing pre.json path.
                 1. Try test_id directly (handles absolute paths that still exist)

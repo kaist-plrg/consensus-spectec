@@ -43,14 +43,7 @@ module type S = sig
   val on_iter_prem_exit : at:region -> unit
 
   val on_prem_enter :
-    eval:(Il.exp -> Il.Value.t) option -> prem:Il.prem -> at:region -> unit
-
-  val on_prem_fields :
-    prem:Il.prem ->
-    fields:string list list ->
-    lookup:(string -> Il.Value.t option) ->
-    at:region ->
-    unit
+    values:(Il.exp * Il.Value.t) list -> prem:Il.prem -> at:region -> unit
 
   val on_prem_exit : prem:Il.prem -> at:region -> success:bool -> unit
 

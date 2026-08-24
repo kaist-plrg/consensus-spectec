@@ -34,19 +34,20 @@ clean:
 #   make test-elab       - Elaboration test
 #   make test-struct     - Structuring test
 #   make test-bytesv     - BytesV hex / width test
+#   make test-instrumentation - Instrumentation tests
 #   make test-il-pos     - IL interpreter positive tests (slow)
 #   make test-il-neg     - IL interpreter negative tests
 #   make test-sl-pos     - SL interpreter positive tests (slow)
 #   make test-sl-neg     - SL interpreter negative tests
 #
 # Grouped tests:
-#   make test-quick      - Fast tests only (elab + struct + bytesv)
+#   make test-quick      - Fast tests (elab + struct + bytesv + instrumentation)
 #   make test-il         - All IL tests (pos + neg)
 #   make test-sl         - All SL tests (pos + neg)
 #   make test            - All tests
 #   make test-dep        - Dependency mutation-report golden (slow, opt-in)
 
-.PHONY: test test-quick test-elab test-struct test-bytesv test-dep
+.PHONY: test test-quick test-elab test-struct test-bytesv test-instrumentation test-dep
 .PHONY: test-il test-il-pos test-il-neg
 .PHONY: test-sl test-sl-pos test-sl-neg
 .PHONY: promote
@@ -62,6 +63,10 @@ test-struct:
 test-bytesv:
 	@echo "#### Running BytesV hex/width test"
 	@$(DUNE) build @test/bytesv/runtest --profile=release && echo OK
+
+test-instrumentation:
+	@echo "#### Running instrumentation tests"
+	@$(DUNE) build @test/instrumentation/runtest --profile=release && echo OK
 
 test-dep: exe
 	@echo "#### Running dependency mutation-report golden (attestation_0)"
@@ -88,7 +93,7 @@ test-sl-pos:
 test-sl-neg:
 	$(call run_interp_test,sl,neg)
 
-test-quick: test-elab test-struct test-bytesv
+test-quick: test-elab test-struct test-bytesv test-instrumentation
 	@echo "#### Quick tests passed"
 
 test-il: test-il-pos test-il-neg

@@ -15,6 +15,7 @@
 open Common.Source
 module Il = Lang.Il
 module Premise_uid = Instrumentation_static.Premise_uid
+module Premise_values = Instrumentation_static.Premise_values
 open Dep_common
 
 (* === Positive-Analysis Specific Types === *)
@@ -293,72 +294,23 @@ let string_of_sym_mutation (mut : sym_mutation) : string =
   in
   Printf.sprintf "%s → %s" target_str (string_of_mutation_kind mut.suggestion)
 
-(* === Callee Inlining for Call Premises === *)
-
-(* Extraction-time inlining of expression-bodied callees (one clause, no
-   premises, bare-variable parameters). Substituting argument expressions for
-   parameters yields a body evaluable in the caller's environment. *)
-module Inline = struct
-  let table : (string, string list * Il.exp) Hashtbl.t = Hashtbl.create 64
-
-  let init (spec : Il.spec) =
-    Hashtbl.clear table;
-    List.iter
-      (fun (def : Il.def) ->
-        match def.it with
-        | Il.DecD (id, _, _, _, [ { it = params, body, []; _ } ]) ->
-            let param_ids =
-              List.filter_map
-                (fun (param : Il.arg) ->
-                  match param.it with
-                  | Il.ExpA { it = Il.VarE pid; _ } -> Some pid.it
-                  | _ -> None)
-                params
-            in
-            if List.length param_ids = List.length params then
-              Hashtbl.replace table id.it (param_ids, body)
-        | _ -> ())
-      spec
-
-  let rec subst (env : (string * Il.exp) list) (exp : Il.exp) : Il.exp =
-    match exp.it with
-    | Il.VarE id -> (
-        match List.assoc_opt id.it env with Some e -> e | None -> exp)
-    | _ -> Il.Traverse.map_children_exp (subst env) exp
-
-  let expand (id : Il.id) (args : Il.arg list) : Il.exp option =
-    match Hashtbl.find_opt table id.it with
-    | None -> None
-    | Some (param_ids, body) ->
-        let arg_exps =
-          List.filter_map
-            (fun (arg : Il.arg) ->
-              match arg.it with Il.ExpA e -> Some e | _ -> None)
-            args
-        in
-        if List.length arg_exps = List.length param_ids then
-          Some (subst (List.combine param_ids arg_exps) body)
-        else None
-end
-
 (* === Provenance-based Mutation Extraction === *)
 
-let rec extract_symbolic_mutations' (depth : int) (eval : Il.exp -> Il.Value.t)
-    (exp : Il.exp) : sym_mutation list =
-  let try_eval e = try Some (eval e) with _ -> None in
+let rec extract_symbolic_mutations' (depth : int)
+    (lookup : Il.exp -> Il.Value.t option) (exp : Il.exp) : sym_mutation list =
   (* For a (target_exp, constraint_exp, op) triple:
      evaluate target for provenance, constraint for concrete value.
      Returns sym_mutations for each provenance path. *)
   let make_muts_from_prov target_exp constraint_exp effective_op is_len =
     (* For LenE(inner), get provenance from inner, not the length value *)
     let prov_exp = strip_len target_exp in
-    match try_eval prov_exp with
+    match lookup prov_exp with
     | None -> []
     | Some tv ->
         let paths = provs_of_val tv in
         if paths = [] then []
         else
-          let constraint_val = try_eval constraint_exp in
+          let constraint_val = lookup constraint_exp in
           List.map
             (fun path ->
               let suggestion =
@@ -400,7 +352,7 @@ let rec extract_symbolic_mutations' (depth : int) (eval : Il.exp -> Il.Value.t)
           (fun arg ->
             match arg.it with
             | Il.ExpA e -> (
-                match try_eval e with
+                match lookup e with
                 | Some v ->
                     let paths = provs_of_val v in
                     List.map
@@ -411,9 +363,9 @@ let rec extract_symbolic_mutations' (depth : int) (eval : Il.exp -> Il.Value.t)
             | Il.DefA _ -> [])
           args
       in
-      match if depth > 0 then Inline.expand id args else None with
+      match if depth > 0 then Premise_values.expand id args else None with
       | Some body -> (
-          match extract_symbolic_mutations' (depth - 1) eval body with
+          match extract_symbolic_mutations' (depth - 1) lookup body with
           | [] -> arg_muts ()
           | muts -> muts)
       | None -> arg_muts ())
@@ -422,7 +374,7 @@ let rec extract_symbolic_mutations' (depth : int) (eval : Il.exp -> Il.Value.t)
       | Il.ListP `Nil -> (
           (* Satisfying direction (len <= 0); the global negation in
              add_per_test_sym_mutation yields the violating len > 0 *)
-          match try_eval inner with
+          match lookup inner with
           | Some v ->
               let paths = provs_of_val v in
               List.map
@@ -439,7 +391,7 @@ let rec extract_symbolic_mutations' (depth : int) (eval : Il.exp -> Il.Value.t)
           | None -> [])
       | Il.ListP `Cons -> (
           (* Evaluate the inner expression (the list), not the MatchE bool result *)
-          match try_eval inner with
+          match lookup inner with
           | Some v ->
               let paths = provs_of_val v in
               List.map
@@ -456,7 +408,7 @@ let rec extract_symbolic_mutations' (depth : int) (eval : Il.exp -> Il.Value.t)
           | None -> [])
       | _ -> [])
   | Il.UnE (`NotOp, _, e) -> (
-      match try_eval e with
+      match lookup e with
       | Some v ->
           let paths = provs_of_val v in
           List.map
@@ -469,22 +421,22 @@ let rec extract_symbolic_mutations' (depth : int) (eval : Il.exp -> Il.Value.t)
       | None -> [])
   | Il.BinE (`AndOp, _, e1, e2) ->
       (* Recurse into each conjunct independently *)
-      extract_symbolic_mutations' depth eval e1
-      @ extract_symbolic_mutations' depth eval e2
+      extract_symbolic_mutations' depth lookup e1
+      @ extract_symbolic_mutations' depth lookup e2
   | Il.BinE (`OrOp, _, e1, e2) ->
       (* Only the concretely-true disjunct(s) decided the result, so only
          their fields can flip it *)
       let is_true e =
-        match try_eval e with
+        match lookup e with
         | Some { it = Il.BoolV true; _ } -> true
         | _ -> false
       in
       let branches =
         match List.filter is_true [ e1; e2 ] with [] -> [ e1; e2 ] | ws -> ws
       in
-      List.concat_map (extract_symbolic_mutations' depth eval) branches
+      List.concat_map (extract_symbolic_mutations' depth lookup) branches
   | _ -> (
-      match try_eval exp with
+      match lookup exp with
       | Some v ->
           let paths = provs_of_val v in
           List.map
@@ -497,9 +449,9 @@ let rec extract_symbolic_mutations' (depth : int) (eval : Il.exp -> Il.Value.t)
       | None -> [])
 
 (* Depth 1: open a named predicate's body without chasing helper chains *)
-let extract_symbolic_mutations (eval : Il.exp -> Il.Value.t) (exp : Il.exp) :
-    sym_mutation list =
-  extract_symbolic_mutations' 1 eval exp
+let extract_symbolic_mutations (lookup : Il.exp -> Il.Value.t option)
+    (exp : Il.exp) : sym_mutation list =
+  extract_symbolic_mutations' 1 lookup exp
 
 (* Check if premise is an if-premise (possibly wrapped in IterPr) *)
 let rec is_if_prem (prem : Il.prem) : bool =
@@ -526,11 +478,10 @@ let strip_bool_eq (exp : Il.exp) : Il.exp * bool =
   | _ -> (exp, false)
 
 (* Diagnose why extract_symbolic_mutations returned empty for a given expression *)
-let diagnose_no_mutations (eval : Il.exp -> Il.Value.t) (exp : Il.exp) : string
-    =
-  let try_eval e = try Some (eval e) with _ -> None in
+let diagnose_no_mutations (lookup : Il.exp -> Il.Value.t option) (exp : Il.exp)
+    : string =
   let val_info e =
-    match try_eval e with
+    match lookup e with
     | None -> "eval=false"
     | Some v ->
         let prov = Provenance_hooks.provenance_of v <> [] in
@@ -553,14 +504,14 @@ let diagnose_no_mutations (eval : Il.exp -> Il.Value.t) (exp : Il.exp) : string
   | _ -> Printf.sprintf "Other: exp(%s)" (val_info exp)
 
 (** Extract mutations from an if-expression, adjust for negation, and record. *)
-let extract_and_record_if_mutations (eval : Il.exp -> Il.Value.t) (uid : int)
-    (exp : Il.exp) : unit =
+let extract_and_record_if_mutations (lookup : Il.exp -> Il.Value.t option)
+    (uid : int) (exp : Il.exp) : unit =
   let exp1, was_negated = strip_negation exp in
   let exp2, was_bool_eq_negated = strip_bool_eq exp1 in
   let total_negated = was_negated <> was_bool_eq_negated in
-  let mutations = extract_symbolic_mutations eval exp2 in
+  let mutations = extract_symbolic_mutations lookup exp2 in
   if mutations = [] then
-    State.record_no_mutation_reason uid (diagnose_no_mutations eval exp2);
+    State.record_no_mutation_reason uid (diagnose_no_mutations lookup exp2);
   let adjusted =
     if not total_negated then mutations
     else
@@ -584,13 +535,14 @@ module M : Instrumentation_core.Handler.S = struct
     [
       (module Instrumentation_static.Premise_uid.Premise_uid
       : Instrumentation_static.Static.S);
+      (module Instrumentation_static.Premise_values.Premise_values
+      : Instrumentation_static.Static.S);
     ]
 
   let init ~spec =
     State.reset ();
     match spec with
     | Instrumentation_core.Handler.IlSpec il_spec ->
-        Inline.init il_spec;
         State.readsets := readsets_of_spec il_spec
     | Instrumentation_core.Handler.SlSpec _ -> ()
 
@@ -614,7 +566,7 @@ module M : Instrumentation_core.Handler.S = struct
   let on_iter_prem_exit = Instrumentation_core.Noop.on_iter_prem_exit
   let on_instr = Instrumentation_core.Noop.on_instr
 
-  let on_prem_enter ~eval ~prem ~at:_ =
+  let on_prem_enter ~values ~prem ~at:_ =
     State.premise_count := !State.premise_count + 1;
     if !State.premise_count mod 500 = 0 then
       Format.eprintf "\r[Positive] %d premises, %d if-prems, %d skipped...%!"
@@ -631,21 +583,16 @@ module M : Instrumentation_core.Handler.S = struct
           is_whitelisted !State.current_relation
         else State.is_target_uid uid
       in
-      if should_extract then
-        match eval with
-        | None -> State.record_no_mutation_reason uid "no eval closure"
-        | Some eval_fn -> (
-            State.if_prem_count := !State.if_prem_count + 1;
-            let extract exp = extract_and_record_if_mutations eval_fn uid exp in
-            match prem.it with
-            | Il.IfPr exp -> extract exp
-            | Il.IterPr ({ it = Il.IfPr exp; _ }, _) -> extract exp
-            | _ -> ())
+      if should_extract then (
+        State.if_prem_count := !State.if_prem_count + 1;
+        let lookup = Premise_values.lookup values in
+        let extract exp = extract_and_record_if_mutations lookup uid exp in
+        match prem.it with
+        | Il.IfPr exp -> extract exp
+        | Il.IterPr ({ it = Il.IfPr exp; _ }, _) -> extract exp
+        | _ -> ())
 
   let on_prem_exit ~prem:_ ~at:_ ~success:_ = ()
-
-  (* Noop - logic moved to on_prem_enter *)
-  let on_prem_fields = Instrumentation_core.Noop.on_prem_fields
   let on_rule_output ~id:_ ~rule_id:_ ~at:_ ~output_exps:_ = ()
   let on_clause_return ~id:_ ~clause_idx:_ ~at:_ ~return_exp:_ = ()
 
@@ -815,6 +762,8 @@ end
 let static_dependencies () =
   [
     (module Instrumentation_static.Premise_uid.Premise_uid
+    : Instrumentation_static.Static.S);
+    (module Instrumentation_static.Premise_values.Premise_values
     : Instrumentation_static.Static.S);
     (module Instrumentation_static.Mutator_analysis.Mutator_analysis
     : Instrumentation_static.Static.S);
