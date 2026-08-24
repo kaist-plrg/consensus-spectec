@@ -776,17 +776,19 @@ and eval_prem ?(notify = true) (ctx : Ctx.t) (prem : prem) : Ctx.t attempt =
     Ok ctx
   in
   (if notify then
-     (* Create eval closure for instrumentation *)
-     let eval e =
-       let _, v = eval_exp ctx e in
-       v
+     let values =
+       (if
+          Instrumentation.Dispatcher.has_static_dependency
+            Instrumentation.Premise_values.Premise_values.name
+        then Instrumentation.Premise_values.expressions_of_prem prem
+        else [])
+       |> List.filter_map (fun exp ->
+              try
+                let _, value = eval_exp ctx exp in
+                Some (exp, value)
+              with _ -> None)
      in
-     Instrumentation.Dispatcher.notify_prem_enter ~eval:(Some eval) ~prem
-       ~at:prem.at);
-  (* Pass lookup function for variable resolution in handlers *)
-  let lookup id = Ctx.find_value_opt ctx (id $ no_region, []) in
-  Instrumentation.Dispatcher.notify_prem_fields ~prem ~fields:[] ~lookup
-    ~at:prem.at;
+     Instrumentation.Dispatcher.notify_prem_enter ~values ~prem ~at:prem.at);
   let result =
     match prem.it with
     | RulePr (id, notexp) -> eval_rule_prem ctx id notexp

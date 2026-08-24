@@ -34,6 +34,7 @@ clean:
 #   make test-elab       - Elaboration test
 #   make test-struct     - Structuring test
 #   make test-bytesv     - BytesV hex / width test
+#   make test-premise-values - Premise value enumeration test
 #   make test-il-pos     - IL interpreter positive tests (slow)
 #   make test-il-neg     - IL interpreter negative tests
 #   make test-sl-pos     - SL interpreter positive tests (slow)
@@ -46,7 +47,7 @@ clean:
 #   make test            - All tests
 #   make test-dep        - Dependency mutation-report golden (slow, opt-in)
 
-.PHONY: test test-quick test-elab test-struct test-bytesv test-dep
+.PHONY: test test-quick test-elab test-struct test-bytesv test-premise-values test-dep
 .PHONY: test-il test-il-pos test-il-neg
 .PHONY: test-sl test-sl-pos test-sl-neg
 .PHONY: promote
@@ -62,6 +63,10 @@ test-struct:
 test-bytesv:
 	@echo "#### Running BytesV hex/width test"
 	@$(DUNE) build @test/bytesv/runtest --profile=release && echo OK
+
+test-premise-values:
+	@echo "#### Running premise value enumeration test"
+	@$(DUNE) build @test/premise_values/runtest --profile=release && echo OK
 
 test-dep: exe
 	@echo "#### Running dependency mutation-report golden (attestation_0)"
@@ -88,7 +93,7 @@ test-sl-pos:
 test-sl-neg:
 	$(call run_interp_test,sl,neg)
 
-test-quick: test-elab test-struct test-bytesv
+test-quick: test-elab test-struct test-bytesv test-premise-values
 	@echo "#### Quick tests passed"
 
 test-il: test-il-pos test-il-neg
