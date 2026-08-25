@@ -3,6 +3,7 @@ open Common.Domain
 open Envs.Make
 open Envs.Il
 open Lang.Il
+open Envs.Interp
 module Value = Lang.Il.Value
 open Error
 open Attempt
@@ -17,6 +18,7 @@ let error_dup (at : region) (kind : string) (id : string) =
 
 (* Environment map types *)
 
+module Func = Func
 module TDEnv = TDEnv
 module VEnv = VEnv
 
@@ -265,8 +267,8 @@ let sub_opt (ctx : t) (vars : var list) : t option attempt =
   (* First collect the values that are to be iterated over *)
   let values =
     List.map
-      (fun (id, _typ, iters) ->
-        find_value ctx (id, iters @ [ Opt ]) |> Value.get_opt)
+      (fun { varid; iters; _ } ->
+        find_value ctx (varid, iters @ [ Opt ]) |> Value.get_opt)
       vars
   in
   (* Iteration is valid when all variables agree on their optionality *)
@@ -275,8 +277,8 @@ let sub_opt (ctx : t) (vars : var list) : t option attempt =
     (* Build venv in one pass to avoid intermediate context creations *)
     let venv_sub =
       List.fold_left2
-        (fun venv (id, _typ, iters) value ->
-          Local.VEnv.add (id, iters) value venv)
+        (fun venv { varid; iters; _ } value ->
+          Local.VEnv.add (varid, iters) value venv)
         ctx.local.venv vars values
     in
     let ctx_sub = { ctx with local = { ctx.local with venv = venv_sub } } in
@@ -315,8 +317,8 @@ let sub_list (ctx : t) (vars : var list) : t list attempt =
      into a batch of values *)
   let* values_batch =
     List.map
-      (fun (id, _typ, iters) ->
-        find_value ctx (id, iters @ [ List ]) |> Value.get_list)
+      (fun { varid; iters; _ } ->
+        find_value ctx (varid, iters @ [ List ]) |> Value.get_list)
       vars
     |> transpose
   in
@@ -327,8 +329,8 @@ let sub_list (ctx : t) (vars : var list) : t list attempt =
       (fun ctxs_sub_rev value_batch ->
         let venv_sub =
           List.fold_left2
-            (fun venv (id, _typ, iters) value ->
-              Local.VEnv.add (id, iters) value venv)
+            (fun venv { varid; iters; _ } value ->
+              Local.VEnv.add (varid, iters) value venv)
             ctx.local.venv vars value_batch
         in
         let ctx_sub = { ctx with local = { ctx.local with venv = venv_sub } } in

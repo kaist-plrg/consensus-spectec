@@ -3,54 +3,54 @@
 ;; [Custom] loop helper for ProcessRewardsAndPenalties
 ;; apply reward -> penalty for a single index
 relation ApplyRewardAndPenalty: 
-  beaconState `.BALANCES `[ validatorIndex ] `+ gwei `- gwei ~> beaconState
+  beaconState '.' BALANCES `[ validatorIndex `] '+' gwei '-' gwei ~> beaconState
   hint(input %0 %1 %2 %3)
 
 rule ApplyRewardAndPenalty:
-  state `.BALANCES `[ vid ] `+ reward `- penalty ~> state_out
-  -- IncreaseBalance: state   `.BALANCES `[ vid ] `+ reward  ~> state_r
-  -- DecreaseBalance: state_r `.BALANCES `[ vid ] `- penalty ~> state_out
+  state '.' BALANCES `[ vid `] '+' reward '-' penalty ~> state_out
+  -- IncreaseBalance: state   '.' BALANCES `[ vid `] '+' reward  ~> state_r
+  -- DecreaseBalance: state_r '.' BALANCES `[ vid `] '-' penalty ~> state_out
 
 ;; folder
 ;; implicit: should fail on length mismatch
 ;; apply reward -> penalty -> reward -> penalty -> ...
 relation ApplyRewardsAndPenalties:
-  beaconState `.BALANCES `[ validatorIndex* ] `+ gwei* `- gwei* ~> beaconState
+  beaconState '.' BALANCES `[ validatorIndex* `] '+' gwei* '-' gwei* ~> beaconState
   hint(input %0 %1 %2 %3)
 
 rule ApplyRewardsAndPenalties/nil:
-  state `.BALANCES `[ eps ] `+ eps `- eps ~> state
+  state '.' BALANCES `[ eps `] '+' eps '-' eps ~> state
 
 rule ApplyRewardsAndPenalties/cons:
-  state `.BALANCES `[ vid_h :: vid_t* ] `+ (reward_h :: reward_t*) `- (penalty_h :: penalty_t*) ~> state_out
-  -- ApplyRewardAndPenalty: state `.BALANCES `[ vid_h ] `+ reward_h `- penalty_h ~> state_h
-  -- ApplyRewardsAndPenalties: state_h `.BALANCES `[ vid_t* ] `+ reward_t* `- penalty_t* ~> state_out
+  state '.' BALANCES `[ vid_h :: vid_t* `] '+' (reward_h :: reward_t*) '-' (penalty_h :: penalty_t*) ~> state_out
+  -- ApplyRewardAndPenalty: state '.' BALANCES `[ vid_h `] '+' reward_h '-' penalty_h ~> state_h
+  -- ApplyRewardsAndPenalties: state_h '.' BALANCES `[ vid_t* `] '+' reward_t* '-' penalty_t* ~> state_out
 
 ;; folder
 ;; implicit: should fail on length mismatch
 ;; apply rewards and penalties for multiple validators
 relation ApplyRewardsAndPenalties_over_deltas:
-  beaconState `.BALANCES `[ validatorIndex* ] `+ gwei** `- gwei** ~>* beaconState
+  beaconState '.' BALANCES `[ validatorIndex* `] '+' gwei** '-' gwei** ~>* beaconState
   hint(input %0 %1 %2 %3)
 
 rule ApplyRewardsAndPenalties_over_deltas/nil:
-  state `.BALANCES `[ _ ] `+ eps `- eps ~>* state
+  state '.' BALANCES `[ _ `] '+' eps '-' eps ~>* state
 
 rule ApplyRewardsAndPenalties_over_deltas/cons:
-  state `.BALANCES `[ vid* ] `+ (reward* :: reward_t**) `- (penalty* :: penalty_t**) ~>* state_out
-  -- ApplyRewardsAndPenalties: state `.BALANCES `[ vid* ] `+ reward* `- penalty* ~> state_t
-  -- ApplyRewardsAndPenalties_over_deltas: state_t `.BALANCES `[ vid* ] `+ reward_t** `- penalty_t** ~>* state_out
+  state '.' BALANCES `[ vid* `] '+' (reward* :: reward_t**) '-' (penalty* :: penalty_t**) ~>* state_out
+  -- ApplyRewardsAndPenalties: state '.' BALANCES `[ vid* `] '+' reward* '-' penalty* ~> state_t
+  -- ApplyRewardsAndPenalties_over_deltas: state_t '.' BALANCES `[ vid* `] '+' reward_t** '-' penalty_t** ~>* state_out
 
 ;; === ProcessInactivityUpdates ===
 
 ;; [Custom]
 ;; apply inactivity score update for a single index
 relation ApplyInactivity:
-  beaconState `.INACTIVITY_SCORES `[ validatorIndex ] ~> beaconState
+  beaconState '.' INACTIVITY_SCORES `[ validatorIndex `] ~> beaconState
   hint(input %0 %1)
 
 rule ApplyInactivity/unslashed_participating_no_leak:
-  state `.INACTIVITY_SCORES `[ vid ]
+  state '.' INACTIVITY_SCORES `[ vid `]
     ~> state[.INACTIVITY_SCORES[vid]
               = $max_uint64($(state.INACTIVITY_SCORES[vid] - 1 - $INACTIVITY_SCORE_RECOVERY_RATE), 0)
             ]
@@ -63,7 +63,7 @@ rule ApplyInactivity/unslashed_participating_no_leak:
   -- if $(vid < |state.INACTIVITY_SCORES|)
 
 rule ApplyInactivity/unslashed_participating_leak:
-  state `.INACTIVITY_SCORES `[ vid ]
+  state '.' INACTIVITY_SCORES `[ vid `]
     ~> state[.INACTIVITY_SCORES[vid]
               = $max_uint64($(state.INACTIVITY_SCORES[vid] - 1), 0)
             ]
@@ -76,7 +76,7 @@ rule ApplyInactivity/unslashed_participating_leak:
   -- if $(vid < |state.INACTIVITY_SCORES|)
 
 rule ApplyInactivity/inactive_no_leak:
-  state `.INACTIVITY_SCORES `[ vid ]
+  state '.' INACTIVITY_SCORES `[ vid `]
     ~> state[.INACTIVITY_SCORES[vid]
               = $max_uint64($(state.INACTIVITY_SCORES[vid] + n_leak_penalty), 0)
             ]
@@ -92,7 +92,7 @@ rule ApplyInactivity/inactive_no_leak:
   -- if $(state.INACTIVITY_SCORES[vid] <= $UINT64_MAX - $INACTIVITY_SCORE_BIAS)
 
 rule ApplyInactivity/inactive_leak:
-  state `.INACTIVITY_SCORES `[ vid ]
+  state '.' INACTIVITY_SCORES `[ vid `]
     ~> state[.INACTIVITY_SCORES[vid]
               = $max_uint64($(state.INACTIVITY_SCORES[vid] + $INACTIVITY_SCORE_BIAS), 0)
             ]
@@ -108,16 +108,16 @@ rule ApplyInactivity/inactive_leak:
 
 ;; [Custom] folder
 relation ApplyInactivity_over_vids:
-  beaconState `.INACTIVITY_SCORES `[ validatorIndex* ] ~>* beaconState
+  beaconState '.' INACTIVITY_SCORES `[ validatorIndex* `] ~>* beaconState
   hint(input %0 %1)
 
 rule ApplyInactivity_over_vids/nil:
-  state `.INACTIVITY_SCORES `[ eps ] ~>* state
+  state '.' INACTIVITY_SCORES `[ eps `] ~>* state
 
 rule ApplyInactivity_over_vids/cons:
-  state `.INACTIVITY_SCORES `[ (vid_h :: vid_t*) ] ~>* state_updated
-  -- ApplyInactivity: state `.INACTIVITY_SCORES `[ vid_h ] ~> state_1
-  -- ApplyInactivity_over_vids: state_1 `.INACTIVITY_SCORES `[ vid_t* ] ~>* state_updated
+  state '.' INACTIVITY_SCORES `[ (vid_h :: vid_t*) `] ~>* state_updated
+  -- ApplyInactivity: state '.' INACTIVITY_SCORES `[ vid_h `] ~> state_1
+  -- ApplyInactivity_over_vids: state_1 '.' INACTIVITY_SCORES `[ vid_t* `] ~>* state_updated
 
 ;; === ProcessSlashings ===
 
@@ -134,16 +134,16 @@ def $is_due_slashing_en((_, _), _) = false
 
 ;; [Custom] folder for DecreaseBalance
 relation DecreaseBalances:
-  beaconState `.BALANCES `[ validatorIndex* ] `- gwei* ~> beaconState
+  beaconState '.' BALANCES `[ validatorIndex* `] '-' gwei* ~> beaconState
   hint(input %0 %1 %2)
 
 rule DecreaseBalances/nil:
-  state `.BALANCES `[ eps ] `- eps ~> state
+  state '.' BALANCES `[ eps `] '-' eps ~> state
 
 rule DecreaseBalances/cons:
-  state `.BALANCES `[ (vid_h :: vid_t*) ] `- (penalty_h :: penalty_t*) ~> state_t
-  -- DecreaseBalance: state `.BALANCES `[ vid_h ] `- penalty_h ~> state_h
-  -- DecreaseBalances: state_h `.BALANCES `[ vid_t* ] `- penalty_t* ~> state_t
+  state '.' BALANCES `[ (vid_h :: vid_t*) `] '-' (penalty_h :: penalty_t*) ~> state_t
+  -- DecreaseBalance: state '.' BALANCES `[ vid_h `] '-' penalty_h ~> state_h
+  -- DecreaseBalances: state_h '.' BALANCES `[ vid_t* `] '-' penalty_t* ~> state_t
 
 ;; === ProcessJustificationAndFinalization ===
 
@@ -430,11 +430,11 @@ rule WeighJustificationAndFinalization/justify_cur_finalize_neither:
 ;; === ProcessRegistryUpdates ===
 
 relation ProcessEligibilityAndEjection:
-  beaconState `.VALIDATORS `[ validatorIndex ] ~> beaconState
+  beaconState '.' VALIDATORS `[ validatorIndex `] ~> beaconState
   hint(input %0 %1)
 
 rule ProcessEligibilityAndEjection/eligible_and_eject:
-  state `.VALIDATORS `[ vid ] ~> state_updated
+  state '.' VALIDATORS `[ vid `] ~> state_updated
   -- if state.VALIDATORS[vid] = validator
   -- if $get_current_epoch(state) = epoch_cur
   -- if $is_eligible_for_activation_queue(validator)
@@ -443,10 +443,10 @@ rule ProcessEligibilityAndEjection/eligible_and_eject:
   -- InitiateValidatorExit: 
        state [.VALIDATORS[vid].ACTIVATION_ELIGIBILITY_EPOCH 
               = $(epoch_cur + 1)]
-         `.VALIDATORS `[ vid ] ~> state_updated
+         '.' VALIDATORS `[ vid `] ~> state_updated
 
 rule ProcessEligibilityAndEjection/eligible:
-  state `.VALIDATORS `[ vid ] ~>
+  state '.' VALIDATORS `[ vid `] ~>
     state [.VALIDATORS[vid].ACTIVATION_ELIGIBILITY_EPOCH 
           = $(epoch_cur + 1)]
   -- if state.VALIDATORS[vid] = validator
@@ -456,17 +456,17 @@ rule ProcessEligibilityAndEjection/eligible:
         /\ $(validator.EFFECTIVE_BALANCE <= $EJECTION_BALANCE))
 
 rule ProcessEligibilityAndEjection/eject:
-  state `.VALIDATORS `[ vid ] ~> state_updated
+  state '.' VALIDATORS `[ vid `] ~> state_updated
   -- if state.VALIDATORS[vid] = validator
   -- if $get_current_epoch(state) = epoch_cur
   -- if ~$is_eligible_for_activation_queue(validator)
   -- if $is_active_validator(validator, epoch_cur)
      /\ $(validator.EFFECTIVE_BALANCE <= $EJECTION_BALANCE)
   -- InitiateValidatorExit: 
-       state `.VALIDATORS `[ vid ] ~> state_updated
+       state '.' VALIDATORS `[ vid `] ~> state_updated
 
 rule ProcessEligibilityAndEjection/skip:
-  state `.VALIDATORS `[ vid ] ~> state
+  state '.' VALIDATORS `[ vid `] ~> state
   -- if state.VALIDATORS[vid] = validator
   -- if $get_current_epoch(state) = epoch_cur
   -- if ~$is_eligible_for_activation_queue(validator)
@@ -474,16 +474,16 @@ rule ProcessEligibilityAndEjection/skip:
         /\ $(validator.EFFECTIVE_BALANCE <= $EJECTION_BALANCE))
 
 relation ProcessEligibilityAndEjection_over_vids:
-  beaconState `.VALIDATORS `[ validatorIndex* ] ~> beaconState
+  beaconState '.' VALIDATORS `[ validatorIndex* `] ~> beaconState
   hint(input %0 %1)
 
 rule ProcessEligibilityAndEjection_over_vids/nil:
-  state `.VALIDATORS `[ eps ] ~> state
+  state '.' VALIDATORS `[ eps `] ~> state
 
 rule ProcessEligibilityAndEjection_over_vids/cons:
-  state `.VALIDATORS `[ (vid_h :: vid_t*) ] ~> state_out
-  -- ProcessEligibilityAndEjection: state `.VALIDATORS `[ vid_h ] ~> state_h
-  -- ProcessEligibilityAndEjection_over_vids: state_h `.VALIDATORS `[ vid_t* ] ~> state_out
+  state '.' VALIDATORS `[ (vid_h :: vid_t*) `] ~> state_out
+  -- ProcessEligibilityAndEjection: state '.' VALIDATORS `[ vid_h `] ~> state_h
+  -- ProcessEligibilityAndEjection_over_vids: state_h '.' VALIDATORS `[ vid_t* `] ~> state_out
 
 ;; filter predicate
 dec $is_eligible_activation_en((nat, validator), beaconState) : boolean
@@ -493,25 +493,25 @@ def $is_eligible_activation_en((_, validator), state)
 ;; [Custom]
 ;; mutates: .VALIDATORS[].ACTIVATION_EPOCH
 relation ApplyActivation:
-  beaconState `.VALIDATORS `[ validatorIndex ] `.ACTIVATION_EPOCH ~> beaconState
+  beaconState '.' VALIDATORS `[ validatorIndex `] '.' ACTIVATION_EPOCH ~> beaconState
   hint(input %0 %1)
 
 rule ApplyActivation:
-  state `.VALIDATORS `[ vid ] `.ACTIVATION_EPOCH ~>
+  state '.' VALIDATORS `[ vid `] '.' ACTIVATION_EPOCH ~>
     state[.VALIDATORS[vid].ACTIVATION_EPOCH
           = $compute_activation_exit_epoch($get_current_epoch(state))]
 
 relation ApplyActivations:
   beaconState 
-    `.VALIDATORS `[ validatorIndex* ] `.ACTIVATION_EPOCH
+    '.' VALIDATORS `[ validatorIndex* `] '.' ACTIVATION_EPOCH
     ~>* beaconState
   hint(input %0 %1)
 
 rule ApplyActivations/nil:
-  state `.VALIDATORS `[ eps ] `.ACTIVATION_EPOCH ~>* state
+  state '.' VALIDATORS `[ eps `] '.' ACTIVATION_EPOCH ~>* state
 
 rule ApplyActivations/cons:
-  state `.VALIDATORS `[(vid_h :: vid_t*)] `.ACTIVATION_EPOCH ~>* state_out
-  -- ApplyActivation:  state   `.VALIDATORS `[ vid_h ]  `.ACTIVATION_EPOCH ~>  state_h
-  -- ApplyActivations: state_h `.VALIDATORS `[ vid_t* ] `.ACTIVATION_EPOCH ~>* state_out
+  state '.' VALIDATORS `[(vid_h :: vid_t*)`] '.' ACTIVATION_EPOCH ~>* state_out
+  -- ApplyActivation:  state   '.' VALIDATORS `[ vid_h `]  '.' ACTIVATION_EPOCH ~>  state_h
+  -- ApplyActivations: state_h '.' VALIDATORS `[ vid_t* `] '.' ACTIVATION_EPOCH ~>* state_out
 

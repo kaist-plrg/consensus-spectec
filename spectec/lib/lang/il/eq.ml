@@ -16,7 +16,7 @@ let eq_atoms (atoms_a : atom list) (atoms_b : atom list) : bool =
 (* Mixfix operators *)
 
 let eq_mixop (mixop_a : mixop) (mixop_b : mixop) : bool =
-  Mixop.eq mixop_a mixop_b
+  Mixfix.eq_mixop mixop_a mixop_b
 
 (* Iterators *)
 
@@ -29,9 +29,7 @@ let eq_iters (iters_a : iter list) (iters_b : iter list) : bool =
 (* Variables *)
 
 let rec eq_var (var_a : var) (var_b : var) : bool =
-  let id_a, _typ_a, iters_a = var_a in
-  let id_b, _typ_b, iters_b = var_b in
-  eq_id id_a id_b && eq_iters iters_a iters_b
+  eq_id var_a.varid var_b.varid && eq_iters var_a.iters var_b.iters
 
 and eq_vars (vars_a : var list) (vars_b : var list) : bool =
   let compare_id (id_a : id) (id_b : id) : int = compare id_a.it id_b.it in
@@ -45,10 +43,9 @@ and eq_vars (vars_a : var list) (vars_b : var list) : bool =
     in
     List.compare compare_iter iters_a iters_b
   in
-  let compare_var ((id_a, _typ_a, iters_a) : var)
-      ((id_b, _typ_b, iters_b) : var) : int =
-    match compare_id id_a id_b with
-    | 0 -> compare_iters iters_a iters_b
+  let compare_var (var_a : var) (var_b : var) : int =
+    match compare_id var_a.varid var_b.varid with
+    | 0 -> compare_iters var_a.iters var_b.iters
     | n -> n
   in
   let vars_a = List.sort compare_var vars_a in
@@ -62,10 +59,12 @@ and eq_typ (typ_a : typ) (typ_b : typ) : bool =
   | BoolT, BoolT -> true
   | NumT numtyp_a, NumT numtyp_b -> Num.equiv numtyp_a numtyp_b
   | TextT, TextT -> true
-  | VarT (id_a, targs_a), VarT (id_b, targs_b) ->
+  | ( VarT { synid = id_a; targs = targs_a },
+      VarT { synid = id_b; targs = targs_b } ) ->
       eq_id id_a id_b && eq_targs targs_a targs_b
   | TupleT typs_a, TupleT typs_b -> eq_typs typs_a typs_b
-  | IterT (typ_a, iter_a), IterT (typ_b, iter_b) ->
+  | IterT { typ = typ_a; iter = iter_a }, IterT { typ = typ_b; iter = iter_b }
+    ->
       eq_typ typ_a typ_b && eq_iter iter_a iter_b
   | FuncT, FuncT -> true
   | _ -> false
@@ -87,8 +86,8 @@ and eq_value ?(dbg = false) (value_a : value) (value_b : value) : bool =
              (fun (atom_a, value_a) (atom_b, value_b) ->
                eq_atom atom_a atom_b && eq_value ~dbg value_a value_b)
              valuefields_a valuefields_b
-    | CaseV (mixop_a, values_a), CaseV (mixop_b, values_b) ->
-        eq_mixop mixop_a mixop_b && eq_values ~dbg values_a values_b
+    | CaseV valuecase_a, CaseV valuecase_b ->
+        Mixfix.eq ~eq_arg:eq_value valuecase_a valuecase_b
     | TupleV values_a, TupleV values_b -> eq_values ~dbg values_a values_b
     | OptV (Some v_a), OptV (Some v_b) -> eq_value ~dbg v_a v_b
     | OptV None, OptV None -> true
@@ -132,8 +131,7 @@ and eq_exp (exp_a : exp) (exp_b : exp) : bool =
   | MatchE (exp_a, pattern_a), MatchE (exp_b, pattern_b) ->
       eq_exp exp_a exp_b && eq_pattern pattern_a pattern_b
   | TupleE exps_a, TupleE exps_b -> eq_exps exps_a exps_b
-  | CaseE (mixop_a, exps_a), CaseE (mixop_b, exps_b) ->
-      eq_mixop mixop_a mixop_b && eq_exps exps_a exps_b
+  | CaseE ne_a, CaseE ne_b -> Mixfix.eq ~eq_arg:eq_exp ne_a ne_b
   | StrE expfields_a, StrE expfields_b ->
       List.length expfields_a = List.length expfields_b
       && List.for_all2
@@ -160,8 +158,6 @@ and eq_exp (exp_a : exp) (exp_b : exp) : bool =
       eq_exp exp_b_a exp_b_b && eq_path path_a path_b && eq_exp exp_f_a exp_f_b
   | CallE (id_a, targs_a, args_a), CallE (id_b, targs_b, args_b) ->
       eq_id id_a id_b && eq_targs targs_a targs_b && eq_args args_a args_b
-  | HoldE (id_a, (mixop_a, exps_a)), HoldE (id_b, (mixop_b, exps_b)) ->
-      eq_id id_a id_b && eq_mixop mixop_a mixop_b && eq_exps exps_a exps_b
   | IterE (exp_a, iterexp_a), IterE (exp_b, iterexp_b) ->
       eq_exp exp_a exp_b && eq_iterexp iterexp_a iterexp_b
   | _ -> false
@@ -200,7 +196,7 @@ and eq_path (path_a : path) (path_b : path) : bool =
   | SliceP (path_a, exp_l_a, exp_h_a), SliceP (path_b, exp_l_b, exp_h_b) ->
       eq_path path_a path_b && eq_exp exp_l_a exp_l_b && eq_exp exp_h_a exp_h_b
   | DotP (path_a, atom_a), DotP (path_b, atom_b) ->
-      eq_path path_a path_b && Atom.eq atom_a atom_b
+      eq_path path_a path_b && eq_atom atom_a atom_b
   | _ -> false
 
 (* Arguments *)

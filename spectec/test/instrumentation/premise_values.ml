@@ -13,10 +13,18 @@ let arg exp = Il.ExpA exp $ no_region
 let call name args =
   bool_exp (Il.CallE (name $ no_region, [], List.map arg args))
 
-let clause param body : Il.clause = ([ arg param ], body, []) $ no_region
+let clause param body : Il.clause =
+  { Il.args = [ arg param ]; body; prems = [] } $ no_region
 
 let def name clause : Il.def =
-  Il.DecD (name $ no_region, [], [], Il.BoolT $ no_region, [ clause ])
+  Il.DecD
+    {
+      defid = name $ no_region;
+      tparams = [];
+      params = [];
+      typ = Il.BoolT $ no_region;
+      clauses = [ clause ];
+    }
   $ no_region
 
 let assert_mem exp exps = assert (List.mem exp exps)
@@ -29,7 +37,7 @@ let () =
   let predicate = def "predicate" (clause x predicate_body) in
   let input = var "input" in
   let condition = or_ (call "predicate" [ input ]) (bool false) in
-  let prem = Il.IfPr condition $ no_region in
+  let prem = Il.IfPr { cond = condition; role = Il.Condition } $ no_region in
 
   Premise_values.reset ();
   assert (Premise_values.expressions_of_prem prem = []);

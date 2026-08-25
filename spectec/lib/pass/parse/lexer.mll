@@ -2,7 +2,7 @@
 module Source = Common.Source
 open Lang.Xl
 open Parser
-open Error
+open Diagnostic
 
 (* Error handling *)
 
@@ -18,17 +18,21 @@ let region lexbuf =
   let right = convert_pos (Lexing.lexeme_end_p lexbuf) in
   Source.{ left; right }
 
-let error lexbuf msg = error (region lexbuf) msg
-let error_nest start lexbuf msg =
+let error ?code ?detail ?related lexbuf msg = error ?code ?detail ?related (region lexbuf) msg
+let error_nest ?code ?detail ?related start lexbuf msg =
   lexbuf.Lexing.lex_start_p <- start;
-  error lexbuf msg
+  error ?code ?detail ?related lexbuf msg
 
 (* Numbers *)
 
 let nat _lexbuf s = Bigint.of_string s
 let hex _lexbuf s = Bigint.of_string s
 let int lexbuf s =
-  try int_of_string s with Failure _ -> error lexbuf "hex literal out of range"
+  try int_of_string s
+  with Failure _ ->
+    error ~code:Hole_index_overflow
+      ~detail:"The hole index in `%N` must fit in a 63-bit native integer."
+      lexbuf "hole index out of range"
 
 (* Texts *)
 
@@ -150,74 +154,20 @@ and after_nl_nl = parse
 
 and token = parse
   (* escaped tokens *)
-  | "`"(upid as s) { TICK_UPID s }
-  | "``" { TICK_TICK }
-  | "`\"" { TICK_DOUBLE_QUOTE }
-  | "`_" { TICK_UNDERSCORE }
-  | "`->" { TICK_ARROW }
-  | "`=>" { TICK_DOUBLE_ARROW }
-  | "`." { TICK_DOT }
-  | "`.." { TICK_DOT2 }
-  | "`..." { TICK_DOT3 }
-  | "`," { TICK_COMMA }
-  | "`;" { TICK_SEMICOLON }
-  | "`:" { TICK_COLON }
-  | "`#" { TICK_HASH }
-  | "`$" { TICK_DOLLAR }
-  | "`@" { TICK_AT }
-  | "`?" { TICK_QUEST }
-  | "`!" { TICK_BANG }
-  | "`!=" { TICK_BANG_EQ }
-  | "`~" { TICK_TILDE }
-  | "``<" { TICK2_LANGLE }
+  | "_"(upid as s) { TAG_UPID s }
+  | "'" ([^'\'''\n']* as s) "'" { OPERATOR s }
+  (* matched grouping brackets: backtick on both delimiters *)
   | "`<" { TICK_LANGLE }
-  | "`<<" { TICK_LANGLE2 }
-  | "`<=" { TICK_LANGLE_EQ }
-  | "`<<=" { TICK_LANGLE2_EQ }
-  | "``>" { TICK2_RANGLE }
-  | "`>>" { TICK_RANGLE2 }
-  | "`>=" { TICK_RANGLE_EQ }
-  | "`>>=" { TICK_RANGLE2_EQ }
+  | "`>" { TICK_RANGLE }
   | "`(" { TICK_LPAREN }
+  | "`)" { TICK_RPAREN }
   | "`[" { TICK_LBRACK }
-  | "``[" { TICK2_LBRACK }
-  | "``]" { TICK2_RBRACK }
+  | "`]" { TICK_RBRACK }
   | "`{" { TICK_LBRACE }
-  | "`{#}" { TICK_LBRACE_HASH_RBRACE }
-  | "``{" { TICK2_LBRACE }
-  | "``}" { TICK2_RBRACE }
-  | "`+" { TICK_PLUS }
-  | "`++" { TICK_PLUS2 }
-  | "`+=" { TICK_PLUS_EQ }
-  | "`-" { TICK_MINUS }
-  | "`-=" { TICK_MINUS_EQ }
-  | "`*" { TICK_STAR }
-  | "`*=" { TICK_STAR_EQ }
-  | "`/" { TICK_SLASH }
-  | "`/=" { TICK_SLASH_EQ }
-  | "`%" { TICK_PERCENT }
-  | "`%=" { TICK_PERCENT_EQ }
-  | "`=" { TICK_EQ }
-  | "`==" { TICK_EQ2 }
-  | "`&" { TICK_AMP }
-  | "`&&" { TICK_AMP2 }
-  | "`&&&" { TICK_AMP3 }
-  | "`&=" { TICK_AMP_EQ }
-  | "`^" { TICK_UP }
-  | "`^=" { TICK_UP_EQ }
-  | "`|" { TICK_BAR }
-  | "`||" { TICK_BAR2 }
-  | "`|=" { TICK_BAR_EQ }
-  | "`|+|" { TICK_BAR_PLUS_BAR }
-  | "`|+|=" { TICK_BAR_PLUS_BAR_EQ }
-  | "`|-|" { TICK_BAR_MINUS_BAR }
-  | "`|-|=" { TICK_BAR_MINUS_BAR_EQ }
+  | "`}" { TICK_RBRACE }
   (* normal tokens *)
-  | "<:" { SUB }
-  | ":>" { SUP }
   | "|-" { TURNSTILE }
   | "-|" { TILESTURN }
-  | "|=" { ENTAIL }
   | "->" { ARROW }
   | "->_" { ARROW_SUB }
   | "=>" { DOUBLE_ARROW }
@@ -237,10 +187,12 @@ and token = parse
   | ":" { COLON }
   | "::" { COLON2 }
   | ":/" { COLON_SLASH }
+  | ":=" { COLON_EQ }
   | "#" { HASH }
   | "##" { HASH2 }
   | "$" { DOLLAR }
   | "?" { QUEST }
+  | "<:" { SUB }
   | "~" { TILDE }
   | "~~" { TILDE2 }
   | "<" { LANGLE }
@@ -280,6 +232,7 @@ and token = parse
   | "relation" { RELATION }
   | "rule" { RULE }
   | "var" { VAR }
+  | "builtin" { BUILTIN }
   | "dec" { DEC }
   | "def" { DEF }
   | "if" { IF }
@@ -292,11 +245,11 @@ and token = parse
   | nat as s { NATLIT (nat lexbuf s) }
   | ("0x" hex) as s { HEXLIT (hex lexbuf s) }
   | text as s { TEXTLIT (text lexbuf s) }
-  | '"'character*('\n'|eof) { error lexbuf "unclosed text literal" }
+  | '"'character*('\n'|eof) { error ~code:Unclosed_text_literal lexbuf "unclosed text literal" }
   | '"'character*['\x00'-'\x09''\x0b'-'\x1f''\x7f']
-    { error lexbuf "illegal control character in text literal" }
+    { error ~code:Illegal_control_in_text_literal lexbuf "illegal control character in text literal" }
   | '"'character*'\\'_
-    { error_nest (Lexing.lexeme_end_p lexbuf) lexbuf "illegal escape" }
+    { error_nest ~code:Illegal_escape (Lexing.lexeme_end_p lexbuf) lexbuf "illegal escape" }
   | upid as s { if is_var s then LOID s else UPID s }
   | loid as s { LOID s }
   | (upid as s) "(" { if is_var s then LOID_LPAREN s else UPID_LPAREN s }
@@ -312,15 +265,15 @@ and token = parse
   | "\n" { Lexing.new_line lexbuf; token lexbuf }
   | "\\\n" { Lexing.new_line lexbuf; token lexbuf }
   | eof { EOF }
-  | printable { error lexbuf "malformed token" }
-  | control { error lexbuf "misplaced control character" }
-  | utf8enc { error lexbuf "misplaced unicode character" }
-  | _ { error lexbuf "malformed UTF-8 encoding" }
+  | printable { error ~code:Stray_printable lexbuf "malformed token" }
+  | control { error ~code:Stray_control_char lexbuf "misplaced control character" }
+  | utf8enc { error ~code:Stray_non_ascii_char lexbuf "misplaced unicode character" }
+  | _ { error ~code:Invalid_utf8 lexbuf "malformed UTF-8 encoding" }
 
 and comment start = parse
   | ";)" { () }
   | "(;" { comment (Lexing.lexeme_start_p lexbuf) lexbuf; comment start lexbuf }
   | "\n" { Lexing.new_line lexbuf; comment start lexbuf }
   | utf8_no_nl { comment start lexbuf }
-  | eof { error_nest start lexbuf "unclosed comment" }
-  | _ { error lexbuf "malformed UTF-8 encoding" }
+  | eof { error_nest ~code:Unclosed_block_comment start lexbuf "unclosed comment" }
+  | _ { error ~code:Invalid_utf8_in_comment lexbuf "malformed UTF-8 encoding" }

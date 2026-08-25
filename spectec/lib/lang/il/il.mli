@@ -2,10 +2,13 @@
     after elaboration. *)
 
 include module type of Types
+module Mixfix : module type of Mixfix
+module Mode : module type of Mode
 module Eq : module type of Eq
 module Free : module type of Free
+module Fresh : module type of Fresh
+module Var : module type of Var
 module Traverse : module type of Traverse
-module Utils : module type of Utils
 module Print : module type of Print
 module Print_debug : module type of Print_debug
 
@@ -15,6 +18,9 @@ module Value : sig
 
   val to_string : t -> string
 end
+
+(** Convenience constructors for CaseV values, used by target frontends. *)
+module Case : module type of Case
 
 (** Constructors and operations on IL Types. *)
 module Typ : sig

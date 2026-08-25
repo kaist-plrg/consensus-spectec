@@ -1,0 +1,4 @@
+(library
+ (name batch)
+ (public_name spectec.batch)
+ (libraries spectec spectec.instrumentation unix))

@@ -2,6 +2,8 @@ open Lang.Xl
 open Lang.Il
 open Common.Source
 open Builtins
+open Atom
+open Mixfix
 
 (* Value map *)
 
@@ -15,7 +17,7 @@ let value_of_map (typ_key : typ) (typ_value : typ) (map : map) : value =
   let value_of_tuple ((value_key, value_value) : value * value) : value =
     let value =
       let typ = Typ.var "pair" [ typ_key; typ_value ] in
-      ([ []; [ Atom.Colon $ no_region ]; [] ], [ value_key; value_value ])
+      [ Arg value_key; Atom (operator ":" $ no_region); Arg value_value ]
       |> Value.Make.case typ
     in
     value
@@ -26,8 +28,7 @@ let value_of_map (typ_key : typ) (typ_value : typ) (map : map) : value =
   in
   let value =
     let typ = Typ.var "map" [ typ_key; typ_value ] in
-    ( [ [ Atom.LBrace $ no_region ]; [ Atom.RBrace $ no_region ] ],
-      [ value_pairs ] )
+    [ Atom (LBrace $ no_region); Arg value_pairs; Atom (RBrace $ no_region) ]
     |> Value.Make.case typ
   in
   value

@@ -1,29 +1,17 @@
-(* Branch coverage handler - Tracks rule and clause execution.
-
-   Implements Instrumentation_core.Handler.S interface.
-   Records all branches at init(), then tracks which are hit.
-
-   Output levels:
-   - Summary: stats + uncovered branches only
-   - Full: all relations/functions with coverage markers
-
-   Usage:
-     let handler = Branch_coverage.make { level = Full; output = Instrumentation_core.Output.stdout }
-*)
+(** Branch coverage: records all rules and clauses at session init, then marks
+    which ones execute. [Summary] reports only uncovered branches; [Full] emits
+    every relation and function with coverage annotations. *)
 
 open Common.Source
 module Il = Lang.Il
 module Sl = Lang.Sl
-open Instrumentation_core.Util
+open Util
 
-(* Verbosity levels *)
 type level = Summary | Full
-
-(* Handler configuration *)
-type config = { level : level; output : Instrumentation_core.Output.t }
+type config = { level : level; output : Instrumentation_api.Output.t }
 
 let default_config =
-  { level = Summary; output = Instrumentation_core.Output.stdout }
+  { level = Summary; output = Instrumentation_api.Output.stdout }
 
 let config = ref default_config
 let fmt = ref Format.std_formatter
@@ -55,64 +43,46 @@ let group_by items =
     [] items
   |> List.sort compare
 
-module M : Instrumentation_core.Handler.S = struct
+module M : Instrumentation_api.Handler.S = struct
   let static_dependencies = []
 
   let init ~spec =
     State.reset ();
     match spec with
-    | Instrumentation_core.Handler.IlSpec il_spec ->
+    | Instrumentation_api.Handler.IlSpec il_spec ->
         List.iter
           (fun def ->
             match def.it with
-            | Il.RelD (id, _, _, rules) ->
+            | Il.RelD { relid = id; rules; _ } ->
                 List.iter
                   (fun rule ->
-                    let rule_id, _, _ = rule.it in
+                    let { Il.ruleid = rule_id; _ } = rule.it in
                     State.all_rules := (id.it, rule_id.it) :: !State.all_rules)
                   rules
-            | Il.DecD (id, _, _, _, clauses) ->
+            | Il.DecD { defid = id; clauses; _ } ->
                 List.iteri
                   (fun idx _ ->
                     State.all_clauses := (id.it, idx) :: !State.all_clauses)
                   clauses
-            | Il.TypD _ -> ())
+            | _ -> ())
           il_spec
-    | Instrumentation_core.Handler.SlSpec sl_spec ->
+    | Instrumentation_api.Handler.SlSpec sl_spec ->
         List.iter
           (fun def ->
             match def.it with
             | Sl.RelD (id, _, _, _) ->
                 State.all_rules := (id.it, "0") :: !State.all_rules
-            | Sl.DecD (id, _, _, _) ->
+            | Sl.DecD (id, _, _, _, _) ->
                 State.all_clauses := (id.it, 0) :: !State.all_clauses
-            | Sl.TypD _ -> ())
+            | _ -> ())
           sl_spec
 
-  let on_test_start = Instrumentation_core.Noop.on_test_start
-  let on_test_end = Instrumentation_core.Noop.on_test_end
-  let on_rel_enter = Instrumentation_core.Noop.on_rel_enter
-  let on_rel_exit = Instrumentation_core.Noop.on_rel_exit
-  let on_rule_enter = Instrumentation_core.Noop.on_rule_enter
-
-  let on_rule_exit ~id ~rule_id ~at:_ ~success =
-    if success then State.incr State.rules_hit (id, rule_id)
-
-  let on_func_enter = Instrumentation_core.Noop.on_func_enter
-  let on_func_exit = Instrumentation_core.Noop.on_func_exit
-  let on_clause_enter = Instrumentation_core.Noop.on_clause_enter
-
-  let on_clause_exit ~id ~clause_idx ~at:_ ~success =
-    if success then State.incr State.clauses_hit (id, clause_idx)
-
-  let on_iter_prem_enter = Instrumentation_core.Noop.on_iter_prem_enter
-  let on_iter_prem_exit = Instrumentation_core.Noop.on_iter_prem_exit
-  let on_prem_enter = Instrumentation_core.Noop.on_prem_enter
-  let on_prem_exit = Instrumentation_core.Noop.on_prem_exit
-  let on_rule_output = Instrumentation_core.Noop.on_rule_output
-  let on_clause_return = Instrumentation_core.Noop.on_clause_return
-  let on_func_result = Instrumentation_core.Noop.on_func_result
-  let on_instr = Instrumentation_core.Noop.on_instr
+  let handle : Instrumentation_api.Event.t -> unit = function
+    | Rule_exit { id; rule_id; at = _; success } ->
+        if success then State.incr State.rules_hit (id, rule_id)
+    | Clause_exit { id; clause_idx; at = _; success } ->
+        if success then State.incr State.clauses_hit (id, clause_idx)
+    | _ -> ()
 
   (* --- Output: Summary mode (stats + uncovered only) --- *)
 
@@ -268,9 +238,28 @@ let restore result =
     (fun (k, v) -> Hashtbl.replace State.clauses_hit k v)
     result.clauses_hit
 
+(* Merge two results — used for checkpoint merging *)
+let merge_results r1 r2 =
+  let merge_counts counts1 counts2 =
+    let tbl = Hashtbl.create 256 in
+    let add k v =
+      let existing = Hashtbl.find_opt tbl k |> Option.value ~default:0 in
+      Hashtbl.replace tbl k (existing + v)
+    in
+    List.iter (fun (k, v) -> add k v) counts1;
+    List.iter (fun (k, v) -> add k v) counts2;
+    Hashtbl.to_seq tbl |> List.of_seq
+  in
+  {
+    all_rules = r1.all_rules;
+    all_clauses = r1.all_clauses;
+    rules_hit = merge_counts r1.rules_hit r2.rules_hit;
+    clauses_hit = merge_counts r1.clauses_hit r2.clauses_hit;
+  }
+
 (* Handler with data access - implements HANDLER_WITH_DATA signature *)
 module HandlerWithData :
-  Instrumentation_core.Handler.S_with_data with type result = result = struct
+  Instrumentation_api.Handler.S_with_data with type result = result = struct
   include M
 
   type nonrec result = result
@@ -281,8 +270,8 @@ end
 
 let make cfg =
   config := cfg;
-  fmt := Instrumentation_core.Output.formatter cfg.output;
-  (module M : Instrumentation_core.Handler.S)
+  fmt := Instrumentation_api.Output.formatter cfg.output;
+  (module M : Instrumentation_api.Handler.S)
 
 (* Create handler with data getter for programmatic access.
    Usage:
@@ -293,7 +282,58 @@ let make cfg =
 *)
 let make_with_data cfg =
   config := cfg;
-  fmt := Instrumentation_core.Output.formatter cfg.output;
-  ( (module HandlerWithData : Instrumentation_core.Handler.S_with_data
+  fmt := Instrumentation_api.Output.formatter cfg.output;
+  ( (module HandlerWithData : Instrumentation_api.Handler.S_with_data
       with type result = result),
     get_result )
+
+module Spec : Instrumentation_spec.Spec.S = struct
+  let name = "branch-coverage"
+  let modes = [ `IL; `SL ]
+
+  let params =
+    [
+      Instrumentation_spec.Param_utils.level_param;
+      Instrumentation_spec.Param_utils.output_param;
+    ]
+
+  let parse alist =
+    match Instrumentation_spec.Param_utils.get alist "level" with
+    | None -> None
+    | Some s ->
+        let output =
+          Instrumentation_spec.Param_utils.output_of
+            (Instrumentation_spec.Param_utils.get alist "output")
+        in
+        let cfg =
+          {
+            level =
+              Instrumentation_spec.Param_utils.parse_level ~summary:Summary
+                ~full:Full s;
+            output;
+          }
+        in
+        Some
+          {
+            Instrumentation_config.Handler_config.name;
+            modes;
+            handler = make cfg;
+            output;
+          }
+
+  let checkpoint =
+    Some
+      Instrumentation_spec.Spec.
+        {
+          snapshot = (fun () -> Marshal.to_bytes (get_result ()) []);
+          restore = (fun b -> restore (Marshal.from_bytes b 0));
+          merge =
+            (fun b1 b2 ->
+              Marshal.to_bytes
+                (merge_results (Marshal.from_bytes b1 0)
+                   (Marshal.from_bytes b2 0))
+                []);
+        }
+end
+
+let spec : Instrumentation_spec.Spec.t = (module Spec)

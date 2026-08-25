@@ -1,7 +1,8 @@
 open Common.Source
 open Lang.Il
-open Error
+open Diagnostic
 open Ctx
+module Mixop = Lang.Il.Mixfix
 
 (* Collect binding identifiers,
    while enforcing the invariant that binding identifiers
@@ -13,6 +14,12 @@ let collect_noninvertible (at : region) (construct : string)
     error at
       (Format.asprintf "invalid binding position(s) for %s in non-invertible %s"
          (Bind.BEnv.to_string benv) construct)
+      ~code:Dataflow_bind_in_non_invertible
+      ~detail:
+        "The elaborator assigns each variable a specific piece of the \
+         surrounding value: a tuple element, a variant case's argument, a \
+         struct field, or a list element. It does not invert operators, even \
+         when their inverse would be unique."
 
 (* Expressions *)
 
@@ -39,13 +46,20 @@ let rec collect_exp (dctx : Dctx.t) (exp : exp) : Bind.BEnv.t =
       collect_noninvertible exp.at "comparison operator" binds;
       Bind.BEnv.empty
   | UpCastE (_, exp) -> collect_exp dctx exp
-  | DownCastE _ | SubE _ | MatchE _ ->
-      error exp.at
-        (Format.asprintf
-           "downcast, subtype check, and match check expressions should appear \
-            only after injection analysis")
+  | DownCastE (_, exp) ->
+      let binds = collect_exp dctx exp in
+      collect_noninvertible exp.at "downcast operator" binds;
+      Bind.BEnv.empty
+  | SubE (exp, _) ->
+      let binds = collect_exp dctx exp in
+      collect_noninvertible exp.at "subtype check operator" binds;
+      Bind.BEnv.empty
+  | MatchE (exp, _) ->
+      let binds = collect_exp dctx exp in
+      collect_noninvertible exp.at "match check operator" binds;
+      Bind.BEnv.empty
   | TupleE exps -> collect_exps dctx exps
-  | CaseE notexp -> notexp |> snd |> collect_exps dctx
+  | CaseE notexp -> notexp |> Mixop.args |> collect_exps dctx
   | StrE expfields -> expfields |> List.map snd |> collect_exps dctx
   | OptE exp_opt ->
       exp_opt
@@ -102,16 +116,7 @@ let rec collect_exp (dctx : Dctx.t) (exp : exp) : Bind.BEnv.t =
       let binds = collect_args dctx args in
       collect_noninvertible exp.at "call operator" binds;
       Bind.BEnv.empty
-  | HoldE (_, notexp) ->
-      let binds = notexp |> snd |> collect_exps dctx in
-      collect_noninvertible exp.at "holds operator" binds;
-      Bind.BEnv.empty
-  | IterE (_, ((_, _ :: _) as iterexp)) ->
-      error exp.at
-        (Format.asprintf
-           "iterated expression should initially have no annotations, but got \
-            %s"
-           (Il.Print.string_of_iterexp iterexp))
+  | IterE (_, (_, _ :: _)) -> assert false
   | IterE (exp, (iter, [])) ->
       let binds = collect_exp dctx exp in
       let binds = Bind.BEnv.map (Bind.Occ.add_iter iter) binds in

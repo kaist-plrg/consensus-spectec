@@ -14,10 +14,10 @@ let rename_iterexp (rename : t) (iterexp : iterexp) : iterexp =
   let iter, vars = iterexp in
   let vars =
     List.map
-      (fun (id, typ, iters) ->
-        match Rename.find_opt id rename with
-        | Some id_renamed -> (id_renamed, typ, iters)
-        | None -> (id, typ, iters))
+      (fun var ->
+        match Rename.find_opt var.Il.varid rename with
+        | Some id_renamed -> { var with Il.varid = id_renamed }
+        | None -> var)
       vars
   in
   (iter, vars)
@@ -59,9 +59,9 @@ let rec rename_exp (rename : t) (exp : exp) : exp =
   | TupleE exps ->
       let exps = List.map (rename_exp rename) exps in
       Il.TupleE exps $$ (at, note)
-  | CaseE (mixop, exps) ->
-      let exps = List.map (rename_exp rename) exps in
-      Il.CaseE (mixop, exps) $$ (at, note)
+  | CaseE notexp ->
+      let notexp = Il.Mixfix.map (rename_exp rename) notexp in
+      Il.CaseE notexp $$ (at, note)
   | StrE expfields ->
       let atoms, exps = List.split expfields in
       let exps = List.map (rename_exp rename) exps in
@@ -108,9 +108,6 @@ let rec rename_exp (rename : t) (exp : exp) : exp =
   | CallE (id, targs, args) ->
       let args = List.map (rename_arg rename) args in
       Il.CallE (id, targs, args) $$ (at, note)
-  | HoldE (id, (mixop, exps)) ->
-      let exps = List.map (rename_exp rename) exps in
-      Il.HoldE (id, (mixop, exps)) $$ (at, note)
   | IterE (exp, iterexp) ->
       let exp = rename_exp rename exp in
       let iterexp = rename_iterexp rename iterexp in
@@ -161,6 +158,18 @@ and rename_guard (rename : t) (guard : guard) : guard =
 and rename_instr (rename : t) (instr : instr) : instr =
   let at = instr.at in
   match instr.it with
+  | RelI { call; iterexps; block } ->
+      let notexp = Il.Mixfix.map (rename_exp rename) call.notexp in
+      let iterexps = List.map (rename_iterexp rename) iterexps in
+      let block = List.map (rename_instr rename) block in
+      RelI { call = { relid = call.relid; notexp }; iterexps; block } $ at
+  | RelAssertI { call; expect; iterexps; block } ->
+      let notexp = Il.Mixfix.map (rename_exp rename) call.notexp in
+      let iterexps = List.map (rename_iterexp rename) iterexps in
+      let block = List.map (rename_instr rename) block in
+      RelAssertI
+        { call = { relid = call.relid; notexp }; expect; iterexps; block }
+      $ at
   | IfI (exp_cond, iterexps, instrs_then) ->
       let exp_cond = rename_exp rename exp_cond in
       let iterexps = List.map (rename_iterexp rename) iterexps in
@@ -170,27 +179,25 @@ and rename_instr (rename : t) (instr : instr) : instr =
       let exp = rename_exp rename exp in
       let cases = List.map (rename_case rename) cases in
       CaseI (exp, cases, total) $ at
-  | OtherwiseI instrs ->
-      let instrs = List.map (rename_instr rename) instrs in
-      OtherwiseI instrs $ at
-  | LetI (exp_l, exp_r, iterexps) ->
+  | OtherwiseI instr ->
+      let instr = rename_instr rename instr in
+      OtherwiseI instr $ at
+  | LetI (exp_l, exp_r, iterexps, block) ->
       let exp_l = rename_exp rename exp_l in
       let exp_r = rename_exp rename exp_r in
       let iterexps = List.map (rename_iterexp rename) iterexps in
-      LetI (exp_l, exp_r, iterexps) $ at
-  | RuleI (id_rel, (mixop, exps), iterexps) ->
-      let exps = List.map (rename_exp rename) exps in
-      let iterexps = List.map (rename_iterexp rename) iterexps in
-      RuleI (id_rel, (mixop, exps), iterexps) $ at
+      let block = List.map (rename_instr rename) block in
+      LetI (exp_l, exp_r, iterexps, block) $ at
   | ResultI exps ->
       let exps = List.map (rename_exp rename) exps in
       ResultI exps $ at
   | ReturnI exp ->
       let exp = rename_exp rename exp in
       ReturnI exp $ at
-  | DebugI exp ->
+  | DebugI (exp, instr_body) ->
       let exp = rename_exp rename exp in
-      DebugI exp $ at
+      let instr_body = rename_instr rename instr_body in
+      DebugI (exp, instr_body) $ at
 
 and rename_instrs (rename : t) (instrs : instr list) : instr list =
   List.map (rename_instr rename) instrs

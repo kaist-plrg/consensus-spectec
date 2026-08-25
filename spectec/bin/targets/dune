@@ -1,5 +1,11 @@
 (library
  (name targets)
- (libraries core cli targets_p4 targets_eth spectec.runner)
+ (libraries
+  core
+  spectec
+  spectec.cli
+  spectec.instrumentation
+  spectec.runner
+  spectec.targets.ethereum)
  (preprocess
   (pps ppx_let)))

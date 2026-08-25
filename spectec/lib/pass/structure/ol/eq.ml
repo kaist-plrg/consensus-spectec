@@ -26,6 +26,29 @@ and eq_guard (guard_a : guard) (guard_b : guard) : bool =
 
 and eq_instr (instr_a : instr) (instr_b : instr) : bool =
   match (instr_a.it, instr_b.it) with
+  | ( RelI { call = call_a; iterexps = iterexps_a; block = block_a },
+      RelI { call = call_b; iterexps = iterexps_b; block = block_b } ) ->
+      Sl.Eq.eq_relcall call_a call_b
+      && Sl.Eq.eq_iterexps iterexps_a iterexps_b
+      && eq_instrs block_a block_b
+  | ( RelAssertI
+        {
+          call = call_a;
+          expect = expect_a;
+          iterexps = iterexps_a;
+          block = block_a;
+        },
+      RelAssertI
+        {
+          call = call_b;
+          expect = expect_b;
+          iterexps = iterexps_b;
+          block = block_b;
+        } ) ->
+      Sl.Eq.eq_relcall call_a call_b
+      && Bool.equal expect_a expect_b
+      && Sl.Eq.eq_iterexps iterexps_a iterexps_b
+      && eq_instrs block_a block_b
   | ( IfI (exp_cond_a, iterexps_a, instrs_then_a),
       IfI (exp_cond_b, iterexps_b, instrs_then_b) ) ->
       Sl.Eq.eq_exp exp_cond_a exp_cond_b
@@ -33,20 +56,17 @@ and eq_instr (instr_a : instr) (instr_b : instr) : bool =
       && eq_instrs instrs_then_a instrs_then_b
   | CaseI (exp_a, cases_a, total_a), CaseI (exp_b, cases_b, total_b) ->
       Sl.Eq.eq_exp exp_a exp_b && eq_cases cases_a cases_b && total_a = total_b
-  | OtherwiseI instrs_a, OtherwiseI instrs_b -> eq_instrs instrs_a instrs_b
-  | LetI (exp_l_a, exp_r_a, iterexps_a), LetI (exp_l_b, exp_r_b, iterexps_b) ->
+  | OtherwiseI instr_a, OtherwiseI instr_b -> eq_instr instr_a instr_b
+  | ( LetI (exp_l_a, exp_r_a, iterexps_a, block_a),
+      LetI (exp_l_b, exp_r_b, iterexps_b, block_b) ) ->
       Sl.Eq.eq_exp exp_l_a exp_l_b
       && Sl.Eq.eq_exp exp_r_a exp_r_b
       && Sl.Eq.eq_iterexps iterexps_a iterexps_b
-  | ( RuleI (id_a, (mixop_a, exps_a), iterexps_a),
-      RuleI (id_b, (mixop_b, exps_b), iterexps_b) ) ->
-      Sl.Eq.eq_id id_a id_b
-      && Sl.Eq.eq_mixop mixop_a mixop_b
-      && Sl.Eq.eq_exps exps_a exps_b
-      && Sl.Eq.eq_iterexps iterexps_a iterexps_b
+      && eq_instrs block_a block_b
   | ResultI exps_a, ResultI exps_b -> Sl.Eq.eq_exps exps_a exps_b
   | ReturnI exp_a, ReturnI exp_b -> Sl.Eq.eq_exp exp_a exp_b
-  | DebugI exp_a, DebugI exp_b -> Sl.Eq.eq_exp exp_a exp_b
+  | DebugI (exp_a, instr_a), DebugI (exp_b, instr_b) ->
+      Sl.Eq.eq_exp exp_a exp_b && eq_instr instr_a instr_b
   | _ -> false
 
 and eq_instrs (instrs_a : instr list) (instrs_b : instr list) : bool =

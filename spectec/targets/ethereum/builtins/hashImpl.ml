@@ -33,8 +33,8 @@ let bigint_of_be_bytes (b : Bytes.t) : Bigint.t =
 (* Helper: Resolve bytes length from targ, including aliases *)
 let bytes_len_of_targ (typ : targ) : int option =
   match typ.it with
-  | VarT (id, _) -> (
-      let nm = id.it in
+  | VarT { synid; _ } -> (
+      let nm = synid.it in
       (* Direct bytesN type: bytes32, bytes48, bytes96, etc. *)
       if String.length nm >= 5 && String.sub nm 0 5 = "bytes" then
         try

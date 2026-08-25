@@ -61,7 +61,7 @@ let rec detect_block_pattern (exp : Il.exp) : block_input_pattern option =
       | _ -> None)
   | Il.DotE (base, atom) -> (
       (* Check for block.BODY.EXECUTION_PAYLOAD pattern *)
-      let field_name = Lang.Xl.Atom.string_of_atom atom.it in
+      let field_name = Lang.Xl.Atom.to_string atom.it in
       match detect_block_pattern base with
       | Some BlockBody when field_name = "EXECUTION_PAYLOAD" ->
           Some ExecutionPayload
@@ -77,8 +77,8 @@ let extract_relation_input_info (_id : string) (arg_types : Il.typ list)
     =
   (* Get input expressions from first rule's notexp *)
   let rule = List.hd rules in
-  let _, notexp, _ = rule.it in
-  let _, exps = notexp in
+  let { Il.concl; _ } = rule.it in
+  let exps = Il.Mixfix.args concl in
 
   (* Combined extraction of expressions and types based on indices *)
   let exps_input, types_input =
@@ -129,26 +129,39 @@ let init spec =
       List.iter
         (fun def ->
           match def.it with
-          | Il.RelD (id, nottyp, input_hints, rules) -> (
-              let _, arg_types = nottyp.it in
+          | Il.RelD { relid; reltyp; rules } -> (
+              let mode_args = Il.Mixfix.args reltyp.it in
+              let arg_types =
+                List.map
+                  (function Il.Mode.In typ | Il.Mode.Out typ -> typ)
+                  mode_args
+              in
+              let input_hints =
+                List.filter_map
+                  (fun (idx, arg) ->
+                    match arg with
+                    | Il.Mode.In _ -> Some idx
+                    | Il.Mode.Out _ -> None)
+                  (List.mapi (fun idx arg -> (idx, arg)) mode_args)
+              in
               match
-                extract_relation_input_info id.it arg_types input_hints rules
+                extract_relation_input_info relid.it arg_types input_hints rules
               with
               | Some input_info ->
-                  Hashtbl.replace State.relation_inputs id.it input_info
+                  Hashtbl.replace State.relation_inputs relid.it input_info
               | None -> ())
-          | Il.DecD (id, _, params, _, clauses) ->
+          | Il.DecD { defid; params; clauses; _ } ->
               (* Extract function input info from params (types) and first clause (names) *)
               let input_types =
                 List.map
                   (fun p ->
-                    match p.it with Il.ExpP t -> t | Il.DefP (_, _, _, t) -> t)
+                    match p.it with Il.ExpP t -> t | Il.DefP { typ; _ } -> typ)
                   params
               in
               let input_var_names =
                 match clauses with
                 | clause :: _ ->
-                    let args, _, _ = clause.it in
+                    let { Il.args; _ } = clause.it in
                     (* Try to extract var names from args *)
                     (* Assuming simple variable patterns for now *)
                     List.map
@@ -178,7 +191,7 @@ let init spec =
               let input_info =
                 { input_var_names; input_types; input_positions; block_pattern }
               in
-              Hashtbl.replace State.relation_inputs id.it input_info
+              Hashtbl.replace State.relation_inputs defid.it input_info
           | _ -> ())
         il_spec
   | Static.SlSpec _ -> ()

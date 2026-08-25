@@ -20,7 +20,7 @@ let string_of_defid defid = "$" ^ defid.it
 
 (* Atoms *)
 
-let string_of_atom atom = Atom.string_of_atom atom.it
+let string_of_atom atom = Atom.to_string atom.it
 
 (* Iterators *)
 
@@ -139,8 +139,8 @@ and string_of_exp exp =
   | CallE (id, targs, args) ->
       string_of_defid id ^ string_of_targs targs ^ string_of_args args
   | IterE (exp, iter) -> string_of_exp exp ^ string_of_iter iter
-  | TypE (exp, plaintyp) ->
-      string_of_exp exp ^ " : " ^ string_of_plaintyp plaintyp
+  | SubE (exp, plaintyp) ->
+      string_of_exp exp ^ " <: " ^ string_of_plaintyp plaintyp
   | AtomE atom -> string_of_atom atom
   | SeqE exps -> string_of_exps " " exps
   | InfixE (exp_l, atom, exp_r) ->
@@ -255,6 +255,10 @@ let string_of_def def =
   | RuleD (relid, ruleid, exp, prems) ->
       "rule " ^ string_of_relid relid ^ string_of_ruleid ruleid ^ ":\n  "
       ^ string_of_exp exp ^ string_of_prems prems
+  | BuiltinDecD (defid, tparams, params, plaintyp, _hints) ->
+      "builtin dec " ^ string_of_defid defid ^ string_of_tparams tparams
+      ^ string_of_params params ^ " : "
+      ^ string_of_plaintyp plaintyp
   | DecD (defid, tparams, params, plaintyp, _hints) ->
       "dec " ^ string_of_defid defid ^ string_of_tparams tparams
       ^ string_of_params params ^ " : "

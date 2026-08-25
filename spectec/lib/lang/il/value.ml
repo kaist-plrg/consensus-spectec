@@ -4,6 +4,9 @@ open Common.Source
 type t = value
 
 let rec compare (value_l : t) (value_r : t) =
+  if value_l == value_r then 0 else compare_struct value_l value_r
+
+and compare_struct (value_l : t) (value_r : t) =
   let tag (value : t) =
     match value.it with
     | BoolV _ -> 0
@@ -23,23 +26,17 @@ let rec compare (value_l : t) (value_r : t) =
   | NumV n_l, BytesV { num = n_r; _ } -> Xl.Num.compare n_l (`Nat n_r)
   | BytesV { num = n_l; _ }, NumV n_r -> Xl.Num.compare (`Nat n_l) n_r
   | TextV s_l, TextV s_r -> String.compare s_l s_r
-  | BytesV { num = n1; len = l1 }, BytesV { num = n2; len = l2 } ->
-      let len_cmp = Int.compare l1 l2 in
-      if len_cmp <> 0 then len_cmp else Bigint.compare n1 n2
+  | BytesV { num = n_l; len = len_l }, BytesV { num = n_r; len = len_r } ->
+      let len_cmp = Int.compare len_l len_r in
+      if len_cmp <> 0 then len_cmp else Bigint.compare n_l n_r
   | StructV fields_l, StructV fields_r ->
-      let fields_l_sorted =
-        List.sort (fun (a1, _) (a2, _) -> Xl.Atom.compare a1 a2) fields_l
+      let atoms_l, values_l = List.split fields_l in
+      let atoms_r, values_r = List.split fields_r in
+      let cmp_atoms =
+        List.compare (fun a b -> Xl.Atom.compare a.it b.it) atoms_l atoms_r
       in
-      let fields_r_sorted =
-        List.sort (fun (a1, _) (a2, _) -> Xl.Atom.compare a1 a2) fields_r
-      in
-      let atoms_l, values_l = List.split fields_l_sorted in
-      let atoms_r, values_r = List.split fields_r_sorted in
-      let cmp_atoms = List.compare Xl.Atom.compare atoms_l atoms_r in
       if cmp_atoms <> 0 then cmp_atoms else compares values_l values_r
-  | CaseV (mixop_l, values_l), CaseV (mixop_r, values_r) ->
-      let cmp_mixop = Xl.Mixop.compare mixop_l mixop_r in
-      if cmp_mixop <> 0 then cmp_mixop else compares values_l values_r
+  | CaseV vc_l, CaseV vc_r -> Mixfix.compare ~compare_arg:compare vc_l vc_r
   | TupleV values_l, TupleV values_r -> compares values_l values_r
   | OptV value_opt_l, OptV value_opt_r -> (
       match (value_opt_l, value_opt_r) with
@@ -48,9 +45,6 @@ let rec compare (value_l : t) (value_r : t) =
       | None, Some _ -> -1
       | None, None -> 0)
   | ListV values_l, ListV values_r -> compares values_l values_r
-  | FuncV id_l, FuncV id_r ->
-      failwith
-        (Format.asprintf "Cannot compare functions: %s vs %s" id_l.it id_r.it)
   | _ -> Int.compare (tag value_l) (tag value_r)
 
 and compares (values_l : t list) (values_r : t list) : int =
@@ -62,17 +56,7 @@ and compares (values_l : t list) (values_r : t list) : int =
       let cmp = compare value_l value_r in
       if cmp <> 0 then cmp else compares values_l values_r
 
-let eq (value_l : t) (value_r : t) : bool =
-  (* For NumV, use Xl.Num.eq to compare actual values (handles Nat vs Int) *)
-  (* For NumV vs BytesV, compare the numeric values *)
-  match (value_l.it, value_r.it) with
-  | NumV n_l, NumV n_r -> Xl.Num.eq n_l n_r
-  | NumV n_l, BytesV { num = n_r; _ } -> Xl.Num.eq n_l (`Nat n_r)
-  | BytesV { num = n_l; _ }, NumV n_r -> Xl.Num.eq (`Nat n_l) n_r
-  | BytesV { num = n_l; len = len_l }, BytesV { num = n_r; len = len_r } ->
-      (* Compare bytes: same length and same value *)
-      len_l = len_r && Bigint.compare n_l n_r = 0
-  | _ -> compare value_l value_r = 0
+let eq (value_l : t) (value_r : t) : bool = compare value_l value_r = 0
 
 (* Vid provider signature *)
 module type VidProvider = sig
@@ -101,14 +85,6 @@ module MakeWithVid (VidProvider : VidProvider) = struct
       | `Int i -> 1 +! Bigint.hash i
     in
 
-    let hash_mixop (mixop : Xl.Mixop.t) : int =
-      List.fold_left
-        (fun hash atoms ->
-          List.fold_left
-            (fun hash atom -> hash +! hash_atom atom.Common.Source.it)
-            hash atoms)
-        2 mixop
-    in
     match v with
     | BoolV b -> 0 +! Hashtbl.hash b
     | NumV n -> 1 +! hash_num n
@@ -118,9 +94,13 @@ module MakeWithVid (VidProvider : VidProvider) = struct
           (fun hash (atom, v) ->
             hash +! (hash_atom atom.Common.Source.it +! v.note.vhash))
           3 fields
-    | CaseV (mixop, values) ->
-        let base_hash = 4 +! hash_mixop mixop in
-        List.fold_left (fun hash v -> hash +! v.note.vhash) base_hash values
+    | CaseV vc ->
+        List.fold_left
+          (fun h p ->
+            match p with
+            | Mixfix.Arg v -> h +! v.note.vhash
+            | Mixfix.Atom atom -> h +! 1 +! hash_atom atom.Common.Source.it)
+          4 vc
     | TupleV values ->
         List.fold_left (fun hash v -> hash +! v.note.vhash) 5 values
     | OptV None -> 6
@@ -152,14 +132,13 @@ module MakeWithVid (VidProvider : VidProvider) = struct
 
     let opt (t' : typ') (v : t option) : t = make_val t' (OptV v)
     let list (t' : typ') (vs : t list) : t = make_val t' (ListV vs)
-
-    let case (t' : typ') (cases : mixop * value list) : t =
-      make_val t' (CaseV cases)
+    let case (t' : typ') (vc : valuecase) : t = make_val t' (CaseV vc)
   end
 
   let make_bytes ~(num : Bigint.t) ~(len : int) : t =
     make_val (NumT `NatT) (BytesV { num; len })
 
+  (* Re-export other functions that need vid *)
   let bool (b : bool) : t = Make.bool Typ.bool b
   let nat (i : Bigint.t) : t = Make.nat Typ.nat i
   let int (i : Bigint.t) : t = Make.int Typ.int i
@@ -210,9 +189,40 @@ let get_opt (value : t) =
 let get_struct (value : t) =
   match value.it with StructV fields -> fields | _ -> failwith "get_struct"
 
-(* Bytes *)
-
 let get_bytes (value : t) =
   match value.it with
   | BytesV { num; len } -> (num, len)
   | _ -> failwith "get_bytes"
+
+let bool (b : bool) : t = Make.bool Typ.bool b
+let nat (i : Bigint.t) : t = Make.nat Typ.nat i
+let int (i : Bigint.t) : t = Make.int Typ.int i
+let text (s : string) : t = Make.text Typ.text s
+let func (id : id) : t = FuncV id |> make_val Typ.func
+
+let tuple (vs : t list) : t =
+  let typs = List.map (fun v -> v.note.typ $ no_region) vs in
+  TupleV vs |> make_val (Typ.tuple typs)
+
+let opt (typ : typ) (v : t option) : t = OptV v |> make_val (Typ.opt typ)
+let list (typ : typ) (vs : t list) : t = ListV vs |> make_val (Typ.list typ)
+
+let id_of_case_v (v : t) : string =
+  match (v.it, v.note.typ) with
+  | CaseV _, VarT { synid; _ } -> synid.it
+  | _ -> failwith "not a case value"
+
+let flatten_case_v (value : t) : string * string list * t list =
+  match (value.it, value.note.typ) with
+  | CaseV valuecase, VarT { synid; _ } ->
+      let shape, values = Mixfix.split valuecase in
+      let atoms =
+        Mixfix.atoms shape
+        |> List.map (fun a -> Xl.Atom.to_string a.Common.Source.it)
+      in
+      (synid.it, atoms, values)
+  | _ -> failwith "Expected a CaseV value"
+
+let flatten_case_v' (value : t) : string * string list * value' list =
+  let id, atoms, values = flatten_case_v value in
+  (id, atoms, List.map (fun (v : t) -> v.it) values)

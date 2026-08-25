@@ -1,9 +1,12 @@
 include Types
+module Mixfix = Mixfix
+module Mode = Mode
 module Print = Print
 module Eq = Eq
-module Utils = Utils
 module Print_debug = Print_debug
 module Free = Free
+module Fresh = Fresh
+module Var = Var
 module Traverse = Traverse
 
 module Value = struct
@@ -11,6 +14,8 @@ module Value = struct
 
   let to_string t = Print.string_of_value ~short:false ~level:0 t
 end
+
+module Case = Case
 
 module Typ = struct
   include Typ

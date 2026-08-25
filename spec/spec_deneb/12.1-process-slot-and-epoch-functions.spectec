@@ -87,7 +87,7 @@ rule ProcessInactivityUpdates/main:
   state ~> state_updated
   -- otherwise
   -- if $get_eligible_validator_indices(state) = vid_eligible*
-  -- ApplyInactivity_over_vids: state `.INACTIVITY_SCORES `[ vid_eligible* ] ~>* state_updated
+  -- ApplyInactivity_over_vids: state '.' INACTIVITY_SCORES `[ vid_eligible* `] ~>* state_updated
 
 ;; [Capella]
 ;; process_rewards_and_penalties
@@ -115,7 +115,7 @@ rule ProcessRewardsAndPenalties/main:
   ;; 4: create validator indices
   -- if $range(|state.VALIDATORS|) = vid*
   ;; 5: apply rewards and penalties to each validator
-  -- ApplyRewardsAndPenalties_over_deltas: state `.BALANCES `[ vid* ] `+ reward** `- penalty** ~>* state_out
+  -- ApplyRewardsAndPenalties_over_deltas: state '.' BALANCES `[ vid* `] '+' reward** '-' penalty** ~>* state_out
 
 ;; [Phase 0]
 ;; Modified in [Deneb]
@@ -131,7 +131,7 @@ rule ProcessRegistryUpdates:
   ;; 1. process eligibility and ejections for each validator
   -- if $range(|state.VALIDATORS|) = vid*
   -- ProcessEligibilityAndEjection_over_vids:
-      state `.VALIDATORS `[ vid* ] ~> state_1
+      state '.' VALIDATORS `[ vid* `] ~> state_1
   ;; queue validators eligible for activation and not yet dequeued for activattion
   -- if $enumerate_<validator>(state_1.VALIDATORS) = (vid_1, validator)*
   -- if $filter_list_2_<(nat, validator), beaconState>(
@@ -146,7 +146,7 @@ rule ProcessRegistryUpdates:
   ;; Modified in [Deneb], changed get_validator_churn_limit -> get_validator_activation_churn_limit
   -- if vid_activation_queue*[0:$get_validator_activation_churn_limit(state_1)] = vid_dequeued*
   -- ApplyActivations:
-      state_1 `.VALIDATORS `[ vid_dequeued* ] `.ACTIVATION_EPOCH ~>* state_out
+      state_1 '.' VALIDATORS `[ vid_dequeued* `] '.' ACTIVATION_EPOCH ~>* state_out
 
 ;; [Phase 0] -> [Altair] -> [Bellatrix]
 ;; process_slashings
@@ -180,7 +180,7 @@ rule ProcessSlashings:
   -- if ($(penalty_numerator <= $UINT64_MAX))*
   -- if ($( (penalty_numerator / balance_total) * gwei_increment ) = penalty)*
   ;; 4. apply penalties
-  -- DecreaseBalances: state `.BALANCES `[ vid_due* ] `- penalty* ~> state_out
+  -- DecreaseBalances: state '.' BALANCES `[ vid_due* `] '-' penalty* ~> state_out
 
 ;; [Phase 0]
 ;; process_eth1_data_reset
@@ -218,7 +218,7 @@ rule ProcessEffectiveBalanceUpdates:
   -- if $(|state.VALIDATORS| <= |state.BALANCES|)
   -- if (state.BALANCES[vid] = balance)*
   -- (ApplyEffectiveBalance:
-      validator `.EFFECTIVE_BALANCE balance ~> validator_updated)*
+      validator '.' EFFECTIVE_BALANCE balance ~> validator_updated)*
 
 ;; [Phase 0]
 ;; process_slashings_reset

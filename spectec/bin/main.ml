@@ -1,157 +1,196 @@
-open Runner
+open Spectec
 
 let version = "0.1"
+let ( let* ) = Result.bind
 
 (* Commands *)
 
 let elab_command =
   Core.Command.basic ~summary:"parse and elaborate a spec"
-    (let open Core.Command.Let_syntax in
-     let open Core.Command.Param in
-     let%map filenames = anon (sequence ("spec files" %: string)) in
-     fun () ->
-       let elaborate_result =
-         let* spec = parse_spec_files filenames in
-         let* spec_il = elaborate spec in
-         Ok spec_il
-       in
-       match elaborate_result with
-       | Ok spec_il ->
-           Format.printf "%s\n" (Lang.Il.Print.string_of_spec spec_il)
-       | Error e -> Format.printf "%s\n" (Runner.Error.string_of_error e))
+  @@
+  let open Core.Command.Let_syntax in
+  let open Core.Command.Param in
+  let%map filenames = anon (sequence ("spec files" %: string))
+  and color = Cli.Cli_args.Output.color_flag in
+  fun () ->
+    Cli.Error_handling.guard ~color ~on_ok:(fun spec_il ->
+        Format.printf "%s\n" (Lang.Il.Print.string_of_spec spec_il))
+    @@ fun () ->
+    let* spec = parse_spec_files filenames in
+    let* spec_il = elaborate spec in
+    Ok spec_il
+
+let unparse_roundtrip filenames =
+  let* spec_el = parse_spec_files filenames in
+  let printed = Lang.El.Unparse.string_of_spec spec_el in
+  let* spec_el' =
+    parse_spec_source { filename = "<roundtrip>"; contents = printed }
+  in
+  if Lang.El.Eq.eq_spec spec_el spec_el' then Ok ()
+  else
+    Error
+      (Error.RoundtripError
+         ( Common.Source.no_region,
+           "pretty-printed output did not reparse to the same AST" ))
+
+let unparse_command =
+  Core.Command.basic
+    ~summary:"parse a spec and print it in canonical EL form (drops comments)"
+  @@
+  let open Core.Command.Let_syntax in
+  let open Core.Command.Param in
+  let%map filenames = anon (sequence ("spec files" %: string))
+  and roundtrip =
+    flag "-r" no_arg
+      ~doc:
+        " verify the pretty-printed output reparses to the same AST (prints \
+         nothing on success)"
+  and color = Cli.Cli_args.Output.color_flag in
+  fun () ->
+    if roundtrip then
+      Cli.Error_handling.guard_unit ~color (fun () ->
+          unparse_roundtrip filenames)
+    else
+      Cli.Error_handling.guard ~color ~on_ok:(fun spec_el ->
+          Format.printf "%s" (Lang.El.Unparse.string_of_spec spec_el))
+      @@ fun () -> parse_spec_files filenames
+
+let grammar_command =
+  Core.Command.basic
+    ~summary:"extract the object-language grammar reachable from a start symbol"
+  @@
+  let open Core.Command.Let_syntax in
+  let open Core.Command.Param in
+  let%map filenames = anon (sequence ("spec files" %: string))
+  and start =
+    flag "--start" (required string)
+      ~doc:"SYMBOL syntax to extract the reachable grammar from"
+  and color = Cli.Cli_args.Output.color_flag in
+  fun () ->
+    Cli.Error_handling.guard ~color ~on_ok:(fun spec_il ->
+        Format.printf "%s\n"
+          (Grammar.string_of_t (Grammar.extract ~start spec_il)))
+    @@ fun () ->
+    let* spec = parse_spec_files filenames in
+    let* spec_il = elaborate spec in
+    Ok spec_il
 
 let structure_command =
   Core.Command.basic ~summary:"structure a spec"
-    (let open Core.Command.Let_syntax in
-     let open Core.Command.Param in
-     let%map filenames = anon (sequence ("spec files" %: string)) in
-     fun () ->
-       let structure_result =
-         let* spec = parse_spec_files filenames in
-         let* spec_il = elaborate spec in
-         let spec_sl = structure spec_il in
-         Ok spec_sl
-       in
-       match structure_result with
-       | Ok spec_sl ->
-           Format.printf "%s\n" (Lang.Sl.Print.string_of_spec spec_sl)
-       | Error e -> Format.printf "%s\n" (Runner.Error.string_of_error e))
+  @@
+  let open Core.Command.Let_syntax in
+  let open Core.Command.Param in
+  let%map filenames = anon (sequence ("spec files" %: string))
+  and color = Cli.Cli_args.Output.color_flag in
+  fun () ->
+    Cli.Error_handling.guard ~color ~on_ok:(fun spec_sl ->
+        Format.printf "%s\n" (Lang.Sl.Print.string_of_spec spec_sl))
+    @@ fun () ->
+    let* spec = parse_spec_files filenames in
+    let* spec_il = elaborate spec in
+    let spec_sl = structure spec_il in
+    Ok spec_sl
 
-(* Instantiate CLI commands for P4 *)
-module P4_Cmd = Cli.Command.Make (Targets_p4.P4.Target)
+let annotate_command =
+  Core.Command.basic ~summary:"annotate a structured spec into PL form"
+  @@
+  let open Core.Command.Let_syntax in
+  let open Core.Command.Param in
+  let%map filenames = anon (sequence ("spec files" %: string))
+  and color = Cli.Cli_args.Output.color_flag in
+  fun () ->
+    Cli.Error_handling.guard ~color ~on_ok:(fun spec_pl ->
+        Format.printf "%s\n" (Pl.Print.string_of_spec spec_pl))
+    @@ fun () ->
+    let* spec = parse_spec_files filenames in
+    let* spec_il = elaborate spec in
+    let spec_sl = structure spec_il in
+    let henv = henv_of_el_spec spec in
+    let henv = henv_with_il_spec henv spec_il in
+    let spec_pl = annotate ~henv spec_sl |> shorten in
+    Ok spec_pl
 
-let p4_command =
-  let tasks = [ P4_Cmd.Pack (module Targets_p4.P4.Typecheck) ] in
-  Core.Command.group ~summary:"P4 commands"
-    [
-      ("typecheck", Targets.P4.command);
-      ( "parse",
-        Cli.Command.make_parse ~summary:"parse a P4 program"
-          (module Targets.P4.Cli_task) );
-      ("coverage", P4_Cmd.make_coverage tasks);
-      ("checkpoint", P4_Cmd.make_checkpoint ());
-    ]
+(* Walks [root] recursively and returns every file path under it whose
+   basename ends in one of [exts]. Paths are returned relative to [root]. *)
+let collect_files ~exts root =
+  let rec walk acc rel_dir =
+    let entries = Sys.readdir (Filename.concat root rel_dir) in
+    Array.sort String.compare entries;
+    Array.fold_left
+      (fun acc entry ->
+        let rel_path = Filename.concat rel_dir entry in
+        if Sys.is_directory (Filename.concat root rel_path) then
+          walk acc rel_path
+        else if List.exists (Filename.check_suffix entry) exts then
+          rel_path :: acc
+        else acc)
+      acc entries
+  in
+  walk [] "" |> List.rev
 
-(* Instantiate CLI commands for Ethereum *)
-module Eth_Cmd = Cli.Command.Make (Targets_eth.Eth.Target)
-
-let eth_command =
-  let tasks =
-    [
-      (* Operations *)
-      Eth_Cmd.Pack (module Targets_eth.Eth.Operations.ProposerSlashing);
-      Eth_Cmd.Pack (module Targets_eth.Eth.Operations.AttesterSlashing);
-      Eth_Cmd.Pack (module Targets_eth.Eth.Operations.Attestation);
-      Eth_Cmd.Pack (module Targets_eth.Eth.Operations.Deposit);
-      Eth_Cmd.Pack (module Targets_eth.Eth.Operations.VoluntaryExit);
-      Eth_Cmd.Pack (module Targets_eth.Eth.Operations.BlsToExecutionChange);
-      (* Operations - Block processing *)
-      Eth_Cmd.Pack (module Targets_eth.Eth.Operations.ExecutionPayload);
-      Eth_Cmd.Pack (module Targets_eth.Eth.Operations.Withdrawals);
-      Eth_Cmd.Pack (module Targets_eth.Eth.Operations.BlockHeader);
-      Eth_Cmd.Pack (module Targets_eth.Eth.Operations.SyncAggregate);
-      (* Epoch processing *)
-      Eth_Cmd.Pack (module Targets_eth.Eth.Epoch.JustificationAndFinalization);
-      Eth_Cmd.Pack (module Targets_eth.Eth.Epoch.InactivityUpdates);
-      Eth_Cmd.Pack (module Targets_eth.Eth.Epoch.RewardsAndPenalties);
-      Eth_Cmd.Pack (module Targets_eth.Eth.Epoch.RegistryUpdates);
-      Eth_Cmd.Pack (module Targets_eth.Eth.Epoch.Slashings);
-      Eth_Cmd.Pack (module Targets_eth.Eth.Epoch.Eth1DataReset);
-      Eth_Cmd.Pack (module Targets_eth.Eth.Epoch.EffectiveBalanceUpdates);
-      Eth_Cmd.Pack (module Targets_eth.Eth.Epoch.SlashingsReset);
-      Eth_Cmd.Pack (module Targets_eth.Eth.Epoch.RandaoMixesReset);
-      Eth_Cmd.Pack (module Targets_eth.Eth.Epoch.HistoricalSummariesUpdate);
-      Eth_Cmd.Pack (module Targets_eth.Eth.Epoch.ParticipationFlagUpdates);
-      (* Slots and State transition *)
-      Eth_Cmd.Pack (module Targets_eth.Eth.Slots);
-      Eth_Cmd.Pack (module Targets_eth.Eth.StateTransition);
-    ]
-  in
-  (* Nested command groups for better organization *)
-  let epoch_commands =
-    Core.Command.group ~summary:"Epoch processing tasks"
-      [
-        ("justification", Targets.Eth.justification_command);
-        ("inactivity-updates", Targets.Eth.inactivity_updates_command);
-        ("rewards", Targets.Eth.rewards_command);
-        ("registry-updates", Targets.Eth.registry_updates_command);
-        ("slashings", Targets.Eth.slashings_command);
-        ("eth1-data-reset", Targets.Eth.eth1_data_reset_command);
-        ( "effective-balance-updates",
-          Targets.Eth.effective_balance_updates_command );
-        ("slashings-reset", Targets.Eth.slashings_reset_command);
-        ("randao-mixes-reset", Targets.Eth.randao_mixes_reset_command);
-        ( "historical-summaries-update",
-          Targets.Eth.historical_summaries_update_command );
-        ( "participation-flag-updates",
-          Targets.Eth.participation_flag_updates_command );
-      ]
-  in
-  let operations_commands =
-    Core.Command.group ~summary:"Operation/Block processing tasks"
-      [
-        ("proposer-slashing", Targets.Eth.proposer_slashing_command);
-        ("attester-slashing", Targets.Eth.attester_slashing_command);
-        ("attestation", Targets.Eth.attestation_command);
-        ("deposit", Targets.Eth.deposit_command);
-        ("voluntary-exit", Targets.Eth.voluntary_exit_command);
-        ("bls-to-execution-change", Targets.Eth.bls_to_execution_change_command);
-        (* Block processing *)
-        ("execution-payload", Targets.Eth.execution_payload_command);
-        ("withdrawals", Targets.Eth.withdrawals_command);
-        ("block-header", Targets.Eth.block_header_command);
-        ("sync-aggregate", Targets.Eth.sync_aggregate_command);
-      ]
-  in
-  let run_command =
-    Core.Command.group ~summary:"Run ethereum test tasks"
-      [
-        ("epoch", epoch_commands);
-        ("operations", operations_commands);
-        ("slots", Targets.Eth.slots_command);
-        ("state-transition", Targets.Eth.state_transition_command);
-      ]
-  in
-  Core.Command.group ~summary:"Ethereum commands"
-    [
-      ("run", run_command);
-      ( "coverage",
-        Eth_Cmd.make_coverage
-          ~on_no_validate:(fun () ->
-            Targets_eth.Eth.set_default_validate_result false)
-          tasks );
-      ("checkpoint", Eth_Cmd.make_checkpoint ());
-      ("testgen", Eth_Cmd.make_testgen ());
-      ("parse", Targets.Eth.parse_command);
-    ]
+let splice_command =
+  Core.Command.basic
+    ~summary:"splice rendered spec text into AsciiDoc skeletons"
+  @@
+  let open Core.Command.Let_syntax in
+  let open Core.Command.Param in
+  let%map filenames = anon (sequence ("spec files" %: string))
+  and input_dir =
+    flag "-i" (required string)
+      ~doc:"DIR directory of .adoc skeleton files (walked recursively)"
+  and output_dir =
+    flag "-o" (required string)
+      ~doc:"DIR directory to write spliced output (mirrors input layout)"
+  and missing_path =
+    flag "--missing" (optional string)
+      ~doc:"FILE write the unused-keys report to this path"
+  and color = Cli.Cli_args.Output.color_flag in
+  fun () ->
+    Cli.Error_handling.guard ~color ~on_ok:(fun (spec_el, spec_pl) ->
+        let inputs = collect_files ~exts:[ ".adoc" ] input_dir in
+        let pairs =
+          List.map
+            (fun rel_path ->
+              ( Filename.concat input_dir rel_path,
+                Filename.concat output_dir rel_path ))
+            inputs
+        in
+        let report =
+          Splice.Driver.run ~spec_el ~spec_pl
+            ~source_entries:Splice.Registry.source
+            ~prose_entries:Splice.Registry.prose ~filenames:pairs
+        in
+        match missing_path with
+        | Some path ->
+            let oc = open_out path in
+            Fun.protect
+              (fun () ->
+                Out_channel.output_string oc (Splice.Report.to_string report))
+              ~finally:(fun () -> Out_channel.close oc)
+        | None -> ())
+    @@ fun () ->
+    let* spec = parse_spec_files filenames in
+    let* spec_il = elaborate spec in
+    let spec_sl = structure spec_il in
+    let henv = henv_of_el_spec spec in
+    let henv = henv_with_il_spec henv spec_il in
+    let spec_pl = annotate ~henv spec_sl |> shorten in
+    Ok (spec, spec_pl)
 
 let command =
+  let module P4 = Targets_p4.P4.Cli in
+  let module Impty = Targets_impty.Impty.Cli in
   Core.Command.group ~summary:"SpecTec command line tools"
     [
+      ("unparse", unparse_command);
       ("elab", elab_command);
+      ("grammar", grammar_command);
       ("struct", structure_command);
-      ("p4", p4_command);
-      ("eth", eth_command);
+      ("annotate", annotate_command);
+      ("splice", splice_command);
+      (P4.name, P4.command);
+      (Impty.name, Impty.command);
+      (Targets.Eth.name, Targets.Eth.command);
     ]
 
 let () = Command_unix.run ~version command

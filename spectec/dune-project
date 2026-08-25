@@ -1,4 +1,5 @@
 (lang dune 3.7)
+(cram enable)
 (using menhir 2.0)
 (using mdx 0.2)
 (name spectec)
@@ -8,9 +9,19 @@
 (package
   (name spectec)
   (version 0.0.1)
-  (synopsis "SpecTec-Core: A spec mechanization framework")
+  (synopsis "SpecTecX: an executable subset of SpecTec")
   (maintainers "kunjeong99@naver.com")
   (depends
-    bignum
-    core
-    core_unix))
+    (ocaml (>= 5.1.0))
+    (menhir (and :build (>= 20240715)))
+    menhirLib
+    (bignum (>= 0.17.0))
+    bls12-381
+    bls12-381-signature
+    (core (>= 0.17.1))
+    (core_unix (>= 0.17.0))
+    digestif
+    ppx_let
+    pprint
+    linol-eio
+    eio_main))

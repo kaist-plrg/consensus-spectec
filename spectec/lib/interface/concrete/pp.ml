@@ -1,7 +1,7 @@
 open Common.Source
 open Lang
 open Il
-open Il.Utils
+open Il.Value
 open Xl
 open Hint
 module F = Format
@@ -22,9 +22,8 @@ let pp_num fmt (num : num) : unit =
 
 let pp_atom fmt (atom : atom) : unit =
   match atom.it with
-  | Atom.SilentAtom _ -> F.fprintf fmt ""
-  | _ ->
-      F.fprintf fmt "%s" (Atom.string_of_atom atom.it |> String.lowercase_ascii)
+  | Atom.Tag _ -> F.fprintf fmt ""
+  | _ -> F.fprintf fmt "%s" (Atom.to_string atom.it |> String.lowercase_ascii)
 
 let pp_atoms fmt (atoms : atom list) : unit =
   match atoms with
@@ -68,7 +67,7 @@ and pp_case_v (hmap : hmap) fmt (value : value) : unit =
   let id, _, values = flatten_case_v value in
   let matches_hint nottyp value =
     match value.it with
-    | CaseV (mixop, _) -> Eq.eq_mixop (fst nottyp.it) mixop
+    | CaseV valuecase -> Mixfix.eq_mixop nottyp.it valuecase
     | _ -> false
   in
   let find_hint id value =
@@ -123,14 +122,11 @@ and pp_hint_case_v' (hmap : hmap) (cur : int) (exp : El.exp)
 
 and pp_default_case_v (hmap : hmap) fmt (value : value) : unit =
   match value.it with
-  | CaseV (mixop, values) ->
-      let len = List.length mixop + List.length values in
-      List.init len (fun idx ->
-          if idx mod 2 = 0 then
-            idx / 2 |> List.nth mixop |> F.asprintf "%a" pp_atoms
-          else idx / 2 |> List.nth values |> F.asprintf "%a" (pp_value hmap))
-      |> List.filter (fun str -> str <> "")
-      |> String.concat " " |> F.fprintf fmt "%s"
+  | CaseV valuecase ->
+      let string_of_atom atom = F.asprintf "%a" pp_atom atom in
+      let string_of_value v = F.asprintf "%a" (pp_value hmap) v in
+      Mixfix.render ~string_of_atom ~string_of_arg:string_of_value valuecase
+      |> F.fprintf fmt "%s"
   | _ -> failwith "@pp_default_case_v: Expected CaseV value"
 
 (* OptV *)
@@ -161,7 +157,7 @@ and pp_struct_v (hmap : hmap) fmt (value : value) : unit =
         fields
         |> List.map (fun (atom, value) ->
                F.asprintf "%s: %a"
-                 (Atom.string_of_atom atom.it |> String.lowercase_ascii)
+                 (Atom.to_string atom.it |> String.lowercase_ascii)
                  (pp_value hmap) value)
       in
       F.fprintf fmt "{\n%s,\n}" (String.concat ",\n" field_strs)

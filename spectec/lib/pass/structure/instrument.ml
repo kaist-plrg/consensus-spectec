@@ -1,5 +1,4 @@
-module Il = Lang.Il
-module Sl = Lang.Sl
+open Lang
 open Ol.Ast
 module TDEnv = Envs.Il.TDEnv
 open Common.Source
@@ -59,11 +58,12 @@ let pid () =
 let negate_exp (exp : exp) : exp =
   Il.UnE (`NotOp, `BoolT, exp) $$ (exp.at, exp.note)
 
-let negate_pathcond (pathcond : pathcond) : pathcond =
+let rec negate_pathcond (pathcond : pathcond) : pathcond =
   match pathcond with
-  | ForallC (exp_cond, iterexps) -> ExistsC (negate_exp exp_cond, iterexps)
-  | ExistsC (exp_cond, iterexps) -> ForallC (negate_exp exp_cond, iterexps)
+  | ForallC (pathcond, iterexps) -> ExistsC (negate_pathcond pathcond, iterexps)
+  | ExistsC (pathcond, iterexps) -> ForallC (negate_pathcond pathcond, iterexps)
   | PlainC exp_cond -> PlainC (negate_exp exp_cond)
+  | RelAssertC { call; expect } -> RelAssertC { call; expect = not expect }
 
 (* Phantom insertion *)
 
@@ -75,9 +75,29 @@ and insert_phantom' (tdenv : TDEnv.t) (pathconds : pathcond list)
     (instr : instr) : Sl.instr =
   let at = instr.at in
   match instr.it with
+  | RelI { call; iterexps; block } ->
+      let block = insert_phantom tdenv pathconds block in
+      Sl.RelI { call; iterexps; block } $ at
+  | RelAssertI { call; expect; iterexps; block } ->
+      let pathcond =
+        if iterexps = [] then RelAssertC { call; expect }
+        else ForallC (RelAssertC { call; expect }, iterexps)
+      in
+      let block =
+        let pathconds = pathconds @ [ pathcond ] in
+        insert_phantom tdenv pathconds block
+      in
+      let phantom =
+        let pid = pid () in
+        let pathconds = pathconds @ [ negate_pathcond pathcond ] in
+        (pid, pathconds)
+      in
+      Sl.RelAssertI { call; expect; iterexps; block; phantom = Some phantom }
+      $ at
   | IfI (exp_cond, iterexps, instrs_then) ->
       let pathcond =
-        if iterexps = [] then PlainC exp_cond else ForallC (exp_cond, iterexps)
+        if iterexps = [] then PlainC exp_cond
+        else ForallC (PlainC exp_cond, iterexps)
       in
       let instrs_then =
         let pathconds = pathconds @ [ pathcond ] in
@@ -126,14 +146,17 @@ and insert_phantom' (tdenv : TDEnv.t) (pathconds : pathcond list)
           Some (pid, pathcond)
       in
       Sl.CaseI (exp, cases, phantom_opt) $ at
-  | OtherwiseI instrs ->
-      let instrs = insert_phantom tdenv pathconds instrs in
-      Sl.OtherwiseI instrs $ at
-  | LetI (exp_l, exp_r, iterexps) -> Sl.LetI (exp_l, exp_r, iterexps) $ at
-  | RuleI (id, notexp, iterexps) -> Sl.RuleI (id, notexp, iterexps) $ at
+  | OtherwiseI instr ->
+      let instr = insert_phantom' tdenv pathconds instr in
+      Sl.OtherwiseI instr $ at
+  | LetI (exp_l, exp_r, iterexps, block) ->
+      let block = insert_phantom tdenv pathconds block in
+      Sl.LetI (exp_l, exp_r, iterexps, block) $ at
   | ResultI exps -> Sl.ResultI exps $ at
   | ReturnI exp -> Sl.ReturnI exp $ at
-  | DebugI exp -> Sl.DebugI exp $ at
+  | DebugI (exp, instr_body) ->
+      let instr_body = insert_phantom' tdenv pathconds instr_body in
+      Sl.DebugI (exp, instr_body) $ at
 
 (* Nop pass *)
 
@@ -143,6 +166,12 @@ let rec insert_nothing (instrs : instr list) : Sl.instr list =
 and insert_nothing' (instr : instr) : Sl.instr =
   let at = instr.at in
   match instr.it with
+  | RelI { call; iterexps; block } ->
+      let block = insert_nothing block in
+      Sl.RelI { call; iterexps; block } $ at
+  | RelAssertI { call; expect; iterexps; block } ->
+      let block = insert_nothing block in
+      Sl.RelAssertI { call; expect; iterexps; block; phantom = None } $ at
   | IfI (exp_cond, iterexps, instrs_then) ->
       let instrs_then = insert_nothing instrs_then in
       Sl.IfI (exp_cond, iterexps, instrs_then, None) $ at
@@ -163,21 +192,35 @@ and insert_nothing' (instr : instr) : Sl.instr =
         List.combine guards blocks
       in
       Sl.CaseI (exp, cases, None) $ at
-  | OtherwiseI instrs ->
-      let instrs = insert_nothing instrs in
-      Sl.OtherwiseI instrs $ at
-  | LetI (exp_l, exp_r, iterexps) -> Sl.LetI (exp_l, exp_r, iterexps) $ at
-  | RuleI (id, notexp, iterexps) -> Sl.RuleI (id, notexp, iterexps) $ at
+  | OtherwiseI instr ->
+      let instr = insert_nothing' instr in
+      Sl.OtherwiseI instr $ at
+  | LetI (exp_l, exp_r, iterexps, block) ->
+      let block = insert_nothing block in
+      Sl.LetI (exp_l, exp_r, iterexps, block) $ at
   | ResultI exps -> Sl.ResultI exps $ at
   | ReturnI exp -> Sl.ReturnI exp $ at
-  | DebugI exp -> Sl.DebugI exp $ at
+  | DebugI (exp, instr_body) ->
+      let instr_body = insert_nothing' instr_body in
+      Sl.DebugI (exp, instr_body) $ at
 
 (* Instrumentation *)
 
-let instrument (tdenv : TDEnv.t) (instrs : instr list) : Sl.instr list =
-  if
-    List.exists
-      (fun instr -> match instr.it with OtherwiseI _ -> true | _ -> false)
-      instrs
-  then insert_nothing instrs
-  else insert_phantom tdenv [] instrs
+let instrument (tdenv : TDEnv.t) (block : instr list)
+    (elseblock_opt : instr list option) : Sl.instr list * Sl.instr list option =
+  match elseblock_opt with
+  | Some elseblock ->
+      let block = insert_nothing block in
+      let elseblock = insert_nothing elseblock in
+      (block, Some elseblock)
+  | None ->
+      let block =
+        if
+          List.exists
+            (fun instr ->
+              match instr.it with OtherwiseI _ -> true | _ -> false)
+            block
+        then insert_nothing block
+        else insert_phantom tdenv [] block
+      in
+      (block, None)

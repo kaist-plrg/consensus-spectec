@@ -88,7 +88,7 @@ def $eth_fast_aggregate_verify(blsPubkey*, bytes32_msg, blsSignature)
   -- otherwise
 
 ;; [Bellatrix: ProcessExecutionPayload] execution engine
-dec $ee_verify_and_notify_new_payload(executionPayload) : bool
+builtin dec $ee_verify_and_notify_new_payload(executionPayload) : bool
 
 ;; [Custom: ProcessSyncAggregate] index_of_pubkey(state, pk) : validatorIndex
 dec $index_of_pubkey((validatorIndex, blsPubkey)*, blsPubkey) : validatorIndex

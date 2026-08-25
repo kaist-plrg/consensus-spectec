@@ -6,4 +6,11 @@
  (public_name spectec.instrumentation.dependency)
  (preprocess
   (pps ppx_let))
- (libraries common lang instrumentation_core instrumentation_static))
+ (libraries
+  common
+  lang
+  instrumentation_api
+  instrumentation_config
+  instrumentation_core
+  instrumentation_spec
+  instrumentation_static))

@@ -39,7 +39,7 @@ let result_all results =
   aux [] results
 
 let field_atom (id : string) : atom =
-  Atom.Atom (id |> String.uppercase_ascii) $ no_region
+  Atom.keyword (id |> String.uppercase_ascii) $ no_region
 
 (* Parse hex string to BytesV *)
 let hex_string_to_bytes (s : string) : (Bigint.t * int, error) result =
@@ -111,7 +111,7 @@ let rec json_to_value ?(provenance : json_provenance option = None)
       let* num, len = hex_string_to_bytes s in
       let bytes_value' = BytesV { num; len } in
       Value.Make.value expected bytes_value' |> apply_prov |> Result.ok
-  | IterT (elem_typ, List), `List json_list ->
+  | IterT { typ = elem_typ; iter = List }, `List json_list ->
       let rec parse_elements acc i = function
         | [] -> Value.list elem_typ (List.rev acc) |> apply_prov |> Result.ok
         | json_elem :: rest ->
@@ -122,7 +122,7 @@ let rec json_to_value ?(provenance : json_provenance option = None)
             parse_elements (elem_value :: acc) (i + 1) rest
       in
       parse_elements [] 0 json_list
-  | IterT ({ it = BoolT; _ }, List), `String s ->
+  | IterT { typ = { it = BoolT; _ }; iter = List }, `String s ->
       let int = Z.of_string s in
       let bit_length = Z.numbits int in
       let bool_list =
@@ -131,13 +131,11 @@ let rec json_to_value ?(provenance : json_provenance option = None)
       in
       Value.list (Lang.Il.Typ.bool $ no_region) bool_list
       |> apply_prov |> Result.ok
-  | VarT (tid, []), _ -> (
+  | VarT { synid = tid; targs = [] }, _ -> (
       match (TDEnv.find_opt tid tdenv, json) with
       | Some (_, { it = StructT typfields; _ }), `Assoc fields ->
           let find_field (atom : atom) =
-            let target =
-              Atom.string_of_atom atom.it |> String.lowercase_ascii
-            in
+            let target = Atom.to_string atom.it |> String.lowercase_ascii in
             List.find_opt
               (fun (k, _) -> String.lowercase_ascii k = target)
               fields
@@ -146,14 +144,14 @@ let rec json_to_value ?(provenance : json_provenance option = None)
             match find_field atom with
             | Some (_, value) ->
                 let field_name =
-                  Atom.string_of_atom atom.it |> String.lowercase_ascii
+                  Atom.to_string atom.it |> String.lowercase_ascii
                 in
                 let field_prov = extend (FieldAccess field_name) in
                 let* field =
                   json_to_value ~provenance:field_prov tdenv typ.it value
                 in
                 Ok (atom, field)
-            | None -> Error (FieldMissing (Atom.string_of_atom atom.it, tid.it))
+            | None -> Error (FieldMissing (Atom.to_string atom.it, tid.it))
           in
           let* typfields = result_all (List.map parse_typefield typfields) in
           Value.record tid.it typfields |> apply_prov |> Result.ok

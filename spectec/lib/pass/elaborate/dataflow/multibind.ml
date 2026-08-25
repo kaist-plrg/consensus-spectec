@@ -2,8 +2,7 @@ open Common.Domain
 open Common.Source
 open Lang.Il
 open Envs.Make
-open Error
-open Ctx
+module Mixop = Lang.Il.Mixfix
 
 (* Renames for an identifier *)
 
@@ -51,7 +50,7 @@ let gen_sidecondition (benv : Bind.BEnv.t) (id : Id.t) (ids_rename : Ids.t) :
         BinE (`AndOp, `BoolT, exp_l, exp_r) $$ (id_rename.at, BoolT))
       exp ids_rename
   in
-  let sidecondition = IfPr exp $ id.at in
+  let sidecondition = IfPr { cond = exp; role = Condition } $ id.at in
   List.fold_left
     (fun sidecondition iter -> IterPr (sidecondition, (iter, [])) $ id.at)
     sidecondition iters
@@ -103,9 +102,11 @@ let rec rename_exp (dctx : Dctx.t) (renv : REnv.t) (exp : exp) :
       let dctx, renv, exps = rename_exps dctx renv exps in
       let exp = TupleE exps $$ (at, note) in
       (dctx, renv, exp)
-  | CaseE (mixop, exps) ->
+  | CaseE notexp ->
+      let mixop, exps = Mixop.split notexp in
       let dctx, renv, exps = rename_exps dctx renv exps in
-      let exp = CaseE (mixop, exps) $$ (at, note) in
+      let notexp = Mixop.fill mixop exps in
+      let exp = CaseE notexp $$ (at, note) in
       (dctx, renv, exp)
   | StrE expfields ->
       let atoms, exps = List.split expfields in
@@ -127,12 +128,7 @@ let rec rename_exp (dctx : Dctx.t) (renv : REnv.t) (exp : exp) :
       let dctx, renv, exp_t = rename_exp dctx renv exp_t in
       let exp = ConsE (exp_h, exp_t) $$ (at, note) in
       (dctx, renv, exp)
-  | IterE (_, ((_, _ :: _) as iterexp)) ->
-      error at
-        (Format.asprintf
-           "iterated expression should initially have no annotations, but got \
-            %s"
-           (Il.Print.string_of_iterexp iterexp))
+  | IterE (_, (_, _ :: _)) -> assert false
   | IterE (exp, (iter, [])) ->
       let dctx, renv, exp = rename_exp dctx renv exp in
       let exp = IterE (exp, (iter, [])) $$ (at, note) in

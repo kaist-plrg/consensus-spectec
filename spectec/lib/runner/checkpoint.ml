@@ -2,6 +2,8 @@
    TYPES AND CONFIGURATION
    ============================================================================ *)
 
+module Error = Spectec.Error
+
 (* Configuration for checkpointing behavior *)
 type config = {
   output_file : string option; (* File to save checkpoints to *)
@@ -330,47 +332,13 @@ let display_report ~spec ~(config : Instrumentation.Config.t) checkpoint =
   Format.printf "%s\n\n" (format_summary checkpoint);
   Format.printf "Completed tests: %d\n\n"
     (List.length checkpoint.completed_inputs);
-  (* Use provided config if present, else default to Full/stdout *)
-  let branch_cfg =
-    match config.branch_coverage with
-    | Some cfg -> cfg
-    | None -> Instrumentation.Branch_coverage.default_config
-  in
-  let node_il_cfg =
-    match config.node_coverage with
-    | Some cfg -> cfg
-    | None -> Instrumentation.Node_coverage_il.default_config
-  in
-  let dep_pos_cfg =
-    match config.dep_pos with
-    | Some cfg -> cfg
-    | None -> Instrumentation.Dependency.Positive.default_config
-  in
-  (* Create handlers with configured outputs *)
-  let handlers =
-    [
-      Instrumentation.Branch_coverage.make branch_cfg;
-      Instrumentation.Node_coverage_il.make node_il_cfg;
-      Instrumentation.Node_coverage_sl.make node_il_cfg;
-      Instrumentation.Dependency.Positive.make dep_pos_cfg;
-    ]
-  in
-  (* Register static dependencies from all handlers *)
-  List.iter
-    (fun (module H : Instrumentation.Handler.S) ->
-      List.iter
-        (fun (module M : Instrumentation_static.Static.S) ->
-          Instrumentation_static.Static.register (module M))
-        H.static_dependencies)
-    handlers;
-  (* Initialize Static analysis *)
+  let handlers = Instrumentation.Config.handlers config in
+  Instrumentation.Config.register_static_dependencies config;
   Instrumentation_static.Static.reset_all ();
   Instrumentation_static.Static.init_all
     (Instrumentation_static.Static.IlSpec spec);
-  Instrumentation.Dispatcher.set_handlers handlers;
-  Instrumentation.Dispatcher.init ~spec:(Instrumentation.Handler.IlSpec spec);
-  (* Restore state from checkpoint data *)
+  Instrumentation.Dispatcher.init ~spec:(Instrumentation.Handler.IlSpec spec)
+    ~handlers;
   restore_coverage checkpoint;
-  (* Call finish to print the reports *)
   Instrumentation.Dispatcher.finish ();
   Instrumentation.Config.close_outputs config

@@ -39,7 +39,7 @@ rule ProcessProposerSlashing:
   ;; assert 5-2
   -- if $bls_verify(validator_proposer.PUBKEY, root_sign_h2, signedBeaconBlockHeader_2.SIGNATURE)
   ----
-  -- SlashValidator: state SLASH `[ vid_proposer ] BY eps ~> state_slashed
+  -- SlashValidator: state SLASH `[ vid_proposer `] BY eps ~> state_slashed
 
 ;; folder for ProcessProposerSlashing
 relation ProcessProposerSlashings:
@@ -77,7 +77,7 @@ rule ProcessAttesterSlashing:
           $to_set_<validatorIndex>(indexedAttestation_2.ATTESTING_INDICES)
         ) = vid_intersection*
   -- if $sort_<validatorIndex>(vid_intersection*) = vid_sorted*
-  -- SlashIfEligible_over_validators: state SLASH`? `[ vid_sorted* ] ~> state_slashed `#SLASHED bool_slashed_any
+  -- SlashIfEligible_over_validators: state SLASH '?' `[ vid_sorted* `] ~> state_slashed '#' SLASHED bool_slashed_any
   ;; assert 4: slashed_any
   -- if bool_slashed_any
 
@@ -126,14 +126,14 @@ rule ProcessAttestation/current_epoch:
   ----
   ;; double loop
   -- ProcessFlags_over_attesting:
-      state.CURRENT_EPOCH_PARTICIPATION `[ $get_attesting_indices(state, attestation) ] `++ `{ vid_participation_flag* }
-        `# state `#SUM 0
-      ~> participationFlags_updated* `#SUM reward_proposer_numerator
+      state.CURRENT_EPOCH_PARTICIPATION `[ $get_attesting_indices(state, attestation) `] '++' `{ vid_participation_flag* `}
+        '#' state '#' SUM 0
+      ~> participationFlags_updated* '#' SUM reward_proposer_numerator
   -- if state[.CURRENT_EPOCH_PARTICIPATION = participationFlags_updated*] = state_1
   -- if $( ($WEIGHT_DENOMINATOR - $PROPOSER_WEIGHT) * $WEIGHT_DENOMINATOR / $PROPOSER_WEIGHT )
       = reward_proposer_denominator
   -- if $(reward_proposer_numerator / reward_proposer_denominator) = reward_proposer
-  -- IncreaseBalance: state_1 `.BALANCES `[ $get_beacon_proposer_index(state_1) ] `+ reward_proposer ~> state_out
+  -- IncreaseBalance: state_1 '.' BALANCES `[ $get_beacon_proposer_index(state_1) `] '+' reward_proposer ~> state_out
 
 rule ProcessAttestation/previous_epoch:
   state attestation ~> state_out
@@ -159,14 +159,14 @@ rule ProcessAttestation/previous_epoch:
   ----
   ;; double loop
   -- ProcessFlags_over_attesting:
-      state.PREVIOUS_EPOCH_PARTICIPATION `[ $get_attesting_indices(state, attestation) ] `++ `{ vid_participation_flag* }
-        `# state `#SUM 0
-      ~> participationFlags_updated* `#SUM reward_proposer_numerator
+      state.PREVIOUS_EPOCH_PARTICIPATION `[ $get_attesting_indices(state, attestation) `] '++' `{ vid_participation_flag* `}
+        '#' state '#' SUM 0
+      ~> participationFlags_updated* '#' SUM reward_proposer_numerator
   -- if state[.PREVIOUS_EPOCH_PARTICIPATION = participationFlags_updated*] = state_1
   -- if $( ($WEIGHT_DENOMINATOR - $PROPOSER_WEIGHT) * $WEIGHT_DENOMINATOR / $PROPOSER_WEIGHT )
       = reward_proposer_denominator
   -- if $(reward_proposer_numerator / reward_proposer_denominator) = reward_proposer
-  -- IncreaseBalance: state_1 `.BALANCES `[ $get_beacon_proposer_index(state_1) ] `+ reward_proposer ~> state_out
+  -- IncreaseBalance: state_1 '.' BALANCES `[ $get_beacon_proposer_index(state_1) `] '+' reward_proposer ~> state_out
 
 ;; fold ProcessAttestation over attestation*
 relation ProcessAttestations:
@@ -199,12 +199,12 @@ rule ProcessDeposit/main:
          state.ETH1_DATA.DEPOSIT_ROOT
        )
   -- if state_inc = state[.ETH1_DEPOSIT_INDEX = $(state.ETH1_DEPOSIT_INDEX + 1)]
-  -- ApplyDeposit: state_inc `.VALIDATORS `++
+  -- ApplyDeposit: state_inc '.' VALIDATORS '++'
       `{
         deposit.DATA.PUBKEY
         deposit.DATA.WITHDRAWAL_CREDENTIALS
         deposit.DATA.AMOUNT
-      }
+      `}
       SIGNED deposit.DATA.SIGNATURE ~> state_applied
 
 ;; fold ProcessDeposit over deposit*
@@ -253,7 +253,7 @@ rule ProcessVoluntaryExit/main:
   -- if $compute_signing_root_voluntary_exit(voluntaryExit, domain_exit) = root_vol_exit_signing_root
   ;; assert 5
   -- if $bls_verify(validator.PUBKEY, root_vol_exit_signing_root, signedVoluntaryExit.SIGNATURE) = true
-  -- InitiateValidatorExit: state `.VALIDATORS `[ vid_exit ] ~> state_exit
+  -- InitiateValidatorExit: state '.' VALIDATORS `[ vid_exit `] ~> state_exit
 
 ;; fold ProcessVoluntaryExit over signedVoluntaryExit*
 relation ProcessVoluntaryExits:

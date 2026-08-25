@@ -1,9 +1,19 @@
 (library
  (name runner)
  (public_name spectec.runner)
+ (modules
+  runner
+  checkpoint
+  json_mutator
+  source_selector
+  testgen
+  testgen_data
+  uid_parser)
  (libraries
   core
   unix
+  spectec
+  spectec.batch
   spectec.common
   spectec.lang
   spectec.pass

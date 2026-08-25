@@ -1,28 +1,16 @@
-(* SL Node coverage handler - Tracks instruction execution.
-
-   Implements Instrumentation_core.Handler.S interface.
-   Records all instructions at init(), then tracks which are hit during execution.
-
-   Output levels:
-   - Summary: stats + uncovered items only
-   - Full: GCOV-style annotated spec with execution counts
-
-   Usage:
-     let handler = Node_coverage_sl.make { level = Full; output = Instrumentation_core.Output.stdout }
-*)
+(** SL node coverage: same shape as {!Node_coverage_il} but over SL
+    instructions. [level] and [config] are type-aliased to the IL handler's so
+    the two share a parser and CLI surface. *)
 
 open Common.Source
 module Sl = Lang.Sl
-open Instrumentation_core.Util
+open Util
 
-(* Verbosity levels - reuse from IL module *)
 type level = Node_coverage_il.level = Summary | Full
 
-(* Handler configuration - reuse from IL module for type compatibility *)
 type config = Node_coverage_il.config = {
   level : level;
-  output : Instrumentation_core.Output.t;
-  track_seeds : bool;
+  output : Instrumentation_api.Output.t;
 }
 
 let default_config = Node_coverage_il.default_config
@@ -48,6 +36,17 @@ end
 (* Get short header for instruction (without recursive children) *)
 let instr_header instr =
   match instr.it with
+  | Sl.RelI { call; iterexps; _ } ->
+      Format.sprintf "%s: %s%s"
+        (Sl.Print.string_of_relid call.relid)
+        (Sl.Print.string_of_notexp call.notexp)
+        (Sl.Print.string_of_iterexps iterexps)
+  | Sl.RelAssertI { call; expect; iterexps; _ } ->
+      Format.sprintf "If (%s: %s %s)%s"
+        (Sl.Print.string_of_relid call.relid)
+        (Sl.Print.string_of_notexp call.notexp)
+        (if expect then "holds" else "does not hold")
+        (Sl.Print.string_of_iterexps iterexps)
   | Sl.IfI (exp, iterexps, _, _) ->
       Format.sprintf "If (%s)%s"
         (Sl.Print.string_of_exp exp)
@@ -55,71 +54,59 @@ let instr_header instr =
   | Sl.CaseI (exp, _, _) ->
       Format.sprintf "Case on %s" (Sl.Print.string_of_exp exp)
   | Sl.OtherwiseI _ -> "Otherwise"
-  | Sl.LetI (exp_l, exp_r, iterexps) ->
+  | Sl.LetI (exp_l, exp_r, iterexps, _) ->
       Format.sprintf "Let %s = %s%s"
         (Sl.Print.string_of_exp exp_l)
         (Sl.Print.string_of_exp exp_r)
-        (Sl.Print.string_of_iterexps iterexps)
-  | Sl.RuleI (id, notexp, iterexps) ->
-      Format.sprintf "%s: %s%s"
-        (Sl.Print.string_of_relid id)
-        (Sl.Print.string_of_notexp notexp)
         (Sl.Print.string_of_iterexps iterexps)
   | Sl.ResultI [] -> "Relation holds"
   | Sl.ResultI exps ->
       Format.sprintf "Result %s" (Sl.Print.string_of_exps ", " exps)
   | Sl.ReturnI exp -> Format.sprintf "Return %s" (Sl.Print.string_of_exp exp)
-  | Sl.DebugI exp -> Format.sprintf "Debug: %s" (Sl.Print.string_of_exp exp)
+  | Sl.DebugI (exp, _) ->
+      Format.sprintf "Debug: %s" (Sl.Print.string_of_exp exp)
 
 (* Create a unique key for an instruction using region + content header *)
 let instr_key instr =
   let content = instr_header instr |> normalize_whitespace in
   (instr.at, content)
 
-module M : Instrumentation_core.Handler.S = struct
+module M : Instrumentation_api.Handler.S = struct
   let static_dependencies = []
 
   let rec count_instr instr =
     State.total_instrs := !State.total_instrs + 1;
     match instr.it with
+    | Sl.RelI { block; _ } -> List.iter count_instr block
+    | Sl.RelAssertI { block; _ } -> List.iter count_instr block
     | Sl.IfI (_, _, instrs, _) -> List.iter count_instr instrs
     | Sl.CaseI (_, cases, _) ->
         List.iter (fun (_, instrs) -> List.iter count_instr instrs) cases
-    | Sl.OtherwiseI instrs -> List.iter count_instr instrs
+    | Sl.OtherwiseI inner -> count_instr inner
+    | Sl.LetI (_, _, _, block) -> List.iter count_instr block
     | _ -> ()
 
   let init ~spec =
     State.reset ();
     match spec with
-    | Instrumentation_core.Handler.IlSpec _ -> ()
-    | Instrumentation_core.Handler.SlSpec sl_spec ->
+    | Instrumentation_api.Handler.IlSpec _ -> ()
+    | Instrumentation_api.Handler.SlSpec sl_spec ->
         State.sl_spec := sl_spec;
         List.iter
           (fun def ->
             match def.it with
-            | Sl.RelD (_, _, _, instrs) -> List.iter count_instr instrs
-            | Sl.DecD (_, _, _, instrs) -> List.iter count_instr instrs
-            | Sl.TypD _ -> ())
+            | Sl.RelD (_, _, block, elseblock_opt) ->
+                List.iter count_instr block;
+                Option.iter (List.iter count_instr) elseblock_opt
+            | Sl.DecD (_, _, _, block, elseblock_opt) ->
+                List.iter count_instr block;
+                Option.iter (List.iter count_instr) elseblock_opt
+            | _ -> ())
           sl_spec
 
-  let on_test_start = Instrumentation_core.Noop.on_test_start
-  let on_test_end = Instrumentation_core.Noop.on_test_end
-  let on_rel_enter = Instrumentation_core.Noop.on_rel_enter
-  let on_rel_exit = Instrumentation_core.Noop.on_rel_exit
-  let on_rule_enter = Instrumentation_core.Noop.on_rule_enter
-  let on_rule_exit = Instrumentation_core.Noop.on_rule_exit
-  let on_func_enter = Instrumentation_core.Noop.on_func_enter
-  let on_func_exit = Instrumentation_core.Noop.on_func_exit
-  let on_clause_enter = Instrumentation_core.Noop.on_clause_enter
-  let on_clause_exit = Instrumentation_core.Noop.on_clause_exit
-  let on_iter_prem_enter = Instrumentation_core.Noop.on_iter_prem_enter
-  let on_iter_prem_exit = Instrumentation_core.Noop.on_iter_prem_exit
-  let on_prem_enter = Instrumentation_core.Noop.on_prem_enter
-  let on_prem_exit = Instrumentation_core.Noop.on_prem_exit
-  let on_rule_output = Instrumentation_core.Noop.on_rule_output
-  let on_clause_return = Instrumentation_core.Noop.on_clause_return
-  let on_func_result = Instrumentation_core.Noop.on_func_result
-  let on_instr ~instr ~at:_ = State.incr State.instrs_hit (instr_key instr)
+  let handle : Instrumentation_api.Event.t -> unit = function
+    | Instr { instr; at = _ } -> State.incr State.instrs_hit (instr_key instr)
+    | _ -> ()
 
   (* --- Output: Summary mode (stats + uncovered only) --- *)
 
@@ -138,19 +125,29 @@ module M : Instrumentation_core.Handler.S = struct
       List.iter
         (fun def ->
           match def.it with
-          | Sl.RelD (id, _, _, instrs) ->
+          | Sl.RelD (id, _, block, elseblock_opt) ->
               List.iter
                 (fun instr ->
                   if not (Hashtbl.mem State.instrs_hit (instr_key instr)) then
                     uncovered := (id.it, instr_header instr) :: !uncovered)
-                instrs
-          | Sl.DecD (id, _, _, instrs) ->
+                block;
+              Option.iter
+                (List.iter (fun instr ->
+                     if not (Hashtbl.mem State.instrs_hit (instr_key instr))
+                     then uncovered := (id.it, instr_header instr) :: !uncovered))
+                elseblock_opt
+          | Sl.DecD (id, _, _, block, elseblock_opt) ->
               List.iter
                 (fun instr ->
                   if not (Hashtbl.mem State.instrs_hit (instr_key instr)) then
                     uncovered := (id.it, instr_header instr) :: !uncovered)
-                instrs
-          | Sl.TypD _ -> ())
+                block;
+              Option.iter
+                (List.iter (fun instr ->
+                     if not (Hashtbl.mem State.instrs_hit (instr_key instr))
+                     then uncovered := (id.it, instr_header instr) :: !uncovered))
+                elseblock_opt
+          | _ -> ())
         !State.sl_spec;
       if !uncovered <> [] then (
         Format.fprintf !fmt "\nUncovered SL instructions:\n";
@@ -173,6 +170,9 @@ module M : Instrumentation_core.Handler.S = struct
     let content = instr_header instr |> summarize ~max_len in
     Format.fprintf !fmt "%5s %s%s\n" count indent content;
     match instr.it with
+    | Sl.RelI { block; _ } -> List.iter (print_instr (indent ^ "  ")) block
+    | Sl.RelAssertI { block; _ } ->
+        List.iter (print_instr (indent ^ "  ")) block
     | Sl.IfI (_, _, instrs, _) -> List.iter (print_instr (indent ^ "  ")) instrs
     | Sl.CaseI (_, cases, _) ->
         List.iter
@@ -182,20 +182,23 @@ module M : Instrumentation_core.Handler.S = struct
               (Sl.Print.string_of_guard guard);
             List.iter (print_instr (indent ^ "    ")) instrs)
           cases
-    | Sl.OtherwiseI instrs -> List.iter (print_instr (indent ^ "  ")) instrs
+    | Sl.OtherwiseI inner -> print_instr (indent ^ "  ") inner
+    | Sl.LetI (_, _, _, block) -> List.iter (print_instr (indent ^ "  ")) block
     | _ -> ()
 
   let print_full () =
     List.iter
       (fun def ->
         match def.it with
-        | Sl.RelD (id, _, _, instrs) ->
+        | Sl.RelD (id, _, block, elseblock_opt) ->
             Format.fprintf !fmt "\nrelation %s:\n" id.it;
-            List.iter (print_instr "  ") instrs
-        | Sl.DecD (id, _, _, instrs) ->
+            List.iter (print_instr "  ") block;
+            Option.iter (List.iter (print_instr "  ")) elseblock_opt
+        | Sl.DecD (id, _, _, block, elseblock_opt) ->
             Format.fprintf !fmt "\ndef $%s:\n" id.it;
-            List.iter (print_instr "  ") instrs
-        | Sl.TypD _ -> ())
+            List.iter (print_instr "  ") block;
+            Option.iter (List.iter (print_instr "  ")) elseblock_opt
+        | _ -> ())
       !State.sl_spec
 
   (* --- Finish: print report --- *)
@@ -232,9 +235,26 @@ let restore result =
     result.instrs_hit;
   State.total_instrs := result.total_instrs
 
+(* Merge two results — used for checkpoint merging *)
+let merge_results r1 r2 =
+  let merge_counts counts1 counts2 =
+    let tbl = Hashtbl.create 256 in
+    let add key count =
+      let existing = Hashtbl.find_opt tbl key |> Option.value ~default:0 in
+      Hashtbl.replace tbl key (existing + count)
+    in
+    List.iter (fun (key, count) -> add key count) counts1;
+    List.iter (fun (key, count) -> add key count) counts2;
+    Hashtbl.to_seq tbl |> List.of_seq
+  in
+  {
+    instrs_hit = merge_counts r1.instrs_hit r2.instrs_hit;
+    total_instrs = r1.total_instrs;
+  }
+
 (* Handler with data access - implements HANDLER_WITH_DATA signature *)
 module HandlerWithData :
-  Instrumentation_core.Handler.S_with_data with type result = result = struct
+  Instrumentation_api.Handler.S_with_data with type result = result = struct
   include M
 
   type nonrec result = result
@@ -245,5 +265,56 @@ end
 
 let make cfg =
   config := cfg;
-  fmt := Instrumentation_core.Output.formatter cfg.output;
-  (module M : Instrumentation_core.Handler.S)
+  fmt := Instrumentation_api.Output.formatter cfg.output;
+  (module M : Instrumentation_api.Handler.S)
+
+module Spec : Instrumentation_spec.Spec.S = struct
+  let name = "instruction-coverage"
+  let modes = [ `SL ]
+
+  let params =
+    [
+      Instrumentation_spec.Param_utils.level_param;
+      Instrumentation_spec.Param_utils.output_param;
+    ]
+
+  let parse alist =
+    match Instrumentation_spec.Param_utils.get alist "level" with
+    | None -> None
+    | Some s ->
+        let output =
+          Instrumentation_spec.Param_utils.output_of
+            (Instrumentation_spec.Param_utils.get alist "output")
+        in
+        let cfg =
+          {
+            level =
+              Instrumentation_spec.Param_utils.parse_level ~summary:Summary
+                ~full:Full s;
+            output;
+          }
+        in
+        Some
+          {
+            Instrumentation_config.Handler_config.name;
+            modes;
+            handler = make cfg;
+            output;
+          }
+
+  let checkpoint =
+    Some
+      Instrumentation_spec.Spec.
+        {
+          snapshot = (fun () -> Marshal.to_bytes (get_result ()) []);
+          restore = (fun b -> restore (Marshal.from_bytes b 0));
+          merge =
+            (fun b1 b2 ->
+              Marshal.to_bytes
+                (merge_results (Marshal.from_bytes b1 0)
+                   (Marshal.from_bytes b2 0))
+                []);
+        }
+end
+
+let spec : Instrumentation_spec.Spec.t = (module Spec)

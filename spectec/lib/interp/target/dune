@@ -1,0 +1,4 @@
+(library
+ (name target)
+ (public_name spectec.interp.target)
+ (libraries builtins))

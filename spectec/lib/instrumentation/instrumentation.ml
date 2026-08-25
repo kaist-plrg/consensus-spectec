@@ -1,46 +1,69 @@
-(* Instrumentation - Top-level module re-exporting core and handlers.
-
-   Core modules (from instrumentation_core):
-   - Handler: Handler.S and Handler.S_with_data signatures
-   - Dispatcher: Event dispatch functions
-   - Noop: Default no-op handler
-   - Output: Output destinations
-   - Util: Shared utilities
-
-   Handler implementations (from instrumentation_handlers):
-   - Branch_coverage, Node_coverage_il, Node_coverage_sl, Profile, Trace
-
-   Dependency analysis (from instrumentation_dependency):
-   - Dep_common: Shared types for dependency analysis
-   - Positive: Positive dependency (per-test mutation suggestions)
-
-   Config module (local):
-   - Config: Configuration type and handler factory
-*)
-
-(* Re-export core modules *)
-module Handler = Instrumentation_core.Handler
-module Dispatcher = Instrumentation_core.Dispatcher
+module Dispatcher = Instrumentation_dispatcher.Dispatcher
+module Event = Instrumentation_api.Event
+module Output = Instrumentation_api.Output
 module Value_hooks = Instrumentation_core.Value_hooks
-module Noop = Instrumentation_core.Noop
-module Output = Instrumentation_core.Output
-module Util = Instrumentation_core.Util
-
-(* Re-export static analysis modules *)
+module Util = Instrumentation_handlers.Util
 module Static = Instrumentation_static.Static
 module Premise_uid = Instrumentation_static.Premise_uid
 module Premise_values = Instrumentation_static.Premise_values
 module Type_tree = Instrumentation_static.Type_tree
-
-(* Re-export handler implementations *)
+module Dependency = Instrumentation_dependency
 module Branch_coverage = Instrumentation_handlers.Branch_coverage
 module Node_coverage_il = Instrumentation_handlers.Node_coverage_il
 module Node_coverage_sl = Instrumentation_handlers.Node_coverage_sl
 module Profile = Instrumentation_handlers.Profile
 module Trace = Instrumentation_handlers.Trace
+module Tree = Instrumentation_handlers.Tree
+module Run_config = Instrumentation_config.Config
+module Exn = Instrumentation_common.Exn
 
-(* Re-export dependency analysis modules *)
-module Dependency = Instrumentation_dependency
+module Handler = struct
+  include Instrumentation_api.Handler
+  module Spec = Instrumentation_spec.Spec
+  module Config = Instrumentation_config.Handler_config
+end
 
-(* Config is defined locally in this library *)
-module Config = Config
+module Config = struct
+  type t = Handler.Config.t list
+
+  let default = Run_config.default
+  let register_static_dependencies = Run_config.register_static_dependencies
+  let handlers = Run_config.handlers
+  let has_handler = Run_config.has_handler
+  let validate_mode = Run_config.validate_mode
+  let close_outputs = Run_config.close_outputs
+end
+
+(* *** Add one entry here when adding a new handler *** *)
+let builtin_handler_specs : Handler.Spec.t list =
+  [
+    Trace.spec;
+    Tree.spec;
+    Profile.spec;
+    Branch_coverage.spec;
+    Node_coverage_il.spec;
+    Node_coverage_sl.spec;
+    Dependency.Positive.spec;
+  ]
+
+let with_instrumentation (config : Config.t) (spec : Static.spec)
+    (f : unit -> 'a) : 'a =
+  let handlers = Config.handlers config in
+  let cleanup () =
+    let first_error = Exn.try_record_first_error None Dispatcher.finish in
+    let first_error =
+      Exn.try_record_first_error first_error (fun () ->
+          Config.close_outputs config)
+    in
+    Value_hooks.reset ();
+    Exn.raise_recorded_error first_error
+  in
+  Static.reset_all ();
+  if Config.has_handler config ~name:"dep-pos" then
+    Value_hooks.set Dependency.Provenance_hooks.hooks
+  else Value_hooks.reset ();
+  Config.register_static_dependencies config;
+  Static.init_all spec;
+  Exn.with_cleanup ~cleanup (fun () ->
+      Dispatcher.init ~spec ~handlers;
+      f ())

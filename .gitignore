@@ -1,10 +1,15 @@
 # ocaml build artifacts
 _build
 _test
-*.opam
 
 # spectec build and executables
+spectecx
+spectecx-lsp
 spectec-core
+spectec-core-lsp
+
+# packaged VS Code extension (make vsix)
+editors/vscode/*.vsix
 
 # MacOS
 *.DS_Store

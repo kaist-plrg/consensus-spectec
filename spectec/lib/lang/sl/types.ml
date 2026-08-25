@@ -55,7 +55,7 @@ type value = Il.value
 type value' = Il.value'
 
 type valuefield = atom * value
-type valuecase = mixop * value list
+type valuecase = Il.valuecase
 
 (* Operators *)
 
@@ -106,12 +106,15 @@ type targ' = Il.targ'
 
 and pid = int
 
+and relcall = { relid : id; notexp : notexp }
+
 and phantom = pid * pathcond list
 
 and pathcond =
-  | ForallC of exp * iterexp list
-  | ExistsC of exp * iterexp list
+  | ForallC of pathcond * iterexp list
+  | ExistsC of pathcond * iterexp list
   | PlainC of exp
+  | RelAssertC of { call : relcall; expect : bool }
 
 (* Case analysis *)
 
@@ -128,18 +131,24 @@ and guard =
 
 and instr = instr' phrase
 and instr' =
+  | RelI of { call : relcall; iterexps : iterexp list; block : instr list }
+  | RelAssertI of {
+      call : relcall;
+      expect : bool;
+      iterexps : iterexp list;
+      block : instr list;
+      phantom : phantom option;
+    }
   | IfI of exp * iterexp list * instr list * phantom option
-  | CaseI of exp * case list * phantom option 
-  | OtherwiseI of instr list
-  | LetI of exp * exp * iterexp list
-  | RuleI of id * notexp * iterexp list
+  | CaseI of exp * case list * phantom option
+  | OtherwiseI of instr
+  | LetI of exp * exp * iterexp list * instr list
   | ResultI of exp list
   | ReturnI of exp
-  | DebugI of exp
+  | DebugI of exp * instr
 
-(* Hints *)
-
-type hint = { hintid : id; hintexp : El.exp }
+and block = instr list
+and elseblock = instr list
 
 (* Definitions *)
 
@@ -147,10 +156,12 @@ type def = def' phrase
 and def' =
   (* `syntax` id `<` list(tparam, `,`) `>` `=` deftyp *)
   | TypD of id * tparam list * deftyp
-  (* `relation` id `:` mixop `hint(input` `%`int* `)` list(exp, `,`) `:` instr* *)
-  | RelD of id * (mixop * int list) * exp list * instr list
+  (* `relation` id `:` mode `:` instr* *)
+  | RelD of id * (exp, unit) Il.Mode.t * block * elseblock option
+  (* `builtin` `dec` id `<` list(tparam, `,`) `>` list(arg, `,`) *)
+  | BuiltinDecD of id * tparam list * arg list
   (* `dec` id `<` list(tparam, `,`) `>` list(param, `,`) `:` typ instr* *)
-  | DecD of id * tparam list * arg list * instr list
+  | DecD of id * tparam list * arg list * block * elseblock option
 
 (* Spec *)
 

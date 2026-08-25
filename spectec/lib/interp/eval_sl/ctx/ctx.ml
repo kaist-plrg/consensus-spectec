@@ -5,6 +5,7 @@ module Value = Lang.Il.Value
 open Lang.Sl
 open Error
 open Envs.Il
+open Envs.Interp
 open Envs.Make
 
 (* Error *)
@@ -16,6 +17,9 @@ let error_dup (at : region) (kind : string) (id : string) =
   error at (Format.asprintf "%s `%s` was already defined" kind id)
 
 (* Environments *)
+
+(* Function *)
+module Func = Func
 
 (* Value environment *)
 module VEnv = VEnv
@@ -215,8 +219,8 @@ let sub_opt (ctx : t) (vars : var list) : t option =
   (* First collect the values that are to be iterated over *)
   let values =
     List.map
-      (fun (id, _typ, iters) ->
-        find_value Local ctx (id, iters @ [ Il.Opt ]) |> Value.get_opt)
+      (fun { Il.varid; iters; _ } ->
+        find_value Local ctx (varid, iters @ [ Il.Opt ]) |> Value.get_opt)
       vars
   in
   (* Iteration is valid when all variables agree on their optionality *)
@@ -224,8 +228,8 @@ let sub_opt (ctx : t) (vars : var list) : t option =
     let values = List.map Option.get values in
     let ctx_sub =
       List.fold_left2
-        (fun ctx_sub (id, _typ, iters) value ->
-          add_value Local ctx_sub (id, iters) value)
+        (fun ctx_sub { Il.varid; iters; _ } value ->
+          add_value Local ctx_sub (varid, iters) value)
         ctx vars values
     in
     Some ctx_sub
@@ -239,8 +243,8 @@ let transpose (value_matrix : value list list) : value list list =
   match value_matrix with
   | [] -> []
   | row :: rows ->
-      let width = List.length row in
-      check
+      let width = List.length (List.hd value_matrix) in
+      checkf
         (List.for_all
            (fun value_row -> List.length value_row = width)
            value_matrix)
@@ -261,8 +265,8 @@ let sub_list (ctx : t) (vars : var list) : t list =
      into a batch of values *)
   let values_batch =
     List.map
-      (fun (id, _typ, iters) ->
-        find_value Local ctx (id, iters @ [ Il.List ]) |> Value.get_list)
+      (fun { Il.varid; iters; _ } ->
+        find_value Local ctx (varid, iters @ [ Il.List ]) |> Value.get_list)
       vars
     |> transpose
   in
@@ -271,8 +275,8 @@ let sub_list (ctx : t) (vars : var list) : t list =
     (fun ctxs_sub_rev value_batch ->
       let ctx_sub =
         List.fold_left2
-          (fun ctx_sub (id, _typ, iters) value ->
-            add_value Local ctx_sub (id, iters) value)
+          (fun ctx_sub { Il.varid; iters; _ } value ->
+            add_value Local ctx_sub (varid, iters) value)
           ctx vars value_batch
       in
       ctx_sub :: ctxs_sub_rev)

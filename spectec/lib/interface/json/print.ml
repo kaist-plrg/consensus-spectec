@@ -52,8 +52,8 @@ let ends_with s suffix =
 (* Get byte length from type name *)
 let rec bytes_len_from_typ (typ : Typ.t') : int option =
   match typ with
-  | VarT (tid, _) ->
-      let name = tid.it |> String.lowercase_ascii in
+  | VarT { synid; _ } ->
+      let name = synid.it |> String.lowercase_ascii in
       (* Check for bytes types: bytes32, bytes4, etc. *)
       (* But exclude bytes1 as it's often used for uint8 which should be a number *)
       if String.length name >= 5 && String.sub name 0 5 = "bytes" then
@@ -80,7 +80,7 @@ let rec bytes_len_from_typ (typ : Typ.t') : int option =
       else if name = "payloadid" then Some 8
       else if name = "nodeid" then Some 256
       else None
-  | IterT (elem_typ, _) ->
+  | IterT { typ = elem_typ; _ } ->
       (* For lists, check the element type *)
       bytes_len_from_typ elem_typ.it
   | NumT _ ->
@@ -166,7 +166,7 @@ let rec value_to_json ?field_name (v : Value.t) : (Yojson.Safe.t, error) result
       (* This reuses the existing type-checking logic instead of duplicating it *)
       let elem_typ =
         match v.note.typ with
-        | IterT (elem_typ, _) -> Some elem_typ.it
+        | IterT { typ = elem_typ; _ } -> Some elem_typ.it
         | _ -> None
       in
       let rec print_values acc = function
@@ -191,9 +191,7 @@ let rec value_to_json ?field_name (v : Value.t) : (Yojson.Safe.t, error) result
       print_values [] vs
   | StructV fields ->
       let field_to_json (atom, value) =
-        let field_name =
-          Xl.Atom.string_of_atom atom.it |> String.lowercase_ascii
-        in
+        let field_name = Xl.Atom.to_string atom.it |> String.lowercase_ascii in
         let* json_value = value_to_json ~field_name value in
         Ok (field_name, json_value)
       in

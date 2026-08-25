@@ -1,0 +1,255 @@
+let ( let* ) = Result.bind
+
+open Error_handling
+
+let load_spec source =
+  let* filenames = Spec_source.files source in
+  let* spec = Spectec.parse_spec_files filenames in
+  let* spec_il = Spectec.elaborate spec in
+  let henv = Spectec.henv_of_el_spec spec in
+  let henv = Spectec.henv_with_il_spec henv spec_il in
+  Ok (filenames, spec_il, henv)
+
+let resolve_source ~cli ~config ~default_dir =
+  match cli with
+  | Some source -> source
+  | None -> Option.value config ~default:(Spec_source.Dir default_dir)
+
+let make_task (module Tgt : Spectec.Target.S) ~name ~summary
+    (module TC : Task_cli.S) =
+  let cmd =
+    Core.Command.basic ~summary
+    @@
+    let open Core.Command.Let_syntax in
+    let open Core.Command.Param in
+    let%map cli_source = Cli_args.Spec.source_flag
+    and mode = Cli_args.Interpreter.mode_flag
+    and verbose = flag "-v" no_arg ~doc:" verbose output"
+    and batch_mode = Cli_args.Batch.mode_flag
+    and batch_dir = Cli_args.Batch.dir_flag
+    and input = TC.flags
+    and config = Cli_args.Interpreter.config_flags
+    and color = Cli_args.Output.color_flag in
+    fun () ->
+      guard_unit ~color
+        ~suppress_trace:(Instrumentation.Config.has_handler config ~name:"tree")
+      @@ fun () ->
+      let ansi = resolve_ansi color in
+      let open Spectec in
+      let* () = validate_config config ~mode in
+      let* cfg = Config_file.load ~target:Tgt.name () in
+      let source =
+        resolve_source ~cli:cli_source ~config:cfg.Config_file.spec_source
+          ~default_dir:Tgt.spec_dir
+      in
+      let* _files, spec_il, henv = load_spec source in
+      let mode = Interp_mode.resolve ~henv mode in
+      match (batch_mode, batch_dir) with
+      | false, None ->
+          Batch.run_and_print_single
+            (module TC.Task)
+            ~config ~mode ~spec_il input
+      | true, None ->
+          Batch.run_and_print_batch
+            (module TC.Task)
+            ~config ~ansi ~mode ~spec_il ~verbose (TC.Task.collect ())
+      | _, Some dir ->
+          Batch.run_and_print_batch
+            (module TC.Task)
+            ~config ~ansi ~mode ~spec_il ~verbose (TC.Task.collect ~dir ())
+  in
+  (name, cmd)
+
+let make_parse (module Tgt : Spectec.Target.S) ~name ~summary
+    (module TC : Task_cli.S) =
+  let cmd =
+    Core.Command.basic ~summary
+    @@
+    let open Core.Command.Let_syntax in
+    let open Core.Command.Param in
+    let%map cli_source = Cli_args.Spec.source_flag
+    and input = TC.flags
+    and roundtrip = flag "-r" no_arg ~doc:" roundtrip parse/unparse"
+    and color = Cli_args.Output.color_flag in
+    fun () ->
+      guard ~color ~on_ok:(Format.printf "%s\n") @@ fun () ->
+      let open Spectec in
+      let* cfg = Config_file.load ~target:Tgt.name () in
+      let source =
+        resolve_source ~cli:cli_source ~config:cfg.Config_file.spec_source
+          ~default_dir:Tgt.spec_dir
+      in
+      let* _files, spec_il, _henv = load_spec source in
+      let* _, values = TC.Task.parse_input ~spec:spec_il input in
+      let unparsed = TC.Task.unparse ~spec:spec_il values in
+      if roundtrip then
+        let* values_rt =
+          unparsed
+          |> TC.Task.parse_string ~spec:spec_il ~filename:(TC.Task.source input)
+        in
+        let eq = Lang.Il.Eq.eq_values ~dbg:true values values_rt in
+        if eq then Ok unparsed
+        else
+          Error
+            (Error.RoundtripError (Common.Source.no_region, "Roundtrip failed"))
+      else Ok unparsed
+  in
+  (name, cmd)
+
+let make_batch ?on_no_validate ?slot_gap_filter (module Tgt : Spectec.Target.S)
+    ~name (task_clis : (module Task_cli.S) list) =
+  let packed_tasks =
+    List.map
+      (fun (module TC : Task_cli.S) -> Spectec.Task.Pack (module TC.Task))
+      task_clis
+  in
+  let cmd =
+    Core.Command.basic
+      ~summary:("Run batch over all " ^ Tgt.name ^ " input specs")
+    @@
+    let open Core.Command.Let_syntax in
+    let open Core.Command.Param in
+    let%map mode = Cli_args.Interpreter.mode_flag
+    and verbose = flag "-v" no_arg ~doc:" verbose: print progress for each test"
+    and batch_dir = Cli_args.Batch.dir_flag
+    and cli_source = Cli_args.Spec.source_flag
+    and checkpoint = Cli_args.Checkpoint.flags
+    and config = Cli_args.Interpreter.config_flags
+    and no_validate =
+      match on_no_validate with
+      | None -> return false
+      | Some _ -> flag "--no-validate" no_arg ~doc:" skip state root validation"
+    and max_slot_gap =
+      match slot_gap_filter with
+      | None -> return None
+      | Some _ ->
+          flag "--max-slot-gap" (optional int)
+            ~doc:"N skip inputs where block.slot - state.slot exceeds N"
+    and color = Cli_args.Output.color_flag in
+    fun () ->
+      guard_errors_only ~color @@ fun () ->
+      let open Spectec in
+      let ansi = resolve_ansi color in
+      if no_validate then Option.iter (fun f -> f ()) on_no_validate;
+      let* () = validate_config config ~mode in
+      let* cfg = Config_file.load ~target:Tgt.name () in
+      let source =
+        resolve_source ~cli:cli_source ~config:cfg.Config_file.spec_source
+          ~default_dir:Tgt.spec_dir
+      in
+      let* spec_files, spec_il, henv = load_spec source in
+      let mode = Interp_mode.resolve ~henv mode in
+      let batch_dir =
+        match batch_dir with None -> cfg.Config_file.batch_dir | some -> some
+      in
+      let checkpoint_config : Batch.Checkpoint.config =
+        {
+          output_file = checkpoint.output;
+          resume_from = checkpoint.resume;
+          save_interval = checkpoint.save_interval;
+        }
+      in
+      let skip_source =
+        match (slot_gap_filter, max_slot_gap) with
+        | Some within_limit, Some max_slot_gap ->
+            Some (fun source -> not (within_limit ~max_slot_gap source))
+        | _ -> None
+      in
+      let* results =
+        Batch.run_target ~config ?test_dir:batch_dir ?skip_source ~ansi
+          ~checkpoint_config ~verbose ~mode ~spec_files spec_il packed_tasks
+      in
+      List.iter
+        (fun Batch.{ task_name; summary; failures } ->
+          let passed = Batch.summary_passed summary in
+          let failed = Batch.summary_failed summary in
+          let passed_str =
+            Diagnostic.Ansi.style ansi [ Diagnostic.Ansi.Green ]
+              (Printf.sprintf "%d/%d passed" passed summary.total)
+          in
+          let failed_str = Printf.sprintf "%d failed" failed in
+          let failed_str =
+            if failed > 0 then
+              Diagnostic.Ansi.style ansi [ Diagnostic.Ansi.Red ] failed_str
+            else failed_str
+          in
+          let skipped_str =
+            if summary.skipped = 0 then ""
+            else Printf.sprintf ", %d skipped" summary.skipped
+          in
+          Format.printf "%s: %s, %s%s\n" task_name passed_str failed_str
+            skipped_str;
+          List.iter
+            (fun Batch.{ source; kind } ->
+              let label =
+                Diagnostic.Ansi.style ansi [ Diagnostic.Ansi.Red ]
+                  (Printf.sprintf "%-16s" (Batch.failure_label kind))
+              in
+              Format.printf "  %s %s\n" label source)
+            failures)
+        results;
+      Ok ()
+  in
+  (name, cmd)
+
+let make_checkpoint (module Tgt : Spectec.Target.S) ~name =
+  let report_command =
+    Core.Command.basic ~summary:"Decode and display checkpoint contents"
+    @@
+    let open Core.Command.Let_syntax in
+    let open Core.Command.Param in
+    let%map checkpoint_file = anon ("checkpoint-file" %: string)
+    and config = Cli_args.Interpreter.config_flags
+    and color = Cli_args.Output.color_flag in
+    fun () ->
+      guard_unit ~color @@ fun () ->
+      let* cfg = Config_file.load ~target:Tgt.name () in
+      let source =
+        resolve_source ~cli:None ~config:cfg.Config_file.spec_source
+          ~default_dir:Tgt.spec_dir
+      in
+      let* spec_files, spec_il, _henv = load_spec source in
+      let* checkpoint =
+        Batch.Checkpoint.verify_and_load ~file:checkpoint_file ~spec_files
+          ~verbose:true
+      in
+      Batch.Checkpoint.display_report ~spec:spec_il ~config checkpoint;
+      Ok ()
+  in
+  let merge_command =
+    Core.Command.basic ~summary:"Merge two checkpoint files"
+    @@
+    let open Core.Command.Let_syntax in
+    let open Core.Command.Param in
+    let%map checkpoint_file1 = anon ("checkpoint-file-1" %: string)
+    and checkpoint_file2 = anon ("checkpoint-file-2" %: string)
+    and output_file =
+      flag "--output" (required string)
+        ~doc:"FILE output file for merged checkpoint"
+    and color = Cli_args.Output.color_flag in
+    fun () ->
+      guard_unit ~color @@ fun () ->
+      let* spec_files = Spec_source.files (Spec_source.Dir Tgt.spec_dir) in
+      let* checkpoint1 =
+        Batch.Checkpoint.verify_and_load ~file:checkpoint_file1 ~spec_files
+          ~verbose:false
+      in
+      let* checkpoint2 =
+        Batch.Checkpoint.verify_and_load ~file:checkpoint_file2 ~spec_files
+          ~verbose:false
+      in
+      let* merged = Batch.Checkpoint.merge checkpoint1 checkpoint2 in
+      Batch.Checkpoint.save_to_file ~file:output_file merged;
+      Format.printf "Merged checkpoint saved to: %s\n" output_file;
+      Format.printf "  Checkpoint 1: %d tests\n"
+        (List.length checkpoint1.completed_inputs);
+      Format.printf "  Checkpoint 2: %d tests\n"
+        (List.length checkpoint2.completed_inputs);
+      Format.printf "  Merged: %d tests\n" (List.length merged.completed_inputs);
+      Ok ()
+  in
+  let cmd =
+    Core.Command.group ~summary:"Checkpoint utilities"
+      [ ("report", report_command); ("merge", merge_command) ]
+  in
+  (name, cmd)

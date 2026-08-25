@@ -1,0 +1,4 @@
+(library
+ (name diag)
+ (public_name spectec.diagnostic)
+ (libraries spectec.common))

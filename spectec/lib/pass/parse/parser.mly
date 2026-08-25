@@ -3,7 +3,7 @@ open Common.Source
 open Lang
 open Xl
 open El
-open Error
+open Diagnostic
 
 (* Position handling *)
 
@@ -23,6 +23,10 @@ let positions_to_region position_left position_right =
 let at (position_left, position_right) = positions_to_region position_left position_right
 let (@@@) it pos = it $ at pos
 
+let keyword sloc s =
+  try Atom.keyword s
+  with Invalid_argument _ -> error ~code:Malformed_atom (at sloc) "malformed atom"
+
 (* Identifiers *)
 
 module Ids = Set.Make (String)
@@ -38,32 +42,19 @@ let exit_scope () = vars := List.hd !scopes; scopes := List.tl !scopes
 
 %}
 
-%token<string> TICK_UPID
-%token TICK_TICK TICK_DOUBLE_QUOTE TICK_UNDERSCORE TICK_ARROW TICK_DOUBLE_ARROW
-%token TICK_DOT TICK_DOT2 TICK_DOT3
-%token TICK_COMMA TICK_SEMICOLON TICK_COLON
-%token TICK_HASH TICK_DOLLAR TICK_AT TICK_QUEST
-%token TICK_BANG TICK_BANG_EQ TICK_TILDE
-%token TICK2_LANGLE TICK_LANGLE TICK_LANGLE2 TICK_LANGLE_EQ TICK_LANGLE2_EQ
-%token TICK2_RANGLE TICK_RANGLE2 TICK_RANGLE_EQ TICK_RANGLE2_EQ
-%token TICK_LPAREN TICK_LBRACK TICK2_LBRACK TICK2_RBRACK
-%token TICK_LBRACE TICK_LBRACE_HASH_RBRACE TICK2_LBRACE TICK2_RBRACE
-%token TICK_PLUS TICK_PLUS2 TICK_PLUS_EQ TICK_MINUS TICK_MINUS_EQ
-%token TICK_STAR TICK_STAR_EQ TICK_SLASH TICK_SLASH_EQ
-%token TICK_PERCENT TICK_PERCENT_EQ TICK_EQ TICK_EQ2
-%token TICK_AMP TICK_AMP2 TICK_AMP3 TICK_AMP_EQ
-%token TICK_UP TICK_UP_EQ
-%token TICK_BAR TICK_BAR2 TICK_BAR_EQ
-%token TICK_BAR_PLUS_BAR TICK_BAR_PLUS_BAR_EQ TICK_BAR_MINUS_BAR TICK_BAR_MINUS_BAR_EQ
+%token<string> TAG_UPID
+%token<string> OPERATOR
+%token TICK_LANGLE TICK_RANGLE TICK_LPAREN TICK_RPAREN
+%token TICK_LBRACK TICK_RBRACK TICK_LBRACE TICK_RBRACE
 
 %token NL_BAR NL2 NL3
-%token SUB SUP TURNSTILE TILESTURN ENTAIL
+%token SUB TURNSTILE TILESTURN
 %token ARROW ARROW_SUB
 %token DOUBLE_ARROW DOUBLE_ARROW_SUB DOUBLE_ARROW_BOTH DOUBLE_ARROW_LONG
 %token SQARROW SQARROW_STAR
 %token AND OR
 %token DOT DOT2 DOT3
-%token COMMA COMMA_NL SEMICOLON COLON COLON2 COLON_SLASH
+%token COMMA COMMA_NL SEMICOLON COLON COLON2 COLON_SLASH COLON_EQ
 %token HASH HASH2 DOLLAR QUEST TILDE TILDE2
 %token LANGLE LANGLE_DASH LANGLE_EQ
 %token RANGLE RANGLE_EQ RANGLE_LPAREN
@@ -74,7 +65,7 @@ let exit_scope () = vars := List.hd !scopes; scopes := List.tl !scopes
 %token HOLE_MULTI HOLE_NIL
 %token EQ NEQ UP BAR
 %token LATEX BOOL NAT INT TEXT
-%token SYNTAX RELATION RULE VAR DEC DEF
+%token SYNTAX RELATION RULE VAR BUILTIN DEC DEF
 %token IF OTHERWISE DEBUG HINT_LPAREN EPS
 %token<bool> BOOLLIT
 %token<Bigint.t> NATLIT HEXLIT
@@ -89,7 +80,8 @@ let exit_scope () = vars := List.hd !scopes; scopes := List.tl !scopes
 %nonassoc TURNSTILE
 %nonassoc TILESTURN
 %right SQARROW SQARROW_STAR
-%left COLON SUB SUP TILDE2
+%left COLON SUB TILDE2
+%right COLON_EQ
 %right EQ NEQ LANGLE RANGLE LANGLE_EQ RANGLE_EQ LANGLE_DASH
 %right COLON2
 %right ARROW ARROW_SUB
@@ -159,16 +151,17 @@ atomid_lparen : UPID_LPAREN { $1 }
 atomid_langle : UPID_LANGLE { $1 }
 atomid : atomid_ { $1 } | atomid DOTID { $1 ^ "." ^ $2 }
 
-dotid : DOTID { Atom.Atom $1 @@@ $sloc }
+dotid : DOTID { keyword $sloc $1 @@@ $sloc }
 
 fieldid :
-  | atomid_ { Atom.Atom $1 @@@ $sloc }
+  | atomid_ { keyword $sloc $1 @@@ $sloc }
 
 relid : id { $1 @@@ $sloc }
 
 ruleid : ruleid_ { $1 }
 ruleid_ :
   | id { $1 }
+  | BUILTIN { "builtin" }
   | NATLIT { Bigint.to_string $1 }
   | BOOLLIT { Bool.string_of_bool $1 }
   | ruleid_ DOTID { $1 ^ "." ^ $2 }
@@ -192,67 +185,11 @@ synid :
 atom :
   | atom_ { $1 @@@ $sloc }
 atom_ :
-  | atomid { Atom.Atom $1 }
+  | atomid { keyword $sloc $1 }
   | atom_escape { $1 }
 atom_escape :
-  | TICK_UPID { Atom.SilentAtom $1 }
-  | TICK_TICK { Atom.Tick }
-  | TICK_DOUBLE_QUOTE { Atom.DoubleQuote }
-  | TICK_UNDERSCORE { Atom.Underscore }
-  | TICK_ARROW { Atom.Arrow }
-  | TICK_DOUBLE_ARROW { Atom.DoubleArrow }
-  | TICK_DOT { Atom.Dot }
-  | TICK_DOT2 { Atom.Dot2 }
-  | TICK_DOT3 { Atom.Dot3 }
-  | TICK_COMMA { Atom.Comma }
-  | TICK_SEMICOLON { Atom.Semicolon }
-  | TICK_COLON { Atom.Colon }
-  | TICK_HASH { Atom.Hash }
-  | TICK_DOLLAR { Atom.Dollar }
-  | TICK_AT { Atom.At }
-  | TICK_QUEST { Atom.Quest }
-  | TICK_BANG { Atom.Bang }
-  | TICK_BANG_EQ { Atom.BangEq }
-  | TICK_TILDE { Atom.Tilde }
-  | TICK2_LANGLE { Atom.LAngle }
-  | TICK_LANGLE2 { Atom.LAngle2 }
-  | TICK_LANGLE_EQ { Atom.LAngleEq }
-  | TICK_LANGLE2_EQ { Atom.LAngle2Eq }
-  | TICK2_RANGLE { Atom.RAngle }
-  | TICK_RANGLE2 { Atom.RAngle2 }
-  | TICK_RANGLE_EQ { Atom.RAngleEq }
-  | TICK_RANGLE2_EQ { Atom.RAngle2Eq }
-  | TICK2_LBRACK { Atom.LBrack }
-  | TICK2_RBRACK { Atom.RBrack }
-  | TICK2_LBRACE { Atom.LBrace }
-  | TICK_LBRACE_HASH_RBRACE { Atom.LBraceHashRBrace }
-  | TICK2_RBRACE { Atom.RBrace }
-  | TICK_PLUS { Atom.Plus }
-  | TICK_PLUS2 { Atom.Plus2 }
-  | TICK_PLUS_EQ { Atom.PlusEq }
-  | TICK_MINUS { Atom.Minus }
-  | TICK_MINUS_EQ { Atom.MinusEq }
-  | TICK_STAR { Atom.Star }
-  | TICK_STAR_EQ { Atom.StarEq }
-  | TICK_SLASH { Atom.Slash }
-  | TICK_SLASH_EQ { Atom.SlashEq }
-  | TICK_PERCENT { Atom.Percent }
-  | TICK_PERCENT_EQ { Atom.PercentEq }
-  | TICK_EQ { Atom.Eq }
-  | TICK_EQ2 { Atom.Eq2 }
-  | TICK_AMP { Atom.Amp }
-  | TICK_AMP2 { Atom.Amp2 }
-  | TICK_AMP3 { Atom.Amp3 }
-  | TICK_AMP_EQ { Atom.AmpEq }
-  | TICK_UP { Atom.Up }
-  | TICK_UP_EQ { Atom.UpEq }
-  | TICK_BAR { Atom.Bar }
-  | TICK_BAR2 { Atom.Bar2 }
-  | TICK_BAR_EQ { Atom.BarEq }
-  | TICK_BAR_PLUS_BAR { Atom.SPlus }
-  | TICK_BAR_PLUS_BAR_EQ { Atom.SPlusEq }
-  | TICK_BAR_MINUS_BAR { Atom.SMinus }
-  | TICK_BAR_MINUS_BAR_EQ { Atom.SMinusEq }
+  | TAG_UPID { Atom.tag $1 }
+  | OPERATOR { Atom.operator $1 }
 
 (* Iterations *)
 
@@ -285,7 +222,10 @@ nottyp :
     {
       match $1 with
       | NotationT nottyp -> nottyp
-      | _ -> error (at $sloc) "expected notation type"
+      | _ ->
+          error ~code:Notation_type_expected
+            ~detail:"A notation type includes literal tokens like `|-` or `:` that rules pattern-match against. A bare type like `nat` names a set of values without any tokens, so it cannot serve as a relation body."
+            (at $sloc) "expected notation type"
     }
 
 typ_prim : typ_prim_ { $1 }
@@ -298,19 +238,19 @@ typ_prim_ :
     {
       NotationT (AtomT $1 @@@ $loc($1))
     }
-  | TICK_LANGLE typ RANGLE
+  | TICK_LANGLE typ TICK_RANGLE
     {
       NotationT (BrackT (Atom.LAngle @@@ $loc($1), $2, Atom.RAngle @@@ $loc($3)) @@@ $loc($1))
     }
-  | TICK_LPAREN typ RPAREN
+  | TICK_LPAREN typ TICK_RPAREN
     {
       NotationT (BrackT (Atom.LParen @@@ $loc($1), $2, Atom.RParen @@@ $loc($3)) @@@ $loc($1))
     }
-  | TICK_LBRACK typ RBRACK
+  | TICK_LBRACK typ TICK_RBRACK
     {
       NotationT (BrackT (Atom.LBrack @@@ $loc($1), $2, Atom.RBrack @@@ $loc($3)) @@@ $loc($1))
     }
-  | TICK_LBRACE typ RBRACE
+  | TICK_LBRACE typ TICK_RBRACE
     {
       NotationT (BrackT (Atom.LBrace @@@ $loc($1), $2, Atom.RBrace @@@ $loc($3)) @@@ $loc($1))
     }
@@ -372,22 +312,27 @@ deftyp_ :
   | LBRACE comma_list(fieldtyp) RBRACE
     { 
       match $2 with
-      | [] -> error (at $sloc) "empty struct type"
+      | [] -> error ~code:Struct_no_fields (at $sloc) "empty struct type"
       | _ -> StructTD $2
     }
   | bar bar_list(casetyp)
     {
       match $2 with
-      | [] -> error (at $sloc) "empty variant type"
+      | [] -> error ~code:Variant_no_cases (at $sloc) "empty variant type"
       | [ (PlainT plaintyp, hints) ] ->
           if hints <> [] then
-            error (at $sloc) "hints not allowed in plain type definition";
+            error ~code:Hint_on_plain_bar_single
+              ~detail:"A plain typdef aliases an existing type, like `syntax x = nat`. It inherits hints from the aliased type and cannot carry hints of its own."
+              (at $sloc) "hints not allowed in plain type definition";
           PlainTD plaintyp
       | _ ->
           List.iter
             (fun (typ, hints) ->
               match typ with
-              | PlainT _ when hints <> [] -> error (at $sloc) "hints not allowed in plain type definition"
+              | PlainT _ when hints <> [] ->
+                  error ~code:Hint_on_plain_bar_multi
+                    ~detail:"A plain typdef aliases an existing type, like `syntax x = nat`. It inherits hints from the aliased type and cannot carry hints of its own."
+                    (at $sloc) "hints not allowed in plain type definition"
               | _ -> ())
             $2;
           VariantTD $2
@@ -395,16 +340,21 @@ deftyp_ :
   | bar_list(casetyp)
     {
       match $1 with
-      | [] -> error (at $sloc) "empty type"
+      | [] -> error ~code:Syntax_empty_body (at $sloc) "empty type"
       | [ (PlainT plaintyp, hints) ] ->
           if hints <> [] then
-            error (at $sloc) "hints not allowed in plain type definition";
+            error ~code:Hint_on_plain_no_bar_single
+              ~detail:"A plain typdef aliases an existing type, like `syntax x = nat`. It inherits hints from the aliased type and cannot carry hints of its own."
+              (at $sloc) "hints not allowed in plain type definition";
           PlainTD plaintyp
       | _ ->
           List.iter
             (fun (typ, hints) ->
               match typ with
-              | PlainT _ when hints <> [] -> error (at $sloc) "hints not allowed in plain type definition"
+              | PlainT _ when hints <> [] ->
+                  error ~code:Hint_on_plain_no_bar_multi
+                    ~detail:"A plain typdef aliases an existing type, like `syntax x = nat`. It inherits hints from the aliased type and cannot carry hints of its own."
+                    (at $sloc) "hints not allowed in plain type definition"
               | _ -> ())
             $1;
           VariantTD $1
@@ -454,13 +404,12 @@ deftyp_ :
   | ARROW_SUB { Atom.ArrowSub }
   | DOUBLE_ARROW_SUB { Atom.DoubleArrowSub }
   | DOUBLE_ARROW_LONG { Atom.DoubleArrowLong }
+  | COLON_EQ { Atom.ColonEq }
 
 %inline relop :
   | relop_ { $1 @@@ $sloc }
 %inline relop_ :
   | COLON { Atom.Colon }
-  | SUB { Atom.Sub }
-  | SUP { Atom.Sup }
   | TILDE2 { Atom.Tilde2 }
   | SQARROW { Atom.SqArrow }
   | SQARROW_STAR { Atom.SqArrowStar }
@@ -557,13 +506,13 @@ exp_prim_ :
       | [ exp ] -> ParenE exp
       | exps -> TupleE exps
     }
-  | TICK_LANGLE exp RANGLE
+  | TICK_LANGLE exp TICK_RANGLE
     { BrackE (Atom.LAngle @@@ $loc($1), $2, Atom.RAngle @@@ $loc($3)) }
-  | TICK_LPAREN exp RPAREN
+  | TICK_LPAREN exp TICK_RPAREN
     { BrackE (Atom.LParen @@@ $loc($1), $2, Atom.RParen @@@ $loc($3)) }
-  | TICK_LBRACK exp RBRACK
+  | TICK_LBRACK exp TICK_RBRACK
     { BrackE (Atom.LBrack @@@ $loc($1), $2, Atom.RBrack @@@ $loc($3)) }
-  | TICK_LBRACE exp RBRACE
+  | TICK_LBRACE exp TICK_RBRACE
     { BrackE (Atom.LBrace @@@ $loc($1), $2, Atom.RBrace @@@ $loc($3)) }
   | DOLLAR LPAREN arith RPAREN { $3.it }
   | HASH2 exp_prim { UnparenE $2 }
@@ -583,7 +532,7 @@ exp_atom_ :
   | atom { AtomE $1 }
   | atomid_lparen exp RPAREN
     { SeqE [
-        AtomE (Atom.Atom $1 @@@ $loc($1)) @@@ $loc($1);
+        AtomE (keyword $loc($1) $1 @@@ $loc($1)) @@@ $loc($1);
         ParenE $2 @@@ $loc($2)
       ] }
 
@@ -623,6 +572,7 @@ exp_bin_ :
   | exp_bin COLON2 exp_bin { ConsE ($1, $3) }
   | exp_bin PLUS2 exp_bin { CatE ($1, $3) }
   | exp_bin LANGLE_DASH exp_bin { MemE ($1, $3) }
+  | exp_bin SUB plaintyp { SubE ($1, $3) }
 
 exp_rel : exp_rel_ { $1 @@@ $sloc }
 exp_rel_ :
@@ -719,7 +669,7 @@ def_ :
   | SYNTAX comma_list(synid)
     {
       match $2 with
-      | [] -> error (at $sloc) "empty syntax declaration"
+      | [] -> error ~code:Syntax_no_ids (at $sloc) "empty syntax declaration"
       | _ -> SynD $2
     }
   | SYNTAX varid_bind hint* EQ deftyp
@@ -733,6 +683,14 @@ def_ :
   | RULE relid ruleids COLON exp prem_list
     { let id = if $3 = "" then "" else String.sub $3 1 (String.length $3 - 1) in
       RuleD ($2, id @@@ $loc($3), $5, $6) }
+  | BUILTIN DEC DOLLAR defid COLON plaintyp hint*
+    { BuiltinDecD ($4, [], [], $6, $7) }
+  | BUILTIN DEC DOLLAR defid_lparen enter_scope comma_list(param) RPAREN COLON plaintyp hint* exit_scope
+    { BuiltinDecD ($4, [], $6, $9, $10) }
+  | BUILTIN DEC DOLLAR defid_langle enter_scope comma_list(tparam) RANGLE COLON plaintyp hint* exit_scope
+    { BuiltinDecD ($4, $6, [], $9, $10) }
+  | BUILTIN DEC DOLLAR defid_langle enter_scope comma_list(tparam) RANGLE_LPAREN comma_list(param) RPAREN COLON plaintyp hint* exit_scope
+    { BuiltinDecD ($4, $6, $8, $11, $12) }
   | DEC DOLLAR defid COLON plaintyp hint*
     { DecD ($3, [], [], $5, $6) }
   | DEC DOLLAR defid_lparen enter_scope comma_list(param) RPAREN COLON plaintyp hint* exit_scope

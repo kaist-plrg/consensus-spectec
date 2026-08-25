@@ -14,7 +14,6 @@ let file_exists path = Sys.file_exists path && not (Sys.is_directory path)
 module Target : Runner.Target.S = struct
   let name = "ethereum"
   let spec_dir = spec_dir
-  let test_dir = test_base_dir
   let builtins = Builtin_eth.builtins
 
   (* Monotonic across handler calls so vids never repeat in a process. The
@@ -40,8 +39,8 @@ let build_tdenv spec =
   List.fold_left
     (fun tdenv (def : Il.def) ->
       match def.it with
-      | Il.TypD (id, tparams, deftyp) ->
-          Envs.Il.TDEnv.add id (tparams, deftyp) tdenv
+      | Il.TypD { synid; tparams; deftyp } ->
+          Envs.Il.TDEnv.add synid (tparams, deftyp) tdenv
       | _ -> tdenv)
     Envs.Il.TDEnv.empty spec
 

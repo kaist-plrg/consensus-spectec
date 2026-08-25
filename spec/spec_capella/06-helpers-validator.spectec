@@ -117,11 +117,11 @@ def $get_validator_from_deposit(blsPubkey, bytes32_withdrawal, uint64_amount)
 ;; add_validator_to_registry(state, pubkey, withdrawal_credentials, amount) : beaconState
 ;;  mutates: VALIDATORS, BALANCES, PREVIOUS_EPOCH_PARTICIPATION, CURRENT_EPOCH_PARTICIPATION, INACTIVITY_SCORES
 relation AddValidatorToRegistry:
-  beaconState `.VALIDATORS `++ `{ blsPubkey bytes32 uint64 } ~> beaconState
+  beaconState '.' VALIDATORS '++' `{ blsPubkey bytes32 uint64 `} ~> beaconState
   hint(input %0 %1 %2 %3)
 
 rule AddValidatorToRegistry:
-  state `.VALIDATORS `++ `{ blsPubkey bytes32_wc uint64_amount }
+  state '.' VALIDATORS '++' `{ blsPubkey bytes32_wc uint64_amount `}
   ~> state [.VALIDATORS = validator_updated*]
           [.BALANCES = balance_updated*]
           [.PREVIOUS_EPOCH_PARTICIPATION = participationFlags_prev_updated*]

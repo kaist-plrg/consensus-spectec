@@ -3,10 +3,12 @@
 open Core
 
 (* Unified error type for test runs *)
-type test_error = Runner_error of Runner.Error.t | Exception of exn
+type test_error = Runner_error of Spectec.Error.t | Exception of exn
 
 let string_of_test_error = function
-  | Runner_error err -> Runner.Error.string_of_error err
+  | Runner_error err ->
+      Spectec.Diagnostic.Render.render_bag_trace
+        (Spectec.Error.to_diagnostics err)
   | Exception exn -> "uncaught exception: " ^ Exn.to_string exn
 
 let is_exception = function Exception _ -> true | Runner_error _ -> false

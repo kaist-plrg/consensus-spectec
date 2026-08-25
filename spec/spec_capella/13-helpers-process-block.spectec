@@ -103,92 +103,92 @@ def $get_expected_withdrawals(state)
   -- if uint64_bound = $min_uint64(|state.VALIDATORS|, $MAX_VALIDATORS_PER_WITHDRAWALS_SWEEP)
 
 relation ApplyWithdrawal:
-  beaconState `.BALANCES `{ withdrawal } ~> beaconState
+  beaconState '.' BALANCES `{ withdrawal `} ~> beaconState
   hint(input %0 %1)
 
 rule ApplyWithdrawal/main:
-  state `.BALANCES `{ withdrawal } ~> state_out
-  -- DecreaseBalance: state `.BALANCES `[ withdrawal.VALIDATOR_INDEX ] `- withdrawal.AMOUNT ~> state_out
+  state '.' BALANCES `{ withdrawal `} ~> state_out
+  -- DecreaseBalance: state '.' BALANCES `[ withdrawal.VALIDATOR_INDEX `] '-' withdrawal.AMOUNT ~> state_out
 
 relation ApplyWithdrawals:
-  beaconState `.BALANCES `{ withdrawal* } ~>* beaconState
+  beaconState '.' BALANCES `{ withdrawal* `} ~>* beaconState
   hint(input %0 %1)
 
 rule ApplyWithdrawals/nil:
-  state `.BALANCES `{ eps } ~>* state
+  state '.' BALANCES `{ eps `} ~>* state
 
 rule ApplyWithdrawals/cons:
-  state `.BALANCES `{ withdrawal_h :: withdrawal_t* } ~>* state_out
-  -- ApplyWithdrawal: state `.BALANCES `{ withdrawal_h } ~> state_1
-  -- ApplyWithdrawals: state_1 `.BALANCES `{ withdrawal_t* } ~>* state_out
+  state '.' BALANCES `{ withdrawal_h :: withdrawal_t* `} ~>* state_out
+  -- ApplyWithdrawal: state '.' BALANCES `{ withdrawal_h `} ~> state_1
+  -- ApplyWithdrawals: state_1 '.' BALANCES `{ withdrawal_t* `} ~>* state_out
 
 
 ;; [Custom]
 ;; loop helper for ProcessAttestation
 relation AddFlag:
-  participationFlags `[ validatorIndex ] `++ `{ validatorIndex } `# beaconState `#SUM gwei ~> participationFlags `#SUM gwei
+  participationFlags `[ validatorIndex `] '++' `{ validatorIndex `} '#' beaconState '#' SUM gwei ~> participationFlags '#' SUM gwei
   hint(input %0 %1 %2 %3 %4)
 
 rule AddFlag/main:
-  participationFlags `[ vid_attesting ] `++ `{ vid_flag } `# state `#SUM reward
+  participationFlags `[ vid_attesting `] '++' `{ vid_flag `} '#' state '#' SUM reward
     ~>
     $add_flag(participationFlags, vid_flag)
-    `#SUM $(reward + reward_base * $PARTICIPATION_FLAG_WEIGHTS[vid_flag])
+    '#' SUM $(reward + reward_base * $PARTICIPATION_FLAG_WEIGHTS[vid_flag])
   -- if ~$has_flag(participationFlags, vid_flag)
   -- if $get_base_reward(state, vid_attesting) = reward_base
 rule AddFlag/skip:
-  participationFlags `[ _ ] `++ `{ vid_flag } `# _ `#SUM reward ~> participationFlags `#SUM reward
+  participationFlags `[ _ `] '++' `{ vid_flag `} '#' _ '#' SUM reward ~> participationFlags '#' SUM reward
   -- if $has_flag(participationFlags, vid_flag)
 
 ;; [Custom]
 ;; fold AddFlag over flag indices
 relation AddFlags:
-  participationFlags `[ validatorIndex ] `++ `{ validatorIndex* } `# beaconState `#SUM gwei
-    ~> participationFlags `#SUM gwei
+  participationFlags `[ validatorIndex `] '++' `{ validatorIndex* `} '#' beaconState '#' SUM gwei
+    ~> participationFlags '#' SUM gwei
   hint(input %0 %1 %2 %3 %4)
 
 rule AddFlags/nil:
-  participationFlags `[ _ ] `++ `{ eps } `# _ `#SUM reward ~> participationFlags `#SUM reward
+  participationFlags `[ _ `] '++' `{ eps `} '#' _ '#' SUM reward ~> participationFlags '#' SUM reward
 rule AddFlags/cons:
-  participationFlags `[ vid_attesting ] `++ `{ vid_flag_h :: vid_flag_t* } `# state `#SUM reward
-    ~> participationFlags_t `#SUM reward_t
-  -- AddFlag: participationFlags `[ vid_attesting ] `++ `{ vid_flag_h } `# state `#SUM reward
-      ~> participationFlags_h `#SUM reward_h
-  -- AddFlags: participationFlags_h `[ vid_attesting ] `++ `{ vid_flag_t* } `# state `#SUM reward_h
-      ~> participationFlags_t `#SUM reward_t
+  participationFlags `[ vid_attesting `] '++' `{ vid_flag_h :: vid_flag_t* `} '#' state '#' SUM reward
+    ~> participationFlags_t '#' SUM reward_t
+  -- AddFlag: participationFlags `[ vid_attesting `] '++' `{ vid_flag_h `} '#' state '#' SUM reward
+      ~> participationFlags_h '#' SUM reward_h
+  -- AddFlags: participationFlags_h `[ vid_attesting `] '++' `{ vid_flag_t* `} '#' state '#' SUM reward_h
+      ~> participationFlags_t '#' SUM reward_t
 
 ;; [Custom]
 ;; iterate AddFlags over participation flags
 relation ProcessFlags:
-  participationFlags* `[ validatorIndex ] `++ `{ validatorIndex* } `# beaconState `#SUM gwei
-    ~> participationFlags* `#SUM gwei
+  participationFlags* `[ validatorIndex `] '++' `{ validatorIndex* `} '#' beaconState '#' SUM gwei
+    ~> participationFlags* '#' SUM gwei
   hint(input %0 %1 %2 %3 %4)
 
 rule ProcessFlags/main:
-  participationFlags* `[ vid_attesting ] `++ `{ vid_flag* } `# state `#SUM reward
+  participationFlags* `[ vid_attesting `] '++' `{ vid_flag* `} '#' state '#' SUM reward
     ~>
     (participationFlags*[ [vid_attesting] = participationFlags_updated ])
-    `#SUM $(reward + reward_increment)
+    '#' SUM $(reward + reward_increment)
   -- if $(vid_attesting < |participationFlags*|)
-  -- AddFlags: participationFlags*[vid_attesting] `[vid_attesting] `++ `{ vid_flag* } `# state `#SUM 0
-      ~> participationFlags_updated `#SUM reward_increment
+  -- AddFlags: participationFlags*[vid_attesting] `[vid_attesting`] '++' `{ vid_flag* `} '#' state '#' SUM 0
+      ~> participationFlags_updated '#' SUM reward_increment
 
 ;; [Custom]
 ;; fold ProcessFlags over attesting indices
 relation ProcessFlags_over_attesting:
-  participationFlags* `[ validatorIndex* ] `++ `{ validatorIndex* } `# beaconState `#SUM gwei
-    ~> participationFlags* `#SUM gwei
+  participationFlags* `[ validatorIndex* `] '++' `{ validatorIndex* `} '#' beaconState '#' SUM gwei
+    ~> participationFlags* '#' SUM gwei
   hint(input %0 %1 %2 %3 %4)
 
 rule ProcessFlags_over_attesting/nil:
-  participationFlags* `[ eps ] `++ `{ _ } `# _ `#SUM reward ~> participationFlags* `#SUM reward
+  participationFlags* `[ eps `] '++' `{ _ `} '#' _ '#' SUM reward ~> participationFlags* '#' SUM reward
 rule ProcessFlags_over_attesting/cons:
-  participationFlags* `[ vid_attesting_h :: vid_attesting_t* ] `++ `{ vid_flag* } `# state `#SUM reward
-    ~> participationFlags_2* `#SUM reward_2
-  -- ProcessFlags: participationFlags* `[ vid_attesting_h ] `++ `{ vid_flag* } `# state `#SUM reward
-      ~> participationFlags_1* `#SUM reward_1
-  -- ProcessFlags_over_attesting: participationFlags_1* `[ vid_attesting_t* ] `++ `{ vid_flag* } `# state `#SUM reward_1
-      ~> participationFlags_2* `#SUM reward_2
+  participationFlags* `[ vid_attesting_h :: vid_attesting_t* `] '++' `{ vid_flag* `} '#' state '#' SUM reward
+    ~> participationFlags_2* '#' SUM reward_2
+  -- ProcessFlags: participationFlags* `[ vid_attesting_h `] '++' `{ vid_flag* `} '#' state '#' SUM reward
+      ~> participationFlags_1* '#' SUM reward_1
+  -- ProcessFlags_over_attesting: participationFlags_1* `[ vid_attesting_t* `] '++' `{ vid_flag* `} '#' state '#' SUM reward_1
+      ~> participationFlags_2* '#' SUM reward_2
 
 ;; process_sync_aggregate
 dec $bit_is_one_en_blsPubkey(enumerated_<blsPubkey>, boolean*) : bool
@@ -202,54 +202,54 @@ def $bit_is_one_en_blsPubkey((i, blsPubkey), boolean_bits*) = false
 ;; loop helper for ProcessSyncAggregate
 relation ApplyReward:
   beaconState
-    PARTICIPANT boolean `[ validatorIndex ] `+ gwei
-    PROPOSER `[ validatorIndex ] `+ gwei
+    PARTICIPANT boolean `[ validatorIndex `] '+' gwei
+    PROPOSER `[ validatorIndex `] '+' gwei
       ~> beaconState
   hint(input %0 %1 %2 %3 %4 %5)
 
 rule ApplyReward/participation:
   state
-    PARTICIPANT true `[ vid_participant ] `+ reward_participant
-    PROPOSER `[ vid_proposer ] `+ reward_proposer
+    PARTICIPANT true `[ vid_participant `] '+' reward_participant
+    PROPOSER `[ vid_proposer `] '+' reward_proposer
       ~> state_out
-  -- IncreaseBalance: state `.BALANCES `[ vid_participant ] `+ reward_participant ~> state_participant
-  -- IncreaseBalance: state_participant `.BALANCES `[ vid_proposer ] `+ reward_proposer ~> state_out
+  -- IncreaseBalance: state '.' BALANCES `[ vid_participant `] '+' reward_participant ~> state_participant
+  -- IncreaseBalance: state_participant '.' BALANCES `[ vid_proposer `] '+' reward_proposer ~> state_out
 
 rule ApplyReward/no_participation:
   state
-    PARTICIPANT false `[ vid_participant ] `+ reward_participant
-    PROPOSER `[ _ ] `+ _
+    PARTICIPANT false `[ vid_participant `] '+' reward_participant
+    PROPOSER `[ _ `] '+' _
       ~> state_out
-  -- DecreaseBalance: state `.BALANCES `[ vid_participant ] `- reward_participant ~> state_out
+  -- DecreaseBalance: state '.' BALANCES `[ vid_participant `] '-' reward_participant ~> state_out
 
 ;; [Custom]
 ;; fold ApplyReward over vid_participant and bit_participating
 relation ApplyReward_over_participants:
   beaconState
-    PARTICIPANT boolean* `[ validatorIndex* ] `+ gwei
-    PROPOSER `[ validatorIndex ] `+ gwei
+    PARTICIPANT boolean* `[ validatorIndex* `] '+' gwei
+    PROPOSER `[ validatorIndex `] '+' gwei
       ~> beaconState
     hint(input %0 %1 %2 %3 %4 %5)
 
 rule ApplyReward_over_participants/nil:
   state
-    PARTICIPANT eps `[ eps ] `+ _
-    PROPOSER `[ _ ] `+ _
+    PARTICIPANT eps `[ eps `] '+' _
+    PROPOSER `[ _ `] '+' _
       ~> state
 
 rule ApplyReward_over_participants/cons:
   state
-    PARTICIPANT (boolean_h :: boolean_t*) `[ vid_participant_h :: vid_participant_t* ] `+ reward_participant
-    PROPOSER `[ vid_proposer ] `+ reward_proposer
+    PARTICIPANT (boolean_h :: boolean_t*) `[ vid_participant_h :: vid_participant_t* `] '+' reward_participant
+    PROPOSER `[ vid_proposer `] '+' reward_proposer
       ~> state_out
   -- ApplyReward:
       state
-        PARTICIPANT boolean_h `[ vid_participant_h ] `+ reward_participant
-        PROPOSER `[ vid_proposer ] `+ reward_proposer
+        PARTICIPANT boolean_h `[ vid_participant_h `] '+' reward_participant
+        PROPOSER `[ vid_proposer `] '+' reward_proposer
           ~> state_1
   -- ApplyReward_over_participants:
       state_1
-        PARTICIPANT boolean_t* `[ vid_participant_t* ] `+ reward_participant
-        PROPOSER `[ vid_proposer ] `+ reward_proposer
+        PARTICIPANT boolean_t* `[ vid_participant_t* `] '+' reward_participant
+        PROPOSER `[ vid_proposer `] '+' reward_proposer
           ~> state_out
   

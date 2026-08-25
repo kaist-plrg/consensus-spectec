@@ -14,7 +14,12 @@ let init_il (spec : Il.spec) =
   List.iter
     (fun (def : Il.def) ->
       match def.it with
-      | Il.DecD (id, _, _, _, [ { it = params, body, []; _ } ]) ->
+      | Il.DecD
+          {
+            defid;
+            clauses = [ { it = { args = params; body; prems = [] }; _ } ];
+            _;
+          } ->
           let param_ids =
             List.filter_map
               (fun (param : Il.arg) ->
@@ -24,7 +29,7 @@ let init_il (spec : Il.spec) =
               params
           in
           if List.length param_ids = List.length params then
-            Hashtbl.replace inline_bodies id.it (param_ids, body)
+            Hashtbl.replace inline_bodies defid.it (param_ids, body)
       | _ -> ())
     spec
 
@@ -75,8 +80,8 @@ let expressions_of_prem (prem : Il.prem) : Il.exp list =
   if not !enabled then []
   else
     match prem.it with
-    | Il.IfPr exp -> expressions_of_exp exp
-    | Il.IterPr ({ it = Il.IfPr exp; _ }, _) -> expressions_of_exp exp
+    | Il.IfPr { cond; _ } -> expressions_of_exp cond
+    | Il.IterPr ({ it = Il.IfPr { cond; _ }; _ }, _) -> expressions_of_exp cond
     | _ -> []
 
 let lookup values exp = List.assoc_opt exp values

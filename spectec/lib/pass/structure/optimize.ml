@@ -3,8 +3,7 @@ open Common.Domain
 open Lang
 open Lang.Xl
 open Ol.Ast
-module Hint = Envs.Hint
-module HEnv = Envs.HEnv
+module RTEnv = Envs.RTEnv
 module TDEnv = Envs.Il.TDEnv
 
 (* [1] Remove redundant, trivial let aliases from the code,
@@ -17,31 +16,54 @@ module TDEnv = Envs.Il.TDEnv
 
    Notice the stop condition when we meet a shadowing let binding *)
 
-let rec rename_let_alias (rename : Renamer.t) (instrs : instr list) : instr list
-    =
-  match instrs with
-  | [] -> []
-  | instr_h :: instrs_t -> (
-      match instr_h.it with
-      | LetI ({ it = VarE id_l; _ }, _, _) when Renamer.Rename.mem id_l rename
-        ->
-          instr_h :: instrs_t
-      | _ ->
-          let instr_h = Renamer.rename_instr rename instr_h in
-          let instrs_t = rename_let_alias rename instrs_t in
-          instr_h :: instrs_t)
-
 let rec remove_let_alias (instrs : instr list) : instr list =
   match instrs with
   | [] -> []
-  | instr_h :: instrs_t -> (
-      match instr_h.it with
-      | LetI ({ it = VarE id_l; _ }, { it = VarE id_r; _ }, _) ->
+  | { it = IfI (exp_cond, iterexps, instrs_then); at; _ } :: instrs_t ->
+      let instrs_then = remove_let_alias instrs_then in
+      let instr_h = IfI (exp_cond, iterexps, instrs_then) $ at in
+      let instrs_t = remove_let_alias instrs_t in
+      instr_h :: instrs_t
+  | { it = RelAssertI { call; expect; iterexps; block = instrs_then }; at; _ }
+    :: instrs_t ->
+      let instrs_then = remove_let_alias instrs_then in
+      let instr_h =
+        RelAssertI { call; expect; iterexps; block = instrs_then } $ at
+      in
+      let instrs_t = remove_let_alias instrs_t in
+      instr_h :: instrs_t
+  | { it = CaseI (exp, cases, total); at; _ } :: instrs_t ->
+      let cases =
+        let guards, blocks = List.split cases in
+        let blocks = List.map remove_let_alias blocks in
+        List.combine guards blocks
+      in
+      let instr_h = CaseI (exp, cases, total) $ at in
+      let instrs_t = remove_let_alias instrs_t in
+      instr_h :: instrs_t
+  | ({ it = LetI (exp_l, exp_r, iterexps, block); _ } as instr_h) :: instrs_t
+    -> (
+      match (exp_l.it, exp_r.it) with
+      | VarE id_l, VarE id_r ->
           let rename = Renamer.Rename.singleton id_l id_r in
-          instrs_t |> rename_let_alias rename |> remove_let_alias
+          let block =
+            block |> Renamer.rename_instrs rename |> remove_let_alias
+          in
+          let instrs_t = remove_let_alias instrs_t in
+          block @ instrs_t
       | _ ->
+          let block = remove_let_alias block in
+          let instr_h = LetI (exp_l, exp_r, iterexps, block) $ instr_h.at in
           let instrs_t = remove_let_alias instrs_t in
           instr_h :: instrs_t)
+  | ({ it = RelI { call; iterexps; block }; _ } as instr_h) :: instrs_t ->
+      let block = remove_let_alias block in
+      let instr_h = RelI { call; iterexps; block } $ instr_h.at in
+      let instrs_t = remove_let_alias instrs_t in
+      instr_h :: instrs_t
+  | instr_h :: instrs_t ->
+      let instrs_t = remove_let_alias instrs_t in
+      instr_h :: instrs_t
 
 (* [2] Parallelize if conditions in logical or *)
 
@@ -72,6 +94,22 @@ let rec parallelize_if_disjunction (instr : instr) : instr list =
             (fun exp_cond -> IfI (exp_cond, iterexps, instrs_then) $ at)
             exps_cond
       | None -> [ instr ])
+  | RelAssertI { call; expect; iterexps; block = instrs_then } ->
+      let instrs_then = parallelize_if_disjunctions instrs_then in
+      [ RelAssertI { call; expect; iterexps; block = instrs_then } $ at ]
+  | CaseI (exp, cases, total) ->
+      let cases =
+        let guards, blocks = List.split cases in
+        let blocks = List.map parallelize_if_disjunctions blocks in
+        List.combine guards blocks
+      in
+      [ CaseI (exp, cases, total) $ at ]
+  | LetI (exp_l, exp_r, iterexps, block) ->
+      let block = parallelize_if_disjunctions block in
+      [ LetI (exp_l, exp_r, iterexps, block) $ at ]
+  | RelI { call; iterexps; block } ->
+      let block = parallelize_if_disjunctions block in
+      [ RelI { call; iterexps; block } $ at ]
   | _ -> [ instr ]
 
 and parallelize_if_disjunctions (instrs : instr list) : instr list =
@@ -82,10 +120,14 @@ and parallelize_if_disjunctions (instrs : instr list) : instr list =
 let matchify_exp_eq_terminal (exp : exp) : exp =
   let at, note = (exp.at, exp.note) in
   match exp.it with
-  | CmpE (`EqOp, _, exp_l, { it = CaseE (mixop, []); _ }) ->
-      Il.MatchE (exp_l, CaseP mixop) $$ (at, note)
-  | CmpE (`NeOp, _, exp_l, { it = CaseE (mixop, []); _ }) ->
-      let exp = Il.MatchE (exp_l, CaseP mixop) $$ (at, note) in
+  | CmpE (`EqOp, _, exp_l, { it = CaseE notexp; _ })
+    when Il.Mixfix.args notexp = [] ->
+      Il.MatchE (exp_l, CaseP (Il.Mixfix.to_mixop notexp)) $$ (at, note)
+  | CmpE (`NeOp, _, exp_l, { it = CaseE notexp; _ })
+    when Il.Mixfix.args notexp = [] ->
+      let exp =
+        Il.MatchE (exp_l, CaseP (Il.Mixfix.to_mixop notexp)) $$ (at, note)
+      in
       Il.UnE (`NotOp, `BoolT, exp) $$ (at, note)
   | _ -> exp
 
@@ -96,12 +138,28 @@ let rec matchify_if_eq_terminal (instr : instr) : instr =
       let exp_cond = matchify_exp_eq_terminal exp_cond in
       let instrs_then = matchify_if_eq_terminals instrs_then in
       IfI (exp_cond, iterexps, instrs_then) $ at
+  | RelAssertI { call; expect; iterexps; block = instrs_then } ->
+      let instrs_then = matchify_if_eq_terminals instrs_then in
+      RelAssertI { call; expect; iterexps; block = instrs_then } $ at
+  | CaseI (exp, cases, total) ->
+      let cases =
+        let guards, blocks = List.split cases in
+        let blocks = List.map matchify_if_eq_terminals blocks in
+        List.combine guards blocks
+      in
+      CaseI (exp, cases, total) $ at
+  | LetI (exp_l, exp_r, iterexps, block) ->
+      let block = matchify_if_eq_terminals block in
+      LetI (exp_l, exp_r, iterexps, block) $ at
+  | RelI { call; iterexps; block } ->
+      let block = matchify_if_eq_terminals block in
+      RelI { call; iterexps; block } $ at
   | _ -> instr
 
 and matchify_if_eq_terminals (instrs : instr list) : instr list =
   List.map matchify_if_eq_terminal instrs
 
-(* [4] Remove redundant let and rule bindings from the code,
+(* [4] Remove redundant let and relation bindings from the code,
    which appears due to the concatenation of multiple rules and clauses
    This operation is safe because IL is already in SSA form *)
 
@@ -133,7 +191,7 @@ module Bind = struct
 
   type t =
     | LetBind of expunit * expunit
-    | RuleBind of id * expunit list * expunit list
+    | RelBind of id * expunit list * expunit list
 
   (* Constructors *)
 
@@ -142,7 +200,7 @@ module Bind = struct
     let iterexps =
       List.map
         (fun (iter, vars) ->
-          let vars = List.filter (fun (id, _, _) -> IdSet.mem id ids) vars in
+          let vars = List.filter (fun var -> IdSet.mem var.Il.varid ids) vars in
           (iter, vars))
         iterexps
     in
@@ -153,12 +211,12 @@ module Bind = struct
     let expunit_r = init_expunit exp_r iterexps in
     LetBind (expunit_l, expunit_r)
 
-  let init_rule_bind (henv : HEnv.t) (id : id) (notexp : notexp)
+  let init_rel_bind (rtenv : RTEnv.t) (id : id) (notexp : notexp)
       (iterexps : iterexp list) : t =
     let exps_l, exps_r =
-      let _, exps = notexp in
-      let inputs = HEnv.find id henv in
-      Hint.split_exps_without_idx inputs exps
+      let exps = Il.Mixfix.args notexp in
+      let reltyp = RTEnv.find id rtenv in
+      Il.Mode.partition reltyp.it exps
     in
     let expunits_l =
       List.map (fun exp_l -> init_expunit exp_l iterexps) exps_l
@@ -166,7 +224,7 @@ module Bind = struct
     let expunits_r =
       List.map (fun exp_r -> init_expunit exp_r iterexps) exps_r
     in
-    RuleBind (id, expunits_l, expunits_r)
+    RelBind (id, expunits_l, expunits_r)
 
   (* Collapsing two bindings,
      if two bindings have syntactically equal right-hand sides,
@@ -183,15 +241,24 @@ module Bind = struct
         in
         Some rename
     | TupleE exps, TupleE exps_target -> collapse_exps rename exps exps_target
-    | CaseE (mixop, exps), CaseE (mixop_target, exps_target)
-      when Sl.Eq.eq_mixop mixop mixop_target ->
-        collapse_exps rename exps exps_target
+    | CaseE notexp, CaseE notexp_target
+      when Il.Mixfix.eq_mixop notexp notexp_target ->
+        collapse_exps rename (Il.Mixfix.args notexp)
+          (Il.Mixfix.args notexp_target)
     | StrE expfields, StrE expfields_target ->
         let atoms, exps = List.split expfields in
         let atoms_target, exps_target = List.split expfields_target in
         if Sl.Eq.eq_atoms atoms atoms_target then
           collapse_exps rename exps exps_target
         else None
+    | OptE exp_opt, OptE exp_opt_target -> (
+        match (exp_opt, exp_opt_target) with
+        | Some exp, Some exp_target -> collapse_exp rename exp exp_target
+        | None, None -> Some rename
+        | _ -> None)
+    | ListE exps, ListE exps_target -> collapse_exps rename exps exps_target
+    | ConsE (exp_h, exp_t), ConsE (exp_h_target, exp_t_target) ->
+        collapse_exps rename [ exp_h; exp_t ] [ exp_h_target; exp_t_target ]
     | IterE (exp, iterexp), IterE (exp_target, iterexp_target) -> (
         match collapse_exp rename exp exp_target with
         | Some rename ->
@@ -230,7 +297,7 @@ module Bind = struct
   let rec collapse_expunits (rename : Renamer.t) (expunits : expunit list)
       (expunits_target : expunit list) : Renamer.t option =
     match (expunits, expunits_target) with
-    | [], [] -> Some Renamer.Rename.empty
+    | [], [] -> Some rename
     | expunit_h :: expunits_t, expunit_target_h :: expunits_target_t -> (
         match collapse_expunit rename expunit_h expunit_target_h with
         | Some rename -> collapse_expunits rename expunits_t expunits_target_t
@@ -243,94 +310,129 @@ module Bind = struct
         LetBind (expunit_target_l, expunit_target_r) )
       when eq_expunit expunit_r expunit_target_r ->
         collapse_expunit Renamer.Rename.empty expunit_l expunit_target_l
-    | ( RuleBind (id, expunits_l, expunits_r),
-        RuleBind (id_target, expunits_target_l, expunits_target_r) )
+    | ( RelBind (id, expunits_l, expunits_r),
+        RelBind (id_target, expunits_target_l, expunits_target_r) )
       when Sl.Eq.eq_id id id_target && eq_expunits expunits_r expunits_target_r
       ->
         collapse_expunits Renamer.Rename.empty expunits_l expunits_target_l
     | _ -> None
 end
 
-let rec remove_redundant_bindings' (henv : HEnv.t) (bind : Bind.t)
+let rec remove_redundant_bindings' (rtenv : RTEnv.t) (bind : Bind.t)
     (instrs : instr list) : instr list =
   match instrs with
   | [] -> []
   | { it = IfI (exp_cond, iterexps, instrs_then); at; _ } :: instrs_t ->
-      let instrs_then = instrs_then |> remove_redundant_bindings' henv bind in
+      let instrs_then = instrs_then |> remove_redundant_bindings' rtenv bind in
       let instr_h = IfI (exp_cond, iterexps, instrs_then) $ at in
-      let instrs_t = remove_redundant_bindings' henv bind instrs_t in
+      let instrs_t = remove_redundant_bindings' rtenv bind instrs_t in
+      instr_h :: instrs_t
+  | { it = RelAssertI { call; expect; iterexps; block = instrs_then }; at; _ }
+    :: instrs_t ->
+      let instrs_then = instrs_then |> remove_redundant_bindings' rtenv bind in
+      let instr_h =
+        RelAssertI { call; expect; iterexps; block = instrs_then } $ at
+      in
+      let instrs_t = remove_redundant_bindings' rtenv bind instrs_t in
       instr_h :: instrs_t
   | { it = CaseI (exp, cases, total); at; _ } :: instrs_t ->
       let cases =
         let guards, blocks = List.split cases in
-        let blocks = List.map (remove_redundant_bindings' henv bind) blocks in
+        let blocks = List.map (remove_redundant_bindings' rtenv bind) blocks in
         List.combine guards blocks
       in
       let instr_h = CaseI (exp, cases, total) $ at in
-      let instrs_t = remove_redundant_bindings' henv bind instrs_t in
+      let instrs_t = remove_redundant_bindings' rtenv bind instrs_t in
       instr_h :: instrs_t
-  | ({ it = LetI (exp_l, exp_r, iterexps); _ } as instr_h) :: instrs_t -> (
+  | ({ it = LetI (exp_l, exp_r, iterexps, block); _ } as instr_h) :: instrs_t
+    -> (
+      let block = remove_redundant_bindings' rtenv bind block in
       let bind_target = Bind.init_let_bind exp_l exp_r iterexps in
       let rename_opt = Bind.collapse_bind bind bind_target in
       match rename_opt with
       | Some rename ->
-          instrs_t
-          |> Renamer.rename_instrs rename
-          |> remove_redundant_bindings' henv bind
+          let block =
+            block
+            |> Renamer.rename_instrs rename
+            |> remove_redundant_bindings' rtenv bind
+          in
+          let instrs_t = remove_redundant_bindings' rtenv bind instrs_t in
+          block @ instrs_t
       | None ->
-          let instrs_t = remove_redundant_bindings' henv bind instrs_t in
+          let instrs_t = remove_redundant_bindings' rtenv bind instrs_t in
+          let instr_h = LetI (exp_l, exp_r, iterexps, block) $ instr_h.at in
           instr_h :: instrs_t)
-  | ({ it = RuleI (id, notexp, iterexps); _ } as instr_h) :: instrs_t -> (
-      let bind_target = Bind.init_rule_bind henv id notexp iterexps in
+  | ({ it = RelI { call; iterexps; block }; _ } as instr_h) :: instrs_t -> (
+      let block = remove_redundant_bindings' rtenv bind block in
+      let bind_target =
+        Bind.init_rel_bind rtenv call.relid call.notexp iterexps
+      in
       let rename_opt = Bind.collapse_bind bind bind_target in
       match rename_opt with
       | Some rename ->
-          instrs_t
-          |> Renamer.rename_instrs rename
-          |> remove_redundant_bindings' henv bind
+          let block =
+            block
+            |> Renamer.rename_instrs rename
+            |> remove_redundant_bindings' rtenv bind
+          in
+          let instrs_t = remove_redundant_bindings' rtenv bind instrs_t in
+          block @ instrs_t
       | None ->
-          let instrs_t = remove_redundant_bindings' henv bind instrs_t in
+          let instrs_t = remove_redundant_bindings' rtenv bind instrs_t in
+          let instr_h = RelI { call; iterexps; block } $ instr_h.at in
           instr_h :: instrs_t)
   | instr_h :: instrs_t ->
-      let instrs_t = remove_redundant_bindings' henv bind instrs_t in
+      let instrs_t = remove_redundant_bindings' rtenv bind instrs_t in
       instr_h :: instrs_t
 
-let rec remove_redundant_bindings (henv : HEnv.t) (instrs : instr list) :
+let rec remove_redundant_bindings (rtenv : RTEnv.t) (instrs : instr list) :
     instr list =
   match instrs with
   | [] -> []
   | { it = IfI (exp_cond, iterexps, instrs_then); at; _ } :: instrs_t ->
-      let instrs_then = instrs_then |> remove_redundant_bindings henv in
+      let instrs_then = instrs_then |> remove_redundant_bindings rtenv in
       let instr_h = IfI (exp_cond, iterexps, instrs_then) $ at in
-      let instrs_t = remove_redundant_bindings henv instrs_t in
+      let instrs_t = remove_redundant_bindings rtenv instrs_t in
+      instr_h :: instrs_t
+  | { it = RelAssertI { call; expect; iterexps; block = instrs_then }; at; _ }
+    :: instrs_t ->
+      let instrs_then = instrs_then |> remove_redundant_bindings rtenv in
+      let instr_h =
+        RelAssertI { call; expect; iterexps; block = instrs_then } $ at
+      in
+      let instrs_t = remove_redundant_bindings rtenv instrs_t in
       instr_h :: instrs_t
   | { it = CaseI (exp, cases, total); at; _ } :: instrs_t ->
       let cases =
         let guards, blocks = List.split cases in
-        let blocks = List.map (remove_redundant_bindings henv) blocks in
+        let blocks = List.map (remove_redundant_bindings rtenv) blocks in
         List.combine guards blocks
       in
       let instr_h = CaseI (exp, cases, total) $ at in
-      let instrs_t = remove_redundant_bindings henv instrs_t in
+      let instrs_t = remove_redundant_bindings rtenv instrs_t in
       instr_h :: instrs_t
-  | ({ it = LetI (exp_l, exp_r, iterexps); _ } as instr_h) :: instrs_t ->
+  | ({ it = LetI (exp_l, exp_r, iterexps, block); _ } as instr_h) :: instrs_t ->
+      let block = remove_redundant_bindings rtenv block in
       let bind = Bind.init_let_bind exp_l exp_r iterexps in
       let instrs_t =
         instrs_t
-        |> remove_redundant_bindings' henv bind
-        |> remove_redundant_bindings henv
+        |> remove_redundant_bindings' rtenv bind
+        |> remove_redundant_bindings rtenv
       in
+      let instr_h = LetI (exp_l, exp_r, iterexps, block) $ instr_h.at in
       instr_h :: instrs_t
-  | ({ it = RuleI (id, notexp, iterexps); _ } as instr_h) :: instrs_t ->
-      let bind = Bind.init_rule_bind henv id notexp iterexps in
+  | ({ it = RelI { call; iterexps; block }; _ } as instr_h) :: instrs_t ->
+      let block = remove_redundant_bindings rtenv block in
+      let bind = Bind.init_rel_bind rtenv call.relid call.notexp iterexps in
       let instrs_t =
         instrs_t
-        |> remove_redundant_bindings' henv bind
-        |> remove_redundant_bindings henv
+        |> remove_redundant_bindings' rtenv bind
+        |> remove_redundant_bindings rtenv
       in
+      let instr_h = RelI { call; iterexps; block } $ instr_h.at in
       instr_h :: instrs_t
   | instr_h :: instrs_t ->
-      let instrs_t = instrs_t |> remove_redundant_bindings henv in
+      let instrs_t = instrs_t |> remove_redundant_bindings rtenv in
       instr_h :: instrs_t
 
 (* [5] Condition analysis and case analysis insertion *)
@@ -338,11 +440,89 @@ let rec remove_redundant_bindings (henv : HEnv.t) (instrs : instr list) :
 let rec merge_block (instrs_a : instr list) (instrs_b : instr list) : instr list
     =
   match (instrs_a, instrs_b) with
-  | instr_a :: instrs_a, instr_b :: instrs_b when Ol.Eq.eq_instr instr_a instr_b
-    ->
-      let instrs = merge_block instrs_a instrs_b in
-      instr_a :: instrs
+  | ( { it = IfI (exp_cond_a, iterexps_a, instrs_then_a); at; _ } :: instrs_a,
+      { it = IfI (exp_cond_b, iterexps_b, instrs_then_b); _ } :: instrs_b )
+    when Sl.Eq.eq_exp exp_cond_a exp_cond_b
+         && Sl.Eq.eq_iterexps iterexps_a iterexps_b ->
+      let instrs_then = merge_block instrs_then_a instrs_then_b in
+      let instr_h = IfI (exp_cond_a, iterexps_a, instrs_then) $ at in
+      merge_block (instr_h :: instrs_a) instrs_b
   | _ -> instrs_a @ instrs_b
+
+let downstream_binding (rtenv : RTEnv.t) (bind : Bind.t) (instrs : instr list) :
+    (instr list * instr list) option =
+  match instrs with
+  | { it = LetI (exp_l, exp_r, iterexps, block); _ } :: instrs_t -> (
+      let bind_target = Bind.init_let_bind exp_l exp_r iterexps in
+      match Bind.collapse_bind bind bind_target with
+      | Some rename ->
+          let block = Renamer.rename_instrs rename block in
+          Some (block, instrs_t)
+      | None -> None)
+  | { it = RelI { call; iterexps; block }; _ } :: instrs_t -> (
+      let bind_target =
+        Bind.init_rel_bind rtenv call.relid call.notexp iterexps
+      in
+      match Bind.collapse_bind bind bind_target with
+      | Some rename ->
+          let block = Renamer.rename_instrs rename block in
+          Some (block, instrs_t)
+      | None -> None)
+  | _ -> None
+
+let rec merge_binding (rtenv : RTEnv.t) (instrs : instr list) : instr list =
+  match instrs with
+  | [] -> []
+  | { it = IfI (exp_cond, iterexps, instrs_then); at; _ } :: instrs_t ->
+      let instrs_then = merge_binding rtenv instrs_then in
+      let instr_h = IfI (exp_cond, iterexps, instrs_then) $ at in
+      let instrs_t = merge_binding rtenv instrs_t in
+      instr_h :: instrs_t
+  | { it = RelAssertI { call; expect; iterexps; block = instrs_then }; at; _ }
+    :: instrs_t ->
+      let instrs_then = merge_binding rtenv instrs_then in
+      let instr_h =
+        RelAssertI { call; expect; iterexps; block = instrs_then } $ at
+      in
+      let instrs_t = merge_binding rtenv instrs_t in
+      instr_h :: instrs_t
+  | { it = CaseI (exp, cases, total); at; _ } :: instrs_t ->
+      let cases =
+        let guards, blocks = List.split cases in
+        let blocks = List.map (merge_binding rtenv) blocks in
+        List.combine guards blocks
+      in
+      let instr_h = CaseI (exp, cases, total) $ at in
+      let instrs_t = merge_binding rtenv instrs_t in
+      instr_h :: instrs_t
+  | ({ it = LetI (exp_l, exp_r, iterexps, block); _ } as instr_h) :: instrs_t
+    -> (
+      let bind = Bind.init_let_bind exp_l exp_r iterexps in
+      match downstream_binding rtenv bind instrs_t with
+      | Some (block_merge, instrs_t) ->
+          let block = merge_block block block_merge in
+          let instr_h = LetI (exp_l, exp_r, iterexps, block) $ instr_h.at in
+          merge_binding rtenv (instr_h :: instrs_t)
+      | None ->
+          let block = merge_binding rtenv block in
+          let instr_h = LetI (exp_l, exp_r, iterexps, block) $ instr_h.at in
+          let instrs_t = merge_binding rtenv instrs_t in
+          instr_h :: instrs_t)
+  | ({ it = RelI { call; iterexps; block }; _ } as instr_h) :: instrs_t -> (
+      let bind = Bind.init_rel_bind rtenv call.relid call.notexp iterexps in
+      match downstream_binding rtenv bind instrs_t with
+      | Some (block_merge, instrs_t) ->
+          let block = merge_block block block_merge in
+          let instr_h = RelI { call; iterexps; block } $ instr_h.at in
+          merge_binding rtenv (instr_h :: instrs_t)
+      | None ->
+          let block = merge_binding rtenv block in
+          let instr_h = RelI { call; iterexps; block } $ instr_h.at in
+          let instrs_t = merge_binding rtenv instrs_t in
+          instr_h :: instrs_t)
+  | instr_h :: instrs_t ->
+      let instrs_t = merge_binding rtenv instrs_t in
+      instr_h :: instrs_t
 
 (* Syntactic analysis of conditions
 
@@ -384,13 +564,15 @@ let guard_as_exp (exp_target : exp) (guard : guard) : exp =
 
 let rec typ_as_variant (tdenv : TDEnv.t) (typ : typ) : mixop list option =
   match typ.it with
-  | VarT (tid, _) -> (
+  | VarT { synid = tid; _ } -> (
       let _, deftyp = TDEnv.find tid tdenv in
       match deftyp.it with
       | PlainT typ -> typ_as_variant tdenv typ
       | VariantT typcases ->
           let mixops =
-            typcases |> List.map fst |> List.map it |> List.map fst
+            typcases
+            |> List.map (fun { Il.notation; _ } ->
+                   Il.Mixfix.to_mixop notation.it)
           in
           Some mixops
       | _ -> None)
@@ -412,7 +594,9 @@ let rec distinct_exp_literal (exp_a : exp) (exp_b : exp) : bool =
   | TupleE exps_a, TupleE exps_b ->
       assert (List.length exps_a = List.length exps_b);
       List.exists2 distinct_exp_literal exps_a exps_b
-  | CaseE (mixop_a, []), CaseE (mixop_b, []) -> not (Mixop.eq mixop_a mixop_b)
+  | CaseE notexp_a, CaseE notexp_b
+    when Il.Mixfix.args notexp_a = [] && Il.Mixfix.args notexp_b = [] ->
+      not (Il.Mixfix.eq_mixop notexp_a notexp_b)
   | ListE exps_a, ListE exps_b when List.length exps_a = List.length exps_b ->
       List.exists2 distinct_exp_literal exps_a exps_b
   | ListE _, ListE _ -> true
@@ -424,7 +608,11 @@ let overlap_typ (tdenv : TDEnv.t) (exp : exp) (typ_a : typ) (typ_b : typ) :
   let guard_b = SubG typ_b in
   match (typ_as_variant tdenv typ_a, typ_as_variant tdenv typ_b) with
   | Some mixops_a, Some mixops_b ->
-      let module Set = Set.Make (Mixop) in
+      let module Set = Set.Make (struct
+        type t = Il.Mixfix.mixop
+
+        let compare = Il.Mixfix.compare_mixop
+      end) in
       let mixops_a = Set.of_list mixops_a in
       let mixops_b = Set.of_list mixops_b in
       if Set.equal mixops_a mixops_b then Identical
@@ -577,6 +765,14 @@ let rec merge_if (tdenv : TDEnv.t) (instrs : instr list) : instr list =
           in
           let instrs_t = merge_if tdenv instrs_t in
           instr_h :: instrs_t)
+  | { it = RelAssertI { call; expect; iterexps; block = instrs_then }; at; _ }
+    :: instrs_t ->
+      let instr_h =
+        let instrs_then = merge_if tdenv instrs_then in
+        RelAssertI { call; expect; iterexps; block = instrs_then } $ at
+      in
+      let instrs_t = merge_if tdenv instrs_t in
+      instr_h :: instrs_t
   | { it = CaseI (exp, cases, total); at; _ } :: instrs_t ->
       let instr_h =
         let guards, blocks = List.split cases in
@@ -586,8 +782,122 @@ let rec merge_if (tdenv : TDEnv.t) (instrs : instr list) : instr list =
       in
       let instrs_t = merge_if tdenv instrs_t in
       instr_h :: instrs_t
+  | ({ it = LetI (exp_l, exp_r, iterexps, block); _ } as instr_h) :: instrs_t ->
+      let block = merge_if tdenv block in
+      let instr_h = LetI (exp_l, exp_r, iterexps, block) $ instr_h.at in
+      let instrs_t = merge_if tdenv instrs_t in
+      instr_h :: instrs_t
+  | ({ it = RelI { call; iterexps; block }; _ } as instr_h) :: instrs_t ->
+      let block = merge_if tdenv block in
+      let instr_h = RelI { call; iterexps; block } $ instr_h.at in
+      let instrs_t = merge_if tdenv instrs_t in
+      instr_h :: instrs_t
   | instr_h :: instrs_t ->
       let instrs_t = merge_if tdenv instrs_t in
+      instr_h :: instrs_t
+
+(* [5-2] Merge consecutive relation assertions with the same call *)
+
+let rec merge_identical_rel_assert (at : region) (call_target : relcall)
+    (iterexps_target : iterexp list) (instrs_then_target : instr list)
+    (instrs : instr list) : instr list option =
+  merge_identical_rel_assert' call_target iterexps_target [] instrs
+  |> Option.map (fun (instrs_then, instrs_leftover) ->
+         let instr =
+           let instrs_then = merge_block instrs_then_target instrs_then in
+           RelAssertI
+             {
+               call = call_target;
+               expect = true;
+               iterexps = iterexps_target;
+               block = instrs_then;
+             }
+           $ at
+         in
+         instr :: instrs_leftover)
+
+and merge_identical_rel_assert' (call_target : relcall)
+    (iterexps_target : iterexp list) (instrs_leftover : instr list)
+    (instrs : instr list) : (instr list * instr list) option =
+  match instrs with
+  | ({
+       it = RelAssertI { call; expect = true; iterexps; block = instrs_then };
+       _;
+     } as instr_h)
+    :: instrs_t ->
+      if
+        Sl.Eq.eq_relcall call call_target
+        && Sl.Eq.eq_iterexps iterexps iterexps_target
+      then
+        let instrs_leftover = instrs_leftover @ instrs_t in
+        Some (instrs_then, instrs_leftover)
+      else
+        let instrs_leftover = instrs_leftover @ [ instr_h ] in
+        merge_identical_rel_assert' call_target iterexps_target instrs_leftover
+          instrs_t
+  | _ -> None
+
+let rec merge_rel_assert (instrs : instr list) : instr list =
+  match instrs with
+  | [] -> []
+  | { it = IfI (exp_cond, iterexps, instrs_then); at; _ } :: instrs_t ->
+      let instr_h =
+        let instrs_then = merge_rel_assert instrs_then in
+        IfI (exp_cond, iterexps, instrs_then) $ at
+      in
+      let instrs_t = merge_rel_assert instrs_t in
+      instr_h :: instrs_t
+  | {
+      it = RelAssertI { call; expect = true; iterexps; block = instrs_then };
+      at;
+      _;
+    }
+    :: instrs_t -> (
+      match
+        merge_identical_rel_assert at call iterexps instrs_then instrs_t
+      with
+      | Some instrs -> merge_rel_assert instrs
+      | None ->
+          let instr_h =
+            let instrs_then = merge_rel_assert instrs_then in
+            RelAssertI { call; expect = true; iterexps; block = instrs_then }
+            $ at
+          in
+          let instrs_t = merge_rel_assert instrs_t in
+          instr_h :: instrs_t)
+  | {
+      it = RelAssertI { call; expect = false; iterexps; block = instrs_then };
+      at;
+      _;
+    }
+    :: instrs_t ->
+      let instr_h =
+        let instrs_then = merge_rel_assert instrs_then in
+        RelAssertI { call; expect = false; iterexps; block = instrs_then } $ at
+      in
+      let instrs_t = merge_rel_assert instrs_t in
+      instr_h :: instrs_t
+  | { it = CaseI (exp, cases, total); at; _ } :: instrs_t ->
+      let instr_h =
+        let guards, blocks = List.split cases in
+        let blocks = List.map merge_rel_assert blocks in
+        let cases = List.combine guards blocks in
+        CaseI (exp, cases, total) $ at
+      in
+      let instrs_t = merge_rel_assert instrs_t in
+      instr_h :: instrs_t
+  | ({ it = LetI (exp_l, exp_r, iterexps, block); _ } as instr_h) :: instrs_t ->
+      let block = merge_rel_assert block in
+      let instr_h = LetI (exp_l, exp_r, iterexps, block) $ instr_h.at in
+      let instrs_t = merge_rel_assert instrs_t in
+      instr_h :: instrs_t
+  | ({ it = RelI { call; iterexps; block }; _ } as instr_h) :: instrs_t ->
+      let block = merge_rel_assert block in
+      let instr_h = RelI { call; iterexps; block } $ instr_h.at in
+      let instrs_t = merge_rel_assert instrs_t in
+      instr_h :: instrs_t
+  | instr_h :: instrs_t ->
+      let instrs_t = merge_rel_assert instrs_t in
       instr_h :: instrs_t
 
 (* [5-2-a] if-and-if to case analysis *)
@@ -815,6 +1125,14 @@ let rec casify (tdenv : TDEnv.t) (instrs : instr list) : instr list =
           in
           let instrs_t = casify tdenv instrs_t in
           instr_h :: instrs_t)
+  | { it = RelAssertI { call; expect; iterexps; block = instrs_then }; at; _ }
+    :: instrs_t ->
+      let instr_h =
+        let instrs_then = casify tdenv instrs_then in
+        RelAssertI { call; expect; iterexps; block = instrs_then } $ at
+      in
+      let instrs_t = casify tdenv instrs_t in
+      instr_h :: instrs_t
   | { it = CaseI (exp, cases, total); at; _ } :: instrs_t -> (
       match casify_from_case tdenv at exp cases total instrs_t with
       | Some instrs -> casify tdenv instrs
@@ -827,6 +1145,16 @@ let rec casify (tdenv : TDEnv.t) (instrs : instr list) : instr list =
           in
           let instrs_t = casify tdenv instrs_t in
           instr_h :: instrs_t)
+  | ({ it = LetI (exp_l, exp_r, iterexps, block); _ } as instr_h) :: instrs_t ->
+      let block = casify tdenv block in
+      let instr_h = LetI (exp_l, exp_r, iterexps, block) $ instr_h.at in
+      let instrs_t = casify tdenv instrs_t in
+      instr_h :: instrs_t
+  | ({ it = RelI { call; iterexps; block }; _ } as instr_h) :: instrs_t ->
+      let block = casify tdenv block in
+      let instr_h = RelI { call; iterexps; block } $ instr_h.at in
+      let instrs_t = casify tdenv instrs_t in
+      instr_h :: instrs_t
   | instr_h :: instrs_t ->
       let instrs_t = casify tdenv instrs_t in
       instr_h :: instrs_t
@@ -857,6 +1185,9 @@ and totalize_case_analysis' (tdenv : TDEnv.t) (instr : instr) : instr =
   | IfI (exp_cond, iterexps, instrs_then) ->
       let instrs_then = totalize_case_analysis tdenv instrs_then in
       IfI (exp_cond, iterexps, instrs_then) $ at
+  | RelAssertI { call; expect; iterexps; block = instrs_then } ->
+      let instrs_then = totalize_case_analysis tdenv instrs_then in
+      RelAssertI { call; expect; iterexps; block = instrs_then } $ at
   | CaseI (exp, cases, false) -> (
       let cases =
         let guards, blocks = List.split cases in
@@ -865,7 +1196,11 @@ and totalize_case_analysis' (tdenv : TDEnv.t) (instr : instr) : instr =
       in
       match find_variant_case_analysis tdenv cases with
       | Some mixops_case ->
-          let module Set = Set.Make (Mixop) in
+          let module Set = Set.Make (struct
+            type t = Il.Mixfix.mixop
+
+            let compare = Il.Mixfix.compare_mixop
+          end) in
           let mixops_total =
             let typ = exp.note $ exp.at in
             typ |> typ_as_variant tdenv |> Option.get
@@ -875,6 +1210,19 @@ and totalize_case_analysis' (tdenv : TDEnv.t) (instr : instr) : instr =
           let total = Set.equal mixops_case mixops_total in
           CaseI (exp, cases, total) $ at
       | None -> CaseI (exp, cases, false) $ at)
+  | CaseI (exp, cases, true) ->
+      let cases =
+        let guards, blocks = List.split cases in
+        let blocks = List.map (totalize_case_analysis tdenv) blocks in
+        List.combine guards blocks
+      in
+      CaseI (exp, cases, true) $ at
+  | LetI (exp_l, exp_r, iterexps, block) ->
+      let block = totalize_case_analysis tdenv block in
+      LetI (exp_l, exp_r, iterexps, block) $ at
+  | RelI { call; iterexps; block } ->
+      let block = totalize_case_analysis tdenv block in
+      RelI { call; iterexps; block } $ at
   | _ -> instr
 
 (* Apply optimizations until it reaches a fixed point *)
@@ -883,17 +1231,18 @@ let optimize_pre (instrs : instr list) : instr list =
   instrs |> remove_let_alias |> parallelize_if_disjunctions
   |> matchify_if_eq_terminals
 
-let rec optimize_loop (henv : HEnv.t) (tdenv : TDEnv.t) (instrs : instr list) :
-    instr list =
+let rec optimize_loop (rtenv : RTEnv.t) (tdenv : TDEnv.t) (instrs : instr list)
+    : instr list =
   let instrs_optimized =
-    instrs |> remove_redundant_bindings henv |> merge_if tdenv |> casify tdenv
+    instrs |> merge_binding rtenv |> merge_if tdenv |> merge_rel_assert
+    |> casify tdenv
   in
   if Ol.Eq.eq_instrs instrs instrs_optimized then instrs
-  else optimize_loop henv tdenv instrs_optimized
+  else optimize_loop rtenv tdenv instrs_optimized
 
 let optimize_post (tdenv : TDEnv.t) (instrs : instr list) : instr list =
   instrs |> totalize_case_analysis tdenv
 
-let optimize (henv : HEnv.t) (tdenv : TDEnv.t) (instrs : instr list) :
+let optimize (rtenv : RTEnv.t) (tdenv : TDEnv.t) (instrs : instr list) :
     instr list =
-  instrs |> optimize_pre |> optimize_loop henv tdenv |> optimize_post tdenv
+  instrs |> optimize_pre |> optimize_loop rtenv tdenv |> optimize_post tdenv

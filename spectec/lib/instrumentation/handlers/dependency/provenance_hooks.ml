@@ -31,7 +31,8 @@ let merged_of (values : Il.Value.t list) : Il.json_provenance list =
   |> List.concat_map (fun (v : Il.Value.t) -> lookup v.note.vid)
   |> List.sort_uniq compare
 
-let on_combined ~(sources : Il.Value.t list) (result : Il.Value.t) : Il.Value.t =
+let on_combined ~(sources : Il.Value.t list) (result : Il.Value.t) : Il.Value.t
+    =
   (match merged_of sources with
   | [] -> ()
   | deduped -> Hashtbl.replace table result.note.vid deduped);
@@ -45,7 +46,7 @@ let on_field_updated ~(base : Il.Value.t) (result : Il.Value.t) : Il.Value.t =
         (fun (atom, (value_f : Il.Value.t)) ->
           if lookup value_f.note.vid = [] && struct_provs <> [] then
             let field_name =
-              Lang.Xl.Atom.string_of_atom atom.it |> String.lowercase_ascii
+              Lang.Xl.Atom.to_string atom.it |> String.lowercase_ascii
             in
             let field_provs =
               List.map
@@ -86,8 +87,13 @@ let provenance_of (v : Il.Value.t) : Il.json_provenance list = lookup v.note.vid
 
 (* === Lifecycle === *)
 
-module Handler : Instrumentation_core.Handler.S = struct
-  include Instrumentation_core.Noop.M
+module Handler : Instrumentation_api.Handler.S = struct
+  let static_dependencies = []
+  let init ~spec:_ = ()
 
-  let on_test_start ~test_case_id:_ = clear ()
+  let handle = function
+    | Instrumentation_api.Event.Test_start _ -> clear ()
+    | _ -> ()
+
+  let finish () = ()
 end

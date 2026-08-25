@@ -26,7 +26,7 @@ type level = Summary | Full
 (* Handler configuration *)
 type config = {
   level : level;
-  output : Instrumentation_core.Output.t;
+  output : Instrumentation_api.Output.t;
   target_uids : int list option;
       (* None = use whitelist, Some [] = all, Some [uids] = filter *)
 }
@@ -34,7 +34,7 @@ type config = {
 let default_config =
   {
     level = Summary;
-    output = Instrumentation_core.Output.stdout;
+    output = Instrumentation_api.Output.stdout;
     target_uids = None;
   }
 
@@ -132,6 +132,7 @@ module State = struct
   let current_relation : string ref = ref ""
   let current_rule : string ref = ref ""
   let current_test_id : string ref = ref ""
+  let func_calls : (string * Il.Value.t list) list ref = ref []
 
   (* --- Result accumulation: persists across tests --- *)
 
@@ -187,6 +188,7 @@ module State = struct
     current_relation := "";
     current_rule := "";
     current_test_id := "";
+    func_calls := [];
     Hashtbl.clear per_test_sym_mutations;
     premise_count := 0;
     if_prem_count := 0;
@@ -235,13 +237,14 @@ end
 (* Check if a type refers to the state object *)
 let is_state_type (t : Il.typ') : bool =
   match t with
-  | Il.VarT (id, _) -> String.lowercase_ascii id.it = "beaconstate"
+  | Il.VarT { synid; _ } -> String.lowercase_ascii synid.it = "beaconstate"
   | _ -> false
 
 (* Check if a type refers to the block object *)
 let is_block_type (t : Il.typ') : bool =
   match t with
-  | Il.VarT (id, _) -> String.lowercase_ascii id.it = "signedbeaconblock"
+  | Il.VarT { synid; _ } ->
+      String.lowercase_ascii synid.it = "signedbeaconblock"
   | _ -> false
 
 (* === Provenance-based Path Resolution === *)
@@ -530,7 +533,7 @@ let extract_and_record_if_mutations (lookup : Il.exp -> Il.Value.t option)
 
 (* === Handler Implementation === *)
 
-module M : Instrumentation_core.Handler.S = struct
+module M : Instrumentation_api.Handler.S = struct
   let static_dependencies =
     [
       (module Instrumentation_static.Premise_uid.Premise_uid
@@ -542,9 +545,9 @@ module M : Instrumentation_core.Handler.S = struct
   let init ~spec =
     State.reset ();
     match spec with
-    | Instrumentation_core.Handler.IlSpec il_spec ->
+    | Instrumentation_api.Handler.IlSpec il_spec ->
         State.readsets := readsets_of_spec il_spec
-    | Instrumentation_core.Handler.SlSpec _ -> ()
+    | Instrumentation_api.Handler.SlSpec _ -> ()
 
   let on_test_start ~test_case_id = State.current_test_id := test_case_id
   let on_test_end ~test_case_id:_ = State.current_test_id := ""
@@ -558,13 +561,30 @@ module M : Instrumentation_core.Handler.S = struct
 
   let on_rule_enter ~id:_ ~rule_id ~at:_ = State.current_rule := rule_id
   let on_rule_exit ~id:_ ~rule_id:_ ~at:_ ~success:_ = State.current_rule := ""
-  let on_func_enter ~id:_ ~at:_ ~values:_ = ()
-  let on_func_exit ~id:_ ~at:_ = ()
+
+  let on_func_enter ~id ~at:_ ~values =
+    State.func_calls := (id, values) :: !State.func_calls
+
+  let on_func_exit ~id ~at:_ ~output =
+    let values =
+      match !State.func_calls with
+      | (entered_id, values) :: rest when entered_id = id ->
+          State.func_calls := rest;
+          values
+      | _ -> []
+    in
+    match output with
+    | None -> ()
+    | Some result ->
+        let lookup fid = StringMap.find_opt fid !State.readsets in
+        let provs = call_provenance ~lookup id values in
+        Provenance_hooks.add_readset result provs
+
   let on_clause_enter ~id:_ ~clause_idx:_ ~at:_ = ()
   let on_clause_exit ~id:_ ~clause_idx:_ ~at:_ ~success:_ = ()
   let on_iter_prem_enter ~prem:_ ~at:_ = ()
-  let on_iter_prem_exit = Instrumentation_core.Noop.on_iter_prem_exit
-  let on_instr = Instrumentation_core.Noop.on_instr
+  let on_iter_prem_exit ~at:_ = ()
+  let on_instr ~instr:_ ~at:_ = ()
 
   let on_prem_enter ~values ~prem ~at:_ =
     State.premise_count := !State.premise_count + 1;
@@ -588,22 +608,32 @@ module M : Instrumentation_core.Handler.S = struct
         let lookup = Premise_values.lookup values in
         let extract exp = extract_and_record_if_mutations lookup uid exp in
         match prem.it with
-        | Il.IfPr exp -> extract exp
-        | Il.IterPr ({ it = Il.IfPr exp; _ }, _) -> extract exp
+        | Il.IfPr { cond; _ } -> extract cond
+        | Il.IterPr ({ it = Il.IfPr { cond; _ }; _ }, _) -> extract cond
         | _ -> ())
 
   let on_prem_exit ~prem:_ ~at:_ ~success:_ = ()
-  let on_rule_output ~id:_ ~rule_id:_ ~at:_ ~output_exps:_ = ()
-  let on_clause_return ~id:_ ~clause_idx:_ ~at:_ ~return_exp:_ = ()
 
-  let on_func_result ~id ~values ~result ~lookup_clauses =
-    let lookup fid =
-      match StringMap.find_opt fid !State.readsets with
-      | Some rs -> Some rs
-      | None -> Option.map readset_of_clauses (lookup_clauses fid)
-    in
-    let provs = call_provenance ~lookup id values in
-    Provenance_hooks.add_readset result provs
+  let handle = function
+    | Instrumentation_api.Event.Test_start { test_case_id } ->
+        Provenance_hooks.clear ();
+        on_test_start ~test_case_id
+    | Test_end { test_case_id } -> on_test_end ~test_case_id
+    | Rel_enter { id; at; inputs } -> on_rel_enter ~id ~at ~values:inputs
+    | Rel_exit { id; at; success; _ } -> on_rel_exit ~id ~at ~success
+    | Rule_enter { id; rule_id; at } -> on_rule_enter ~id ~rule_id ~at
+    | Rule_exit { id; rule_id; at; success } ->
+        on_rule_exit ~id ~rule_id ~at ~success
+    | Func_enter { id; at; inputs } -> on_func_enter ~id ~at ~values:inputs
+    | Func_exit { id; at; output } -> on_func_exit ~id ~at ~output
+    | Clause_enter { id; clause_idx; at } -> on_clause_enter ~id ~clause_idx ~at
+    | Clause_exit { id; clause_idx; at; success } ->
+        on_clause_exit ~id ~clause_idx ~at ~success
+    | Iter_prem_enter { prem; at } -> on_iter_prem_enter ~prem ~at
+    | Iter_prem_exit { at } -> on_iter_prem_exit ~at
+    | Prem_enter { values; prem; at } -> on_prem_enter ~values ~prem ~at
+    | Prem_exit { prem; at; success; _ } -> on_prem_exit ~prem ~at ~success
+    | Instr { instr; at } -> on_instr ~instr ~at
 
   let finish () =
     Format.fprintf !fmt "\n=== Symbolic Mutations ===\n\n";
@@ -749,7 +779,7 @@ let merge_result (r1 : result) (r2 : result) : result =
 let restore (_result : result) = ()
 
 module HandlerWithData :
-  Instrumentation_core.Handler.S_with_data with type result = result = struct
+  Instrumentation_api.Handler.S_with_data with type result = result = struct
   include M
 
   type nonrec result = result
@@ -770,9 +800,9 @@ let static_dependencies () =
     (module Instrumentation_static.Type_tree : Instrumentation_static.Static.S);
   ]
 
-let make cfg : (module Instrumentation_core.Handler.S) =
+let make cfg : (module Instrumentation_api.Handler.S) =
   config := cfg;
-  fmt := Instrumentation_core.Output.formatter cfg.output;
+  fmt := Instrumentation_api.Output.formatter cfg.output;
   (match cfg.target_uids with
   | Some uids -> State.set_target_uids uids
   | None -> ());
@@ -780,15 +810,99 @@ let make cfg : (module Instrumentation_core.Handler.S) =
 
 let make_with_data cfg =
   config := cfg;
-  fmt := Instrumentation_core.Output.formatter cfg.output;
+  fmt := Instrumentation_api.Output.formatter cfg.output;
   (* Initialize target UIDs if provided *)
   (match cfg.target_uids with
   | Some uids -> State.set_target_uids uids
   | None -> Hashtbl.clear State.target_uids);
   (* Clear to use whitelist *)
-  ( (module HandlerWithData : Instrumentation_core.Handler.S_with_data
+  ( (module HandlerWithData : Instrumentation_api.Handler.S_with_data
       with type result = result),
     get_result )
 
 (* Public function to clear large state - call after checkpoint save *)
 let clear_large_state () = State.clear_large_state ()
+
+let parse_target_uids value =
+  value |> String.split_on_char ','
+  |> List.concat_map (fun part -> String.split_on_char ' ' part)
+  |> List.filter_map (fun part ->
+         let part = String.trim part in
+         if part = "" then None
+         else
+           match int_of_string_opt part with
+           | Some uid -> Some uid
+           | None -> failwith ("Invalid premise UID: " ^ part))
+
+let parse_target_file filename =
+  let channel = open_in filename in
+  Fun.protect
+    ~finally:(fun () -> close_in channel)
+    (fun () ->
+      let rec loop acc =
+        match input_line channel with
+        | line -> (
+            let line = String.trim line in
+            if line = "" || line.[0] = '#' then loop acc
+            else
+              match int_of_string_opt line with
+              | Some uid -> loop (uid :: acc)
+              | None -> failwith ("Invalid premise UID: " ^ line))
+        | exception End_of_file -> List.rev acc
+      in
+      loop [])
+
+module Spec : Instrumentation_spec.Spec.S = struct
+  let name = "dep-pos"
+  let modes = [ `IL ]
+
+  let params =
+    [
+      Instrumentation_spec.Param_utils.level_param;
+      Instrumentation_spec.Param_utils.output_param;
+      ("targets", "UIDS comma-separated premise UIDs to analyze");
+      ("targets-file", "FILE premise UIDs, one per line");
+    ]
+
+  let parse alist =
+    let get = Instrumentation_spec.Param_utils.get alist in
+    let level = get "level" in
+    let output_path = get "output" in
+    let targets = get "targets" in
+    let targets_file = get "targets-file" in
+    if
+      Option.is_none level && Option.is_none output_path
+      && Option.is_none targets
+      && Option.is_none targets_file
+    then None
+    else
+      let output = Instrumentation_spec.Param_utils.output_of output_path in
+      let level =
+        match level with
+        | None -> Summary
+        | Some value ->
+            Instrumentation_spec.Param_utils.parse_level ~summary:Summary
+              ~full:Full value
+      in
+      let target_uids =
+        (match targets with
+        | None -> []
+        | Some value -> parse_target_uids value)
+        @
+        match targets_file with
+        | None -> []
+        | Some filename -> parse_target_file filename
+      in
+      let target_uids = if target_uids = [] then None else Some target_uids in
+      Some
+        {
+          Instrumentation_config.Handler_config.name;
+          modes;
+          handler = make { level; output; target_uids };
+          output;
+        }
+
+  let checkpoint = None
+end
+
+let spec : Instrumentation_spec.Spec.t = (module Spec)

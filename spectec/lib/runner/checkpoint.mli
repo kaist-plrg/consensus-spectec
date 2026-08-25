@@ -3,6 +3,8 @@
    Enables long-running coverage runs to be interrupted and resumed.
    Saves accumulated coverage state and list of completed test inputs. *)
 
+module Error = Spectec.Error
+
 (* Configuration for checkpointing behavior *)
 type config = {
   output_file : string option; (* File to save checkpoints to *)

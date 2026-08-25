@@ -1,6 +1,4 @@
-; Instrumentation core - framework modules
-
 (library
  (name instrumentation_core)
  (public_name spectec.instrumentation.core)
- (libraries spectec.common spectec.lang instrumentation_static))
+ (libraries spectec.lang))

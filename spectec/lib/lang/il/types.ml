@@ -2,6 +2,7 @@ open Xl
 open Common.Source
 
 [@@@ocamlformat "disable"]
+[@@@warning "-30"]  (* Several AST records intentionally share semantic field names. *)
 
 (* Numbers *)
 
@@ -23,7 +24,7 @@ and atom' = Atom.t
 
 (* Mixfix operators *)
 
-type mixop = Mixop.t
+type mixop = Mixfix.mixop
 
 (* Iterators *)
 
@@ -42,9 +43,9 @@ and typ' =
   | BoolT                   (* `bool` *)
   | NumT of Num.typ         (* numtyp *)
   | TextT                   (* `text` *)
-  | VarT of id * targ list  (* id (`<` list(targ, `,`) `>`)? *)
+  | VarT of { synid : id; targs : targ list }  (* id (`<` list(targ, `,`) `>`)? *)
   | TupleT of typ list      (* `(` list(typ, `,`) `)` *)
-  | IterT of typ * iter     (* typ iter *)
+  | IterT of { typ : typ; iter : iter }  (* typ iter *)
   | FuncT                   (* `func` *)
 
 (* Type arguments *)
@@ -54,10 +55,13 @@ and targ' = typ'
 
 (* Variables *)
 
-type var = id * typ * iter list
+type var = { varid : id; typ : typ; iters : iter list }
 
 type nottyp = nottyp' phrase
-and nottyp' = mixop * typ list
+and nottyp' = typ Mixfix.t
+
+and reltyp = reltyp' phrase
+and reltyp' = (typ, typ) Mode.t
 
 and deftyp = deftyp' phrase
 and deftyp' =
@@ -66,7 +70,9 @@ and deftyp' =
   | VariantT of typcase list
 
 and typfield = atom * typ
-and typcase = nottyp * hint list
+and typorigin = typorigin' Common.Source.phrase
+and typorigin' = { synid : id; targs : targ list }
+and typcase = { notation : nottyp; origin : typorigin; hints : hint list }
 
 (* JSON provenance: tracks which top-level JSON input a value came from,
    and the typed path taken to reach it. Mirrored by dep_common.field_step
@@ -96,7 +102,7 @@ and value' =
   | FuncV of id
 
 and valuefield = atom * value
-and valuecase = mixop * value list
+and valuecase = value Mixfix.t
 
 (* Operators *)
 
@@ -135,10 +141,9 @@ and exp' =
   | SliceE of exp * exp * exp             (* exp `[` exp `:` exp `]` *)
   | UpdE of exp * path * exp              (* exp `[` path `=` exp `]` *)
   | CallE of id * targ list * arg list    (* $id`<` targ* `>``(` arg* `)` *)
-  | HoldE of id * notexp                  (* id `:` notexp `holds` *)
   | IterE of exp * iterexp                (* exp iterexp *)
 
-and notexp = mixop * exp list
+and notexp = exp Mixfix.t
 and iterexp = iter * var list
 
 (* Patterns *)
@@ -164,7 +169,7 @@ and param' =
   (* typ *)
   | ExpP of typ
   (* `def` `$`id ` (`<` list(tparam, `,`) `>`)? (`(` list(param, `,`) `)`)? `:` typ *)
-  | DefP of id * tparam list * param list * typ
+  | DefP of { defid : id; tparams : tparam list; params : param list; typ : typ }
 
 (* Type parameters *)
 
@@ -181,34 +186,47 @@ and arg' =
 (* Rules *)
 
 and rule = rule' phrase
-and rule' = id * notexp * prem list
+and rule' = { ruleid : id; concl : notexp; prems : prem list }
 
 (* Clauses *)
 
 and clause = clause' phrase
-and clause' = arg list * exp * prem list
+and clause' = { args : arg list; body : exp; prems : prem list }
 
 (* Premises *)
 
-and prem = prem' phrase
+and relcall = { relid : id; notexp : notexp }
+
+and prem = (prem', prem_prov) phrase_prov
+and prem_prov =
+  | Source of El.prem  (* lowered from this EL premise *)
+  | Synthesized        (* introduced by elaboration; no EL source *)
 and prem' =
-  | RulePr of id * notexp          (* id `:` notexp *)
-  | IfPr of exp                    (* `if` exp *)
+  | RelPr of relcall               (* id `:` notexp *)
+  | RelAssertPr of { call : relcall; expect : bool }
+                                   (* `if` id `:` notexp `holds` when expect, else `does not hold` *)
+  | IfPr of { cond : exp; role : if_role }  (* `if` exp *)
   | ElsePr                         (* `otherwise` *)
   | LetPr of exp * exp             (* `let` exp `=` exp *)
   | IterPr of prem * iterexp       (* prem iterexp *)
   | DebugPr of exp                 (* `debug` exp *)
+
+and if_role =
+  | Condition
+  | Guard  (* failing it means the rule does not apply *)
 
 (* Definitions *)
 
 type def = def' phrase
 and def' =
   (* `syntax` id `<` list(tparam, `,`) `>` `=` deftyp *)
-  | TypD of id * tparam list * deftyp
-  (* `relation` id `:` nottyp `hint(input` `%`int* `)` rule* *)
-  | RelD of id * nottyp * int list * rule list
+  | TypD of { synid : id; tparams : tparam list; deftyp : deftyp }
+  (* `relation` id `:` reltyp rule* *)
+  | RelD of { relid : id; reltyp : reltyp; rules : rule list }
   (* `dec` id `<` list(tparam, `,`) `>` list(param, `,`) `:` typ clause* *)
-  | DecD of id * tparam list * param list * typ * clause list
+  | DecD of { defid : id; tparams : tparam list; params : param list; typ : typ; clauses : clause list }
+  (* `builtin` `dec` id `<` list(tparam, `,`) `>` list(param, `,`) `:` typ hint* *)
+  | BuiltinDecD of { defid : id; tparams : tparam list; params : param list; typ : typ; hints : hint list }
 
 (* Spec *)
 

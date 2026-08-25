@@ -8,7 +8,8 @@
 
 open Common.Source
 module Il = Lang.Il
-module Checkpoint = Checkpoint
+module Legacy_checkpoint = Checkpoint
+module Checkpoint = Batch.Checkpoint
 module Dep = Instrumentation.Dependency.Dep_common
 module Pos = Instrumentation.Dependency.Positive
 module Node_cov = Instrumentation.Node_coverage_il
@@ -237,9 +238,7 @@ let bigint_to_intlit (n : Bigint.t) : string = Bigint.to_string n
 
 (* Extract a string key from an IL atom (lowercase). *)
 let atom_key (atom : Il.atom) : string =
-  match atom.it with
-  | Lang.Xl.Atom.Atom s | Lang.Xl.Atom.SilentAtom s -> String.lowercase_ascii s
-  | other -> String.lowercase_ascii (Lang.Xl.Atom.string_of_atom other)
+  String.lowercase_ascii (Lang.Xl.Atom.to_string atom.it)
 
 (* Replace a field in a JSON object by (case-insensitive) key. *)
 let replace_json_field (json : Yojson.Safe.t) (key : string)
@@ -1022,11 +1021,12 @@ let strategy_byte_len_ok (source_value : Yojson.Safe.t)
 (* Classify a JSON value's type for mismatch detection. *)
 let json_type : Yojson.Safe.t -> string = function
   | `String _ -> "string"
-  | `List _ -> "array"
+  | `List _ | `Tuple _ -> "array"
   | `Assoc _ -> "object"
   | `Bool _ -> "bool"
   | `Int _ | `Intlit _ | `Float _ -> "number"
   | `Null -> "null"
+  | `Variant _ -> "variant"
 
 (* Expected source type for a mutation strategy. *)
 let strategy_source_type : Json_mutator.mutation_strategy -> string = function
@@ -2228,19 +2228,49 @@ let write_suggestions_log ~output_dir ~test_id (diag : process_diag) =
 
 (* ===== Checkpoint utilities ===== *)
 
+type checkpoint_data = {
+  completed_inputs : string list;
+  node_il : Node_cov.result option;
+  dependency : Pos.result option;
+  testgen : Testgen_data.t option;
+}
+
+let decode_payload name payloads =
+  match List.assoc_opt name payloads with
+  | None -> None
+  | Some bytes -> ( try Some (Marshal.from_bytes bytes 0) with _ -> None)
+
+let checkpoint_error e =
+  Spectec.Diagnostic.Render.render_bag ~ansi:Spectec.Diagnostic.Ansi.plain
+    (Spectec.Error.to_diagnostics e)
+
+let load_checkpoint_data checkpoint_file =
+  match Checkpoint.load_from_file ~file:checkpoint_file with
+  | Ok checkpoint ->
+      {
+        completed_inputs = checkpoint.completed_inputs;
+        node_il = decode_payload "premise-coverage" checkpoint.coverage;
+        dependency = decode_payload "dep-pos" checkpoint.coverage;
+        testgen = decode_payload "testgen" checkpoint.coverage;
+      }
+  | Error batch_error -> (
+      match Legacy_checkpoint.load_from_file ~file:checkpoint_file with
+      | Ok checkpoint ->
+          {
+            completed_inputs = checkpoint.completed_inputs;
+            node_il = checkpoint.coverage.node_il;
+            dependency = checkpoint.coverage.dependency;
+            testgen = checkpoint.coverage.testgen;
+          }
+      | Error _ ->
+          failwith
+            (Printf.sprintf "Failed to load checkpoint: %s"
+               (checkpoint_error batch_error)))
+
 (* Load a coverage checkpoint and extract its coverage and dependency fields. *)
-let load_checkpoint (checkpoint_file : string) =
-  let checkpoint =
-    match Checkpoint.load_from_file ~file:checkpoint_file with
-    | Ok cp -> cp
-    | Error e ->
-        failwith
-          (Printf.sprintf "Failed to load checkpoint: %s"
-             (Error.string_of_error e))
-  in
-  let coverage = checkpoint.Checkpoint.coverage.node_il in
-  let dependency = checkpoint.Checkpoint.coverage.dependency in
-  (checkpoint, coverage, dependency)
+let load_checkpoint checkpoint_file =
+  let checkpoint = load_checkpoint_data checkpoint_file in
+  (checkpoint, checkpoint.node_il, checkpoint.dependency)
 
 let checkpoint_summary (checkpoint_file : string) =
   let checkpoint, coverage, dependency = load_checkpoint checkpoint_file in
@@ -2248,7 +2278,7 @@ let checkpoint_summary (checkpoint_file : string) =
   let fmt = Format.formatter_of_buffer buf in
   Format.fprintf fmt "Checkpoint: %s\n" checkpoint_file;
   Format.fprintf fmt "  Completed tests: %d\n"
-    (List.length checkpoint.Checkpoint.completed_inputs);
+    (List.length checkpoint.completed_inputs);
   Format.fprintf fmt "  Coverage data: %s\n"
     (if Option.is_some coverage then "present" else "missing");
   (match coverage with
@@ -2289,12 +2319,11 @@ let checkpoint_summary (checkpoint_file : string) =
   Buffer.contents buf
 
 let load_testgen_checkpoint (file : string) =
-  match Checkpoint.load_from_file ~file with
-  | Ok cp -> (
-      match cp.Checkpoint.coverage.testgen with
-      | Some data -> data
-      | None -> Testgen_data.empty)
-  | Error _ -> Testgen_data.empty
+  try
+    match (load_checkpoint_data file).testgen with
+    | Some data -> data
+    | None -> Testgen_data.empty
+  with Failure _ -> Testgen_data.empty
 
 let save_testgen_checkpoint ~(file : string option) ~(analyzed : string list)
     ~(positive_result : Pos.result) =
@@ -2305,21 +2334,13 @@ let save_testgen_checkpoint ~(file : string option) ~(analyzed : string list)
         Testgen_data.of_positive_result ~analyzed positive_result
       in
       let coverage =
-        {
-          Checkpoint.branch = None;
-          node_il = None;
-          node_sl = None;
-          dependency = Some positive_result;
-          testgen = Some testgen_data;
-        }
+        [
+          ("dep-pos", Marshal.to_bytes positive_result []);
+          ("testgen", Marshal.to_bytes testgen_data []);
+        ]
       in
       let checkpoint =
-        {
-          Checkpoint.spec_hash = "";
-          completed_inputs = analyzed;
-          coverage;
-          timestamp = Unix.gettimeofday ();
-        }
+        Checkpoint.create ~spec_files:[] ~completed_inputs:analyzed ~coverage
       in
       Checkpoint.save_to_file ~file:checkpoint_file checkpoint;
       Format.printf "Saved testgen checkpoint: %s (%d tests analyzed)\n%!"

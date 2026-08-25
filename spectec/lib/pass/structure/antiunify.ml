@@ -27,9 +27,11 @@ let rec populate_exp_template (uenv : UEnv.t) (exp_template : exp) (exp : exp) :
         [ prem ]
     | TupleE exps_template, TupleE exps ->
         populate_exps_templates uenv exps_template exps
-    | CaseE (mixop_template, exps_template), CaseE (mixop, exps)
-      when Il.Eq.eq_mixop mixop_template mixop ->
-        populate_exps_templates uenv exps_template exps
+    | CaseE notexp_template, CaseE notexp
+      when Il.Mixfix.eq_mixop notexp_template notexp ->
+        populate_exps_templates uenv
+          (Il.Mixfix.args notexp_template)
+          (Il.Mixfix.args notexp)
     | ( IterE (exp_template, (iter_template, vars_template)),
         IterE (exp, (iter, vars)) )
       when Il.Eq.eq_iter iter_template iter ->
@@ -72,13 +74,13 @@ let rec antiunify_exp (frees : IdSet.t) (uenv : UEnv.t) (exp_template : exp)
         let uenv = UEnv.add id_template id_template uenv in
         (frees, uenv, exp_template)
     | VarE id_template, _ ->
-        let id_fresh = Elaborate.Fresh.fresh_id frees id_template in
+        let id_fresh = Il.Fresh.fresh_id frees id_template in
         let frees = IdSet.add id_fresh frees in
         let uenv = UEnv.add id_template id_fresh uenv in
         let exp_template = VarE id_fresh $$ (at, note) in
         (frees, uenv, exp_template)
     | _, VarE id ->
-        let id_fresh = Elaborate.Fresh.fresh_id frees id in
+        let id_fresh = Il.Fresh.fresh_id frees id in
         let frees = IdSet.add id_fresh frees in
         let uenv = UEnv.add id id_fresh uenv in
         let exp_template = VarE id_fresh $$ (at, note) in
@@ -89,13 +91,16 @@ let rec antiunify_exp (frees : IdSet.t) (uenv : UEnv.t) (exp_template : exp)
         in
         let exp_template = TupleE exps_template $$ (at, note) in
         (frees, uenv, exp_template)
-    | CaseE (mixop_template, exps_template), CaseE (mixop, exps)
-      when Il.Eq.eq_mixop mixop_template mixop ->
+    | CaseE notexp_template, CaseE notexp
+      when Il.Mixfix.eq_mixop notexp_template notexp ->
+        let exps_template = Il.Mixfix.args notexp_template in
+        let exps = Il.Mixfix.args notexp in
         let frees, uenv, exps_template =
           antiunify_exps frees uenv exps_template exps
         in
+        let mixop = Il.Mixfix.to_mixop notexp_template in
         let exp_template =
-          CaseE (mixop_template, exps_template) $$ (at, note)
+          CaseE (Il.Mixfix.fill mixop exps_template) $$ (at, note)
         in
         (frees, uenv, exp_template)
     | ( IterE (exp_template, (iter_template, vars_template)),
@@ -107,10 +112,10 @@ let rec antiunify_exp (frees : IdSet.t) (uenv : UEnv.t) (exp_template : exp)
         let vars_template =
           vars_template @ vars
           |> List.fold_left
-               (fun vars_template (id, typ, iters) ->
-                 match UEnv.find_opt id uenv with
+               (fun vars_template { varid; typ; iters } ->
+                 match UEnv.find_opt varid uenv with
                  | Some id_unifier ->
-                     let var = (id_unifier, typ, iters) in
+                     let var = { varid = id_unifier; typ; iters } in
                      if List.exists (Il.Eq.eq_var var) vars_template then
                        vars_template
                      else vars_template @ [ var ]
@@ -241,15 +246,14 @@ let antiunify_args_group (frees : IdSet.t) (args_group : arg list list) :
 
 (* Anti-unification of rules *)
 
-let antiunify_rules (inputs : int list) (rules : rule list) :
+let antiunify_rules (reltyp : Il.reltyp') (rules : rule list) :
     exp list * (prem list * exp list) list =
   let exps_input_group, exps_output_group, prems_group, frees =
     List.fold_left
       (fun (exps_input_group, exps_output_group, prems_group, frees) rule ->
-        let _, notexp, prems = rule.it in
-        let _, exps = notexp in
+        let { concl; prems; _ } = rule.it in
         let exps_input, exps_output =
-          Envs.Hint.split_exps_without_idx inputs exps
+          Il.Mode.partition reltyp (Il.Mixfix.args concl)
         in
         let exps_input_group = exps_input_group @ [ exps_input ] in
         let exps_output_group = exps_output_group @ [ exps_output ] in
@@ -278,7 +282,7 @@ let antiunify_clauses (clauses : clause list) :
   let args_input_group, exp_output_group, prems_group, frees =
     List.fold_left
       (fun (args_input_group, exp_output_group, prems_group, frees) clause ->
-        let args_input, exp_output, prems = clause.it in
+        let { args = args_input; body = exp_output; prems } = clause.it in
         let args_input_group = args_input_group @ [ args_input ] in
         let exp_output_group = exp_output_group @ [ exp_output ] in
         let prems_group = prems_group @ [ prems ] in

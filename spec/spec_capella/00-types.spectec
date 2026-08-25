@@ -48,4 +48,4 @@ syntax withdrawalIndex = uint64
 
 
 ;; Semantic Types
-;; syntax delta = `+ gwei* `, `- gwei*
+;; syntax delta = '+' gwei* ',' '-' gwei*

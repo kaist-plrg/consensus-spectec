@@ -76,16 +76,7 @@ let map_children_exp (f : exp -> exp) (exp : exp) : exp =
       let fields' = List.map (fun (a, e) -> (a, f e)) fields in
       if List.for_all2 (fun (_, e) (_, e') -> e == e') fields fields' then exp
       else { exp with it = StrE fields' }
-  | CaseE (mixop, args) ->
-      (* CaseE wraps a notexp = mixop * exp list *)
-      let args' = List.map f args in
-      if List.for_all2 ( == ) args args' then exp
-      else { exp with it = CaseE (mixop, args') }
-  | HoldE (id, (mixop, args)) ->
-      (* HoldE wraps an id * notexp *)
-      let args' = List.map f args in
-      if List.for_all2 ( == ) args args' then exp
-      else { exp with it = HoldE (id, (mixop, args')) }
+  | CaseE notexp -> { exp with it = CaseE (Mixfix.map f notexp) }
   | SubE (inner, t) ->
       let inner' = f inner in
       if inner' == inner then exp else { exp with it = SubE (inner', t) }
@@ -144,5 +135,5 @@ let fold_children_exp (combine : 'a -> 'a -> 'a) (empty : 'a) (f : exp -> 'a)
   | OptE (Some inner) -> f inner
   | StrE fields ->
       List.fold_left (fun acc (_, e) -> combine acc (f e)) empty fields
-  | CaseE (_, args) | HoldE (_, (_, args)) ->
-      List.fold_left (fun acc e -> combine acc (f e)) empty args
+  | CaseE notexp ->
+      Mixfix.fold_args (fun acc e -> combine acc (f e)) empty notexp

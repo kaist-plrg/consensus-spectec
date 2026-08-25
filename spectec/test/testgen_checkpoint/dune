@@ -1,0 +1,19 @@
+(executable
+ (name main)
+ (libraries
+  spectec.batch
+  spectec.common
+  spectec.instrumentation
+  spectec.runner))
+
+(rule
+ (target testgen_checkpoint.actual)
+ (action
+  (with-stdout-to
+   %{target}
+   (run ./main.exe))))
+
+(rule
+ (alias runtest)
+ (action
+  (diff testgen_checkpoint.expected testgen_checkpoint.actual)))

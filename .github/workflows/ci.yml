@@ -1,0 +1,53 @@
+name: CI
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+
+jobs:
+  ci:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [macos-latest, ubuntu-latest]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up OCaml
+        uses: ocaml/setup-ocaml@v3
+        with:
+          ocaml-compiler: "5.1.1"
+          opam-pin: false
+          opam-local-packages: spectec/*.opam
+
+      - name: Discover opam switch name
+        run: echo "SWITCH=$(opam switch show -s)" >> $GITHUB_ENV
+
+      - name: Install dependencies
+        working-directory: spectec
+        run: opam install . --deps-only --locked
+
+      - name: Install dev tools
+        run: opam install -y ocamlformat.0.27.0
+
+      - name: Format check
+        run: make fmt-check
+
+      - name: Type check
+        run: make check
+
+      - name: Build
+        run: make exe
+
+      - name: Quick tests
+        run: make test-quick
+
+      - name: Full tests
+        if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+        run: make test

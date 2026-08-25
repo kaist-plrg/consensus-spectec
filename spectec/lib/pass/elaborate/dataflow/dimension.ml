@@ -3,7 +3,8 @@ open Common.Source
 open Lang
 open Il
 open Ctx
-open Error
+open Diagnostic
+module Mixop = Lang.Il.Mixfix
 
 (* Dimension analysis :
 
@@ -27,13 +28,13 @@ let union (occurs_a : VEnv.t) (occurs_b : VEnv.t) : VEnv.t =
     occurs_a occurs_b
 
 let collect_itervars (bounds : VEnv.t) (occurs : VEnv.t) (iter : iter) :
-    (id * typ * iter list) list =
+    var list =
   occurs |> VEnv.bindings
   |> List.filter_map (fun (id, typ) ->
          let typ_expect = VEnv.find id bounds in
          if Typ.sub (Typ.add_iter iter typ) typ_expect then
            let typ, iters = typ in
-           Some (id, typ, iters)
+           Some { varid = id; typ; iters }
          else None)
 
 (* Expression *)
@@ -82,9 +83,9 @@ let rec annotate_exp (bounds : VEnv.t) (exp : exp) : VEnv.t * exp =
       let exp = TupleE exps $$ (at, note) in
       (occurs, exp)
   | CaseE notexp ->
-      let mixop, exps = notexp in
+      let mixop, exps = Mixop.split notexp in
       let occurs, exps = annotate_exps bounds exps in
-      let notexp = (mixop, exps) in
+      let notexp = Mixop.fill mixop exps in
       let exp = CaseE notexp $$ (at, note) in
       (occurs, exp)
   | StrE expfields ->
@@ -153,29 +154,24 @@ let rec annotate_exp (bounds : VEnv.t) (exp : exp) : VEnv.t * exp =
       let occurs, args = annotate_args bounds args in
       let exp = CallE (id, targs, args) $$ (at, note) in
       (occurs, exp)
-  | HoldE (id, notexp) ->
-      let mixop, exps = notexp in
-      let occurs, exps = annotate_exps bounds exps in
-      let notexp = (mixop, exps) in
-      let exp = HoldE (id, notexp) $$ (at, note) in
-      (occurs, exp)
-  | IterE (_, ((_, _ :: _) as iterexp)) ->
-      error exp.at
-        (Format.asprintf
-           "iterated expression should initially have no annotations, but got \
-            %s"
-           (Il.Print.string_of_iterexp iterexp))
+  | IterE (_, (_, _ :: _)) -> assert false
   | IterE (exp, (iter, [])) -> (
       let occurs, exp = annotate_exp bounds exp in
       let itervars = collect_itervars bounds occurs iter in
       match itervars with
-      | [] -> error at "empty iteration"
+      | [] ->
+          error at "empty iteration" ~code:Dataflow_empty_iter_expression
+            ~detail:
+              "Each iteration consumes one `*` (or `?`) from a variable inside \
+               it. Here, no variable has an iteration left to consume: either \
+               the body has no variables, or every variable's `*`s have \
+               already been consumed by surrounding iterations."
       | _ ->
           let exp = IterE (exp, (iter, itervars)) $$ (at, note) in
           let occurs =
             List.fold_left
-              (fun occurs (id, typ, iters) ->
-                VEnv.add id (typ, iters @ [ iter ]) occurs)
+              (fun occurs { varid; typ; iters } ->
+                VEnv.add varid (typ, iters @ [ iter ]) occurs)
               occurs itervars
           in
           (occurs, exp))
@@ -241,15 +237,21 @@ and annotate_prem (binds : VEnv.t) (bounds : VEnv.t) (prem : prem) :
     VEnv.t * prem =
   let at = prem.at in
   match prem.it with
-  | RulePr (id, notexp) ->
-      let mixop, exps = notexp in
+  | RelPr { relid; notexp } ->
+      let mixop, exps = Mixop.split notexp in
       let occurs, exps = annotate_exps bounds exps in
-      let notexp = (mixop, exps) in
-      let prem = RulePr (id, notexp) $ at in
+      let notexp = Mixop.fill mixop exps in
+      let prem = RelPr { relid; notexp } $ at in
       (occurs, prem)
-  | IfPr exp ->
-      let occurs, exp = annotate_exp bounds exp in
-      let prem = IfPr exp $ at in
+  | IfPr { cond; role } ->
+      let occurs, cond = annotate_exp bounds cond in
+      let prem = IfPr { cond; role } $ at in
+      (occurs, prem)
+  | RelAssertPr { call = { relid; notexp }; expect } ->
+      let mixop, exps = Mixop.split notexp in
+      let occurs, exps = annotate_exps bounds exps in
+      let notexp = Mixop.fill mixop exps in
+      let prem = RelAssertPr { call = { relid; notexp }; expect } $ at in
       (occurs, prem)
   | ElsePr -> (empty, prem)
   | LetPr (exp_l, exp_r) ->
@@ -258,17 +260,22 @@ and annotate_prem (binds : VEnv.t) (bounds : VEnv.t) (prem : prem) :
       let prem = LetPr (exp_l, exp_r) $ at in
       let occurs = union occurs_l occurs_r in
       (occurs, prem)
-  | IterPr (_, (_, _ :: _)) ->
-      error at "iterated premise should initially have no annotations"
+  | IterPr (_, (_, _ :: _)) -> assert false
   | IterPr (prem, (iter, [])) -> (
       let occurs, prem = annotate_prem binds bounds prem in
       let itervars = collect_itervars bounds occurs iter in
       match itervars with
-      | [] -> error at "empty iteration"
+      | [] ->
+          error at "empty iteration" ~code:Dataflow_empty_iter_premise
+            ~detail:
+              "Each iteration consumes one `*` (or `?`) from a variable inside \
+               it. Here, no variable has an iteration left to consume: either \
+               the body has no variables, or every variable's `*`s have \
+               already been consumed by surrounding iterations."
       | _
         when List.for_all
-               (fun (id, typ, iters) ->
-                 match VEnv.find_opt id binds with
+               (fun { varid; typ; iters } ->
+                 match VEnv.find_opt varid binds with
                  | Some (typ_bind, iters_bind) ->
                      Typ.sub (typ.it, iters) (typ_bind, iters_bind)
                  | None -> false)
@@ -278,12 +285,18 @@ and annotate_prem (binds : VEnv.t) (bounds : VEnv.t) (prem : prem) :
             ^ String.concat ", " (List.map Il.Print.string_of_var itervars)
             ^ " "
             ^ Il.Print.string_of_prem prem)
+            ~code:Dataflow_iter_binding_only
+            ~detail:
+              "An iteration needs a loop variable inside it: a variable \
+               already bound outside whose values it iterates over. Here, \
+               every variable inside is newly bound rather than already bound, \
+               so there is no loop variable."
       | _ ->
           let prem = IterPr (prem, (iter, itervars)) $ at in
           let occurs =
             List.fold_left
-              (fun occurs (id, typ, iters) ->
-                VEnv.add id (typ, iters @ [ iter ]) occurs)
+              (fun occurs { varid; typ; iters } ->
+                VEnv.add varid (typ, iters @ [ iter ]) occurs)
               occurs itervars
           in
           (occurs, prem))
@@ -316,7 +329,8 @@ let analyze (annotate : VEnv.t -> 'a -> VEnv.t * 'a) (bounds : VEnv.t)
           (Format.asprintf
              "mismatched iteration dimensions for identifier `%s`: expected \
               %s, but got %s"
-             (Id.to_string id) (Typ.to_string typ_expect) (Typ.to_string typ)))
+             (Id.to_string id) (Typ.to_string typ_expect) (Typ.to_string typ))
+          ~code:Dataflow_iter_dimension_mismatch)
     occurs;
   construct
 

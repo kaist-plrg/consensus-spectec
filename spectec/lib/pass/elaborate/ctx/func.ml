@@ -1,16 +1,21 @@
 open Lang
-open El
-open El.Print
 
-(* Function *)
+type t =
+  | Builtin of Il.tparam list * Il.param list * Il.typ
+  | Defined of Il.tparam list * Il.param list * Il.typ * Il.clause list
 
-type t = tparam list * param list * plaintyp * Il.clause list
-
-let to_string (tparams, params, plaintyp, clauses) =
-  "def " ^ string_of_tparams tparams ^ string_of_params params ^ " : "
-  ^ string_of_plaintyp plaintyp
-  ^ " =\n"
-  ^ String.concat "\n"
-      (List.mapi
-         (fun idx clause -> Il.Print.string_of_clause idx clause)
-         clauses)
+let to_string = function
+  | Builtin (tparams, params, typ) ->
+      "builtin dec "
+      ^ Il.Print.string_of_tparams tparams
+      ^ Il.Print.string_of_params params
+      ^ " : " ^ Il.Print.string_of_typ typ
+  | Defined (tparams, params, typ, clauses) ->
+      "dec "
+      ^ Il.Print.string_of_tparams tparams
+      ^ Il.Print.string_of_params params
+      ^ " : " ^ Il.Print.string_of_typ typ ^ " =\n"
+      ^ String.concat "\n"
+          (List.mapi
+             (fun idx clause -> Il.Print.string_of_clause idx clause)
+             clauses)

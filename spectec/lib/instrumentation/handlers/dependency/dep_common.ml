@@ -89,7 +89,7 @@ module StringMap = Map.Make (String)
 type readset = field_step list list array
 
 let atom_field (atom : Il.atom) : string =
-  Lang.Xl.Atom.string_of_atom atom.it |> String.lowercase_ascii
+  Lang.Xl.Atom.to_string atom.it |> String.lowercase_ascii
 
 let rec collect_chains (exp : Il.exp) : (string * field_step list) list =
   match exp.it with
@@ -106,14 +106,18 @@ let rec collect_chains (exp : Il.exp) : (string * field_step list) list =
 
 let rec collect_chains_prem (prem : Il.prem) : (string * field_step list) list =
   match prem.it with
-  | Il.IfPr e | Il.DebugPr e -> collect_chains e
+  | Il.IfPr { cond; _ } | Il.DebugPr cond -> collect_chains cond
   | Il.LetPr (e1, e2) -> collect_chains e1 @ collect_chains e2
   | Il.IterPr (inner, _) -> collect_chains_prem inner
-  | Il.RulePr _ | Il.ElsePr -> []
+  | Il.RelPr { notexp; _ } ->
+      Il.Mixfix.args notexp |> List.concat_map collect_chains
+  | Il.RelAssertPr { call = { notexp; _ }; _ } ->
+      Il.Mixfix.args notexp |> List.concat_map collect_chains
+  | Il.ElsePr -> []
 
 (* None for wildcard or non-variable components *)
 let comp_vars (clause : Il.clause) : string option list =
-  let params, _, _ = clause.it in
+  let { Il.args = params; _ } = clause.it in
   match params with
   | { it = Il.ExpA { it = Il.VarE v; _ }; _ } :: _ -> [ Some v.it ]
   | { it = Il.ExpA { it = Il.TupleE comps; _ }; _ } :: _ ->
@@ -130,7 +134,7 @@ let readset_of_clauses (clauses : Il.clause list) : readset =
   let arr = Array.make (max width 1) [] in
   List.iter
     (fun (clause : Il.clause) ->
-      let _, body, prems = clause.it in
+      let { Il.body; prems; _ } = clause.it in
       let chains =
         collect_chains body @ List.concat_map collect_chains_prem prems
       in
@@ -152,8 +156,8 @@ let readsets_of_spec (spec : Il.spec) : readset StringMap.t =
   List.fold_left
     (fun acc (def : Il.def) ->
       match def.it with
-      | Il.DecD (id, _, _, _, (_ :: _ as clauses)) ->
-          StringMap.add id.it (readset_of_clauses clauses) acc
+      | Il.DecD { defid; clauses = _ :: _ as clauses; _ } ->
+          StringMap.add defid.it (readset_of_clauses clauses) acc
       | _ -> acc)
     StringMap.empty spec
 

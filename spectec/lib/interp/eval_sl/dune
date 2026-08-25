@@ -5,7 +5,9 @@
  (public_name spectec.interp.eval_sl)
  (libraries
   spectec.common
+  spectec.diagnostic
   spectec.lang
   spectec.instrumentation
   builtins
-  cache))
+  cache
+  target))

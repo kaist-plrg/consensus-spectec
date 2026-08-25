@@ -1,0 +1,4 @@
+; Mark the test corpus and example spec trees as data only.
+; dune watches them but doesn't try to build them.
+
+(data_only_dirs examples testdata)

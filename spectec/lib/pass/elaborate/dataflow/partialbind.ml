@@ -1,46 +1,42 @@
 open Common.Domain
 open Common.Source
-open Lang
 open Lang.Il
 open Envs.Make
-open Error
 open Ctx
+module Mixop = Lang.Il.Mixfix
 
 (* Helper for identifying singleton case *)
 
 let rec is_singleton_case (dctx : Dctx.t) (typ : typ) : bool =
-  typ |> Plaintyp.of_internal_typ |> is_singleton_case' dctx
-
-and is_singleton_case' (dctx : Dctx.t) (plaintyp : El.plaintyp) : bool =
-  match plaintyp.it with
-  | VarT (tid, targs) -> (
-      let td = Dctx.find_typdef dctx tid in
+  match typ.it with
+  | VarT { synid; targs } -> (
+      let td = Dctx.find_typdef dctx synid in
       match td with
-      | Defined (tparams, typdef) -> (
-          match typdef with
-          | `Plain plaintyp ->
+      | Defined (tparams, deftyp) -> (
+          match deftyp.it with
+          | PlainT typ ->
               let theta = List.combine tparams targs |> TIdMap.of_list in
-              let plaintyp = Plaintyp.subst_plaintyp theta plaintyp in
-              is_singleton_case' dctx plaintyp
-          | `Struct _ -> false
-          | `Variant cases -> List.length cases = 1)
+              let typ = Envs.Il.Typ.subst_typ theta typ in
+              is_singleton_case dctx typ
+          | StructT _ -> false
+          | VariantT cases -> List.length cases = 1)
       | _ -> false)
   | _ -> false
 
 (* Rename for an expression *)
 
 module To = struct
-  type t = id * typ * iter list
+  type t = var
 
-  let as_exp ((id, typ, iters) : t) =
+  let as_exp ({ varid; typ; iters } : t) =
     List.fold_left
       (fun exp iter ->
         let typ =
           let typ = exp.note $ exp.at in
-          IterT (typ, iter)
+          IterT { typ; iter }
         in
         IterE (exp, (iter, [])) $$ (exp.at, typ))
-      (VarE id $$ (id.at, typ.it))
+      (VarE varid $$ (varid.at, typ.it))
       iters
 end
 
@@ -65,13 +61,12 @@ module REnv = struct
   let update_dim (iter : iter) (renv_pre : t) (renv_post : t) : t =
     let ids_updated =
       IdSet.diff
-        (renv_post |> List.map (fun ((id, _, _), _, _) -> id) |> IdSet.of_list)
-        (renv_pre |> List.map (fun ((id, _, _), _, _) -> id) |> IdSet.of_list)
+        (renv_post |> List.map (fun (to_, _, _) -> to_.varid) |> IdSet.of_list)
+        (renv_pre |> List.map (fun (to_, _, _) -> to_.varid) |> IdSet.of_list)
     in
     List.map
       (fun (to_, from_, iters) ->
-        let id, _, _ = to_ in
-        if IdSet.mem id ids_updated then (to_, from_, iters @ [ iter ])
+        if IdSet.mem to_.varid ids_updated then (to_, from_, iters @ [ iter ])
         else (to_, from_, iters))
       renv_post
 end
@@ -83,9 +78,10 @@ let gen_prem_bound (dctx : Dctx.t) (to_ : To.t) (exp_from : exp)
   let exp_cond =
     let exp_l = To.as_exp to_ in
     match exp_from.it with
-    | CaseE (mixop, [])
-      when not (is_singleton_case dctx (exp_from.note $ exp_from.at)) ->
-        MatchE (exp_l, CaseP mixop) $$ (exp_from.at, BoolT)
+    | CaseE notexp
+      when Mixop.args notexp = []
+           && not (is_singleton_case dctx (exp_from.note $ exp_from.at)) ->
+        MatchE (exp_l, CaseP (Mixop.to_mixop notexp)) $$ (exp_from.at, BoolT)
     | OptE (Some _) -> MatchE (exp_l, OptP `Some) $$ (exp_from.at, BoolT)
     | OptE None -> MatchE (exp_l, OptP `None) $$ (exp_from.at, BoolT)
     | ListE [] -> MatchE (exp_l, ListP `Nil) $$ (exp_from.at, BoolT)
@@ -93,7 +89,9 @@ let gen_prem_bound (dctx : Dctx.t) (to_ : To.t) (exp_from : exp)
         let exp_r = exp_from in
         CmpE (`EqOp, `BoolT, exp_l, exp_r) $$ (exp_from.at, BoolT)
   in
-  let sidecondition = IfPr exp_cond $ exp_from.at in
+  let sidecondition =
+    IfPr { cond = exp_cond; role = Condition } $ exp_from.at
+  in
   List.fold_left
     (fun sidecondition iter -> IterPr (sidecondition, (iter, [])) $ exp_from.at)
     sidecondition iters
@@ -103,7 +101,9 @@ let gen_prem_bind_match (to_ : To.t) (pattern : pattern) (exp_from : exp)
   let exp_to = To.as_exp to_ in
   let prems =
     let exp_guard_match = MatchE (exp_to, pattern) $$ (exp_from.at, BoolT) in
-    let sidecondition_guard_match = IfPr exp_guard_match $ exp_from.at in
+    let sidecondition_guard_match =
+      IfPr { cond = exp_guard_match; role = Condition } $ exp_from.at
+    in
     let prem_bind = LetPr (exp_from, exp_to) $ exp_from.at in
     [ sidecondition_guard_match; prem_bind ]
   in
@@ -119,7 +119,9 @@ let gen_prem_bind_sub (to_ : To.t) (typ_sub : typ) (exp_sub : exp)
   let exp_to = To.as_exp to_ in
   let prems =
     let exp_guard_sub = SubE (exp_to, typ_sub) $$ (exp_from.at, BoolT) in
-    let sidecondition_guard_sub = IfPr exp_guard_sub $ exp_from.at in
+    let sidecondition_guard_sub =
+      IfPr { cond = exp_guard_sub; role = Condition } $ exp_from.at
+    in
     let exp_downcast =
       DownCastE (typ_sub, exp_to) $$ (exp_from.at, typ_sub.it)
     in
@@ -179,11 +181,8 @@ let gen_prems (dctx : Dctx.t) (renv : REnv.t) : prem list =
 
 let rename_exp_bind_match (dctx : Dctx.t) (renv : REnv.t) (pattern : pattern)
     (exp_from : exp) : Dctx.t * REnv.t * exp =
-  let to_ = Fresh.fresh_from_exp dctx.frees exp_from in
-  let dctx =
-    let id_rename, _, _ = to_ in
-    Dctx.add_free dctx id_rename
-  in
+  let to_ = Fresh.fresh_var_from_exp dctx.frees exp_from in
+  let dctx = Dctx.add_free dctx to_.varid in
   let from_ = From.Bindmatch { pattern; exp_from } in
   let renv = REnv.add renv to_ from_ in
   let exp = To.as_exp to_ in
@@ -191,11 +190,8 @@ let rename_exp_bind_match (dctx : Dctx.t) (renv : REnv.t) (pattern : pattern)
 
 let rename_exp_bind_sub (dctx : Dctx.t) (renv : REnv.t) (typ_sub : typ)
     (exp_sub : exp) (exp_from : exp) : Dctx.t * REnv.t * exp =
-  let to_ = Fresh.fresh_from_exp dctx.frees exp_from in
-  let dctx =
-    let id_rename, _, _ = to_ in
-    Dctx.add_free dctx id_rename
-  in
+  let to_ = Fresh.fresh_var_from_exp dctx.frees exp_from in
+  let dctx = Dctx.add_free dctx to_.varid in
   let from_ = From.Bindsub { typ_sub; exp_sub; exp_from } in
   let renv = REnv.add renv to_ from_ in
   let exp = To.as_exp to_ in
@@ -203,7 +199,7 @@ let rename_exp_bind_sub (dctx : Dctx.t) (renv : REnv.t) (typ_sub : typ)
 
 let check_upcast_terminal (exp : exp) : bool =
   match exp.it with
-  | UpCastE (_, { it = CaseE (_, []); _ }) -> true
+  | UpCastE (_, { it = CaseE notexp; _ }) when Mixop.args notexp = [] -> true
   | _ -> false
 
 let rec rename_exp (dctx : Dctx.t) (binds : IdSet.t) (renv : REnv.t) (exp : exp)
@@ -220,11 +216,8 @@ let rec rename_exp (dctx : Dctx.t) (binds : IdSet.t) (renv : REnv.t) (exp : exp)
 
 and rename_exp_bound (dctx : Dctx.t) (renv : REnv.t) (exp : exp) :
     Dctx.t * REnv.t * exp =
-  let to_ = Fresh.fresh_from_exp dctx.frees exp in
-  let dctx =
-    let id_rename, _, _ = to_ in
-    Dctx.add_free dctx id_rename
-  in
+  let to_ = Fresh.fresh_var_from_exp dctx.frees exp in
+  let dctx = Dctx.add_free dctx to_.varid in
   let from_ = From.Bound { exp_from = exp } in
   let renv = REnv.add renv to_ from_ in
   let exp = To.as_exp to_ in
@@ -242,13 +235,15 @@ and rename_exp_bind (dctx : Dctx.t) (binds : IdSet.t) (renv : REnv.t)
       let dctx, renv, exps = rename_exps dctx binds renv exps in
       let exp = TupleE exps $$ (at, note) in
       (dctx, renv, exp)
-  | CaseE (mixop, exps) when is_singleton_case dctx (note $ at) ->
+  | CaseE notexp when is_singleton_case dctx (note $ at) ->
+      let mixop, exps = Mixop.split notexp in
       let dctx, renv, exps = rename_exps dctx binds renv exps in
-      let exp = CaseE (mixop, exps) $$ (at, note) in
+      let exp = CaseE (Mixop.fill mixop exps) $$ (at, note) in
       (dctx, renv, exp)
-  | CaseE (mixop, exps) ->
+  | CaseE notexp ->
+      let mixop, exps = Mixop.split notexp in
       let dctx, renv, exps = rename_exps dctx binds renv exps in
-      let exp_renamed = CaseE (mixop, exps) $$ (at, note) in
+      let exp_renamed = CaseE (Mixop.fill mixop exps) $$ (at, note) in
       rename_exp_bind_match dctx renv (CaseP mixop) exp_renamed
   | StrE expfields ->
       let atoms, exps = List.split expfields in
@@ -274,12 +269,7 @@ and rename_exp_bind (dctx : Dctx.t) (binds : IdSet.t) (renv : REnv.t)
       let dctx, renv, exp_t = rename_exp dctx binds renv exp_t in
       let exp_renamed = ConsE (exp_h, exp_t) $$ (at, note) in
       rename_exp_bind_match dctx renv (ListP `Cons) exp_renamed
-  | IterE (_, ((_, _ :: _) as iterexp)) ->
-      error at
-        (Format.asprintf
-           "iterated expression should initially have no annotations, but got \
-            %s"
-           (Il.Print.string_of_iterexp iterexp))
+  | IterE (_, (_, _ :: _)) -> assert false
   | IterE (exp, (iter, [])) ->
       let renv_pre = renv in
       let dctx, renv_post, exp = rename_exp dctx binds renv_pre exp in

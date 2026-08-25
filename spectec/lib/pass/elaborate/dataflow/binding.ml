@@ -1,10 +1,10 @@
 open Common.Domain
 open Common.Source
 open Lang.Il
-module Hint = Envs.Hint
-open Error
+open Diagnostic
 open Ctx
 open Bind
+module Mixop = Lang.Il.Mixfix
 
 (* Binding analysis :
 
@@ -41,9 +41,8 @@ let update_venv_partial (venv : VEnv.t) (renv_partial : Partialbind.REnv.t) :
     VEnv.t =
   List.fold_left
     (fun venv (to_, _, iters) ->
-      let id_to, typ_to, iters_to = to_ in
-      let iters = iters_to @ iters in
-      VEnv.add id_to (typ_to, iters) venv)
+      let iters = to_.iters @ iters in
+      VEnv.add to_.varid (to_.typ, iters) venv)
     venv renv_partial
 
 (* Expression binding analysis *)
@@ -72,6 +71,10 @@ let analyze_exp_as_bound (dctx : Dctx.t) (exp : exp) : unit =
     error exp.at
       (Format.asprintf "expression has free variable(s): %s"
          (BEnv.to_string binds))
+      ~code:Dataflow_free_variable_in_output
+      ~detail:
+        "Every variable here must already be bound by an earlier part of the \
+         rule (the conclusion's input slot or a preceding premise)."
 
 let analyze_exps_as_bound (dctx : Dctx.t) (exps : exp list) : unit =
   List.iter (analyze_exp_as_bound dctx) exps
@@ -101,36 +104,30 @@ let analyze_args_as_bind (dctx : Dctx.t) (args : arg list) :
 let rec analyze_prem (dctx : Dctx.t) (prem : prem) :
     Dctx.t * VEnv.t * prem * prem list =
   match prem.it with
-  | RulePr (id, notexp) -> analyze_rule_prem dctx prem.at id notexp
-  | IfPr exp -> analyze_if_prem dctx prem.at exp
+  | RelPr { relid; notexp } -> analyze_rule_prem dctx prem.at relid notexp
+  | RelAssertPr { call; expect } ->
+      analyze_rel_assert_prem dctx prem.at call expect
+  | IfPr { cond; _ } -> analyze_if_prem dctx prem.at cond
   | ElsePr -> (dctx, VEnv.empty, prem, [])
   | LetPr _ ->
-      error prem.at "let premise should appear only after bind analysis"
-  | IterPr (_, ((_, _ :: _) as iterexp)) ->
-      error prem.at
-        (Format.asprintf
-           "iterated premise should initially have no annotations, but got %s"
-           (Il.Print.string_of_iterexp iterexp))
+      (* unreachable: analyze_let_prem produces LetPr within this pass. *)
+      assert false
+  | IterPr (_, (_, _ :: _)) -> assert false
   | IterPr (prem, (iter, [])) -> analyze_iter_prem dctx prem.at prem iter
   | DebugPr exp -> analyze_debug_prem dctx prem.at exp
 
 and analyze_rule_prem (dctx : Dctx.t) (at : region) (id : id) (notexp : notexp)
     : Dctx.t * VEnv.t * prem * prem list =
-  let mixop, exps = notexp in
-  let hint = Dctx.find_hint dctx id in
-  let exps_input, exps_output = Hint.split_exps hint exps in
-  List.map snd exps_input |> analyze_exps_as_bound dctx;
+  let mixop, exps = Mixop.split notexp in
+  let reltyp = Dctx.find_reltyp dctx id in
+  let exps_input, exps_output = Mode.partition reltyp.it exps in
+  analyze_exps_as_bound dctx exps_input;
   let dctx, venv, exps_output, sideconditions =
-    let idxs, exps_output = List.split exps_output in
-    let dctx, venv, exps_output, sideconditions =
-      analyze_exps_as_bind dctx exps_output
-    in
-    let exps_output = List.combine idxs exps_output in
-    (dctx, venv, exps_output, sideconditions)
+    analyze_exps_as_bind dctx exps_output
   in
-  let exps = Hint.combine_exps exps_input exps_output in
-  let notexp = (mixop, exps) in
-  let prem = RulePr (id, notexp) $ at in
+  let exps = Mode.interleave reltyp.it ~ins:exps_input ~outs:exps_output in
+  let notexp = Mixop.fill mixop exps in
+  let prem = RelPr { relid = id; notexp } $ at in
   (dctx, venv, prem, sideconditions)
 
 and analyze_if_eq_prem (dctx : Dctx.t) (at : region) (note : typ')
@@ -140,7 +137,13 @@ and analyze_if_eq_prem (dctx : Dctx.t) (at : region) (note : typ')
   let binds_r = Collectbind.collect_exp dctx exp_r in
   match (BEnv.is_empty binds_l, BEnv.is_empty binds_r) with
   | true, true ->
-      let prem = IfPr (CmpE (`EqOp, optyp, exp_l, exp_r) $$ (at, note)) in
+      let prem =
+        IfPr
+          {
+            cond = CmpE (`EqOp, optyp, exp_l, exp_r) $$ (at, note);
+            role = Condition;
+          }
+      in
       (dctx, VEnv.empty, prem, [])
   | false, true -> analyze_let_prem dctx exp_l binds_l exp_r
   | true, false -> analyze_let_prem dctx exp_r binds_r exp_l
@@ -149,6 +152,11 @@ and analyze_if_eq_prem (dctx : Dctx.t) (at : region) (note : typ')
         (Format.asprintf
            "cannot bind on both sides of an equality: (left) %s, (right) %s"
            (BEnv.to_string binds_l) (BEnv.to_string binds_r))
+        ~code:Dataflow_bind_both_sides_of_equality
+        ~detail:
+          "An `=` premise reads as a comparison when both sides are already \
+           bound, or as a binder when one side is. With new variables on both \
+           sides it fits neither."
 
 and analyze_if_prem (dctx : Dctx.t) (at : region) (exp : exp) :
     Dctx.t * VEnv.t * prem * prem list =
@@ -161,8 +169,14 @@ and analyze_if_prem (dctx : Dctx.t) (at : region) (exp : exp) :
       (dctx, venv, prem, prems)
   | _ ->
       analyze_exp_as_bound dctx exp;
-      let prem = IfPr exp $ at in
+      let prem = IfPr { cond = exp; role = Condition } $ at in
       (dctx, VEnv.empty, prem, [])
+
+and analyze_rel_assert_prem (dctx : Dctx.t) (at : region) (call : relcall)
+    (expect : bool) : Dctx.t * VEnv.t * prem * prem list =
+  analyze_exps_as_bound dctx (Mixop.args call.notexp);
+  let prem = RelAssertPr { call; expect } $ at in
+  (dctx, VEnv.empty, prem, [])
 
 and analyze_let_prem (dctx : Dctx.t) (exp_l : exp) (binds_l : BEnv.t)
     (exp_r : exp) : Dctx.t * VEnv.t * prem' * prem list =

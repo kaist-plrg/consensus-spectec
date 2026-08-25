@@ -14,7 +14,7 @@ module Atom = Lang.Xl.Atom
 (* === Expanded type representation ===
  *
  * Mirrors Il.typ' but with all VarT aliases resolved inline.
- * StructT fields use lowercase string names (from Atom.string_of_atom).
+ * StructT fields use lowercase string names.
  * BytesT is a resolved form of the bytes/bytes32/... VarT aliases.
  *)
 type iter = List | Opt (* mirrors Il.iter *)
@@ -48,10 +48,7 @@ let bytes_widths =
     ("bytes256", 256);
   ]
 
-let atom_name (atom : Il.atom) : string =
-  match atom.it with
-  | Atom.Atom s | Atom.SilentAtom s -> s
-  | other -> Atom.string_of_atom other
+let atom_name (atom : Il.atom) : string = Atom.to_string atom.it
 
 (* Resolve an Il.typ' to our expanded typ, given a name→typ lookup *)
 let rec resolve (lookup : string -> typ option) (t : Il.typ') : typ =
@@ -62,10 +59,12 @@ let rec resolve (lookup : string -> typ option) (t : Il.typ') : typ =
   | Il.TextT -> TextT
   | Il.FuncT -> OpaqueT "func"
   | Il.TupleT _ -> OpaqueT "tuple"
-  | Il.IterT (inner, Il.List) -> IterT (resolve lookup inner.it, List)
-  | Il.IterT (inner, Il.Opt) -> IterT (resolve lookup inner.it, Opt)
-  | Il.VarT (id, _) -> (
-      let name = id.it in
+  | Il.IterT { typ = inner; iter = Il.List } ->
+      IterT (resolve lookup inner.it, List)
+  | Il.IterT { typ = inner; iter = Il.Opt } ->
+      IterT (resolve lookup inner.it, Opt)
+  | Il.VarT { synid; _ } -> (
+      let name = synid.it in
       match List.assoc_opt (String.lowercase_ascii name) bytes_widths with
       | Some w -> BytesT w
       | None -> (
@@ -93,7 +92,7 @@ let collect_defs (spec : Il.spec) : (string * Il.deftyp') list =
   List.filter_map
     (fun (def : Il.def) ->
       match def.it with
-      | Il.TypD (id, _tparams, deftyp) -> Some (id.it, deftyp.it)
+      | Il.TypD { synid; deftyp; _ } -> Some (synid.it, deftyp.it)
       | _ -> None)
     spec
 
