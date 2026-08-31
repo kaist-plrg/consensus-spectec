@@ -139,13 +139,13 @@ ENV PATH="/root/.opam/eth-spectec/bin:/root/.opam/default/bin:${PATH}"
 COPY . /workspace/spectec-core
 WORKDIR /workspace/spectec-core
 
-# Initialize git submodules (consensus-specs, consensus-spec-tests)
-RUN git submodule update --init --recursive
+# Initialize git submodules (consensus-specs)
+RUN git submodule update --init --depth 1 consensus-specs
 
 # Configure sparse-checkout for consensus-specs (required for eth2spec)
 WORKDIR /workspace/spectec-core/consensus-specs
 RUN git sparse-checkout init --cone && \
-    git sparse-checkout set tests/core/pyspec specs/ configs/ presets/ pysetup/ sync/ .
+    git sparse-checkout set tests/core/pyspec specs configs presets pysetup sync
 
 # Install uv (Python package manager for eth2spec)
 # uv install script may install to ~/.cargo/bin (already in PATH from Rust) or ~/.local/bin
