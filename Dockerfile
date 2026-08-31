@@ -87,18 +87,6 @@ ENV JAVA_HOME=/usr/lib/jvm/java-21-openjdk-amd64
 ENV PATH="${JAVA_HOME}/bin:${PATH}"
 
 # ============================================
-# Stage 5: Install Bazel (for Prysm)
-# ============================================
-RUN curl -fsSL https://bazel.build/bazel-release.pub.gpg | gpg --dearmor > bazel-archive-keyring.gpg && \
-    mv bazel-archive-keyring.gpg /usr/share/keyrings && \
-    echo "deb [arch=amd64 signed-by=/usr/share/keyrings/bazel-archive-keyring.gpg] https://storage.googleapis.com/bazel-apt stable jdk1.8" > /etc/apt/sources.list.d/bazel.list && \
-    apt-get update && \
-    apt-get install -y bazel-7.4.1 && \
-    ln -s /usr/bin/bazel-7.4.1 /usr/bin/bazel && \
-    apt-get clean && \
-    rm -rf /var/lib/apt/lists/*
-
-# ============================================
 # Stage 6: Install Node.js 20 (for Lodestar)
 # ============================================
 # Pin Node to the as-built minor via the nodesource apt version string.

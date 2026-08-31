@@ -18,7 +18,6 @@ The Dockerfile provides a reproducible, isolated environment for building and te
    - Rust (stable + nightly with llvm-tools-preview)
    - Go 1.24.2 (for Prysm)
    - Java 21 (OpenJDK for Teku)
-   - Bazel 7.4.1 (for Prysm)
    - Node.js 20 (for Lodestar)
    - Nim 1.6.20 (for Nimbus)
    - Python 3 with dependencies (including snappy for decompression)
