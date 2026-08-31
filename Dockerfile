@@ -122,11 +122,22 @@ RUN apt-get update && \
     && rm -rf /var/lib/apt/lists/*
 
 # Initialize opam and create OCaml switch (name must match Makefile SWITCH=eth-spectec)
-# Pin menhir to 20211012: newer menhir drops MenhirLib.General used by spectec parser_debug.ml
+# The package list mirrors the (depends ...) stanza of spectec/dune-project; keep the
+# two in sync.
 RUN opam init --disable-sandboxing -y && \
     opam switch create eth-spectec ocaml-base-compiler.5.1.0 && \
     eval $(opam env --switch=eth-spectec) && \
-    opam install -y dune bignum menhir.20211012 core core_unix bisect_ppx yojson digestif bls12-381 bls12-381-signature
+    opam install -y \
+        dune \
+        menhir menhirLib \
+        bignum \
+        bls12-381 bls12-381-signature \
+        core core_unix \
+        digestif \
+        ppx_let \
+        pprint \
+        linol-eio eio_main \
+        yojson bisect_ppx
 
 ENV OPAM_SWITCH_PREFIX="/root/.opam/eth-spectec"
 ENV CAML_LD_LIBRARY_PATH="/root/.opam/eth-spectec/lib/stublibs:/root/.opam/default/lib/stublibs"
