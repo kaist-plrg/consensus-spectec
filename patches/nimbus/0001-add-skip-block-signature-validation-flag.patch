@@ -1,0 +1,38 @@
+Add a skipBlockSignatureValidation flag.
+
+Differential testing runs every client with validate_result = false: the block
+signature and the post-state root go unchecked while RANDAO, attestation and
+the other BLS checks stay on. Nimbus's existing skipBlsValidation is all or
+nothing, so a client running under it accepts blocks with a bad RANDAO reveal
+and stops disagreeing with pyspec exactly where this project wants it to.
+
+The new flag sits beside skipBlsValidation in UpdateFlag and is honoured at the
+one place that verifies the proposer's signature. Nothing else reads it, so
+skipBlsValidation keeps its current meaning.
+diff --git a/beacon_chain/extras.nim b/beacon_chain/extras.nim
+index 66c479e..15dde30 100644
+--- a/beacon_chain/extras.nim
++++ b/beacon_chain/extras.nim
+@@ -24,6 +24,9 @@ type
+     ## Skip verification of BLS signatures in block processing.
+     ## Predominantly intended for use in testing, e.g. to allow extra coverage.
+     ## Also useful to avoid unnecessary work when replaying known, good blocks.
++    skipBlockSignatureValidation ##\
++    ## Skip verification of block proposer signature only.
++    ## Unlike skipBlsValidation, this does not disable other BLS checks.
+     skipStateRootValidation ##\
+     ## Skip verification of block state root.
+     strictVerification ##\
+diff --git a/beacon_chain/spec/state_transition.nim b/beacon_chain/spec/state_transition.nim
+index d53a0f6..b3f07b0 100644
+--- a/beacon_chain/spec/state_transition.nim
++++ b/beacon_chain/spec/state_transition.nim
+@@ -253,7 +253,7 @@ proc state_transition_block_aux(
+   # by the block proposer. Every actor in the network will update its state
+   # according to the contents of this block - but first they will validate
+   # that the block is sane.
+-  if skipBlsValidation notin flags:
++  if skipBlsValidation notin flags and skipBlockSignatureValidation notin flags:
+     ? verify_block_signature(state.data, signedBlock)
+ 
+   trace "state_transition: processing block, signature passed",

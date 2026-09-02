@@ -237,23 +237,17 @@ RUN for p in /workspace/spectec-core/patches/teku/*.patch; do \
         git -C testing_clients/teku apply --3way "$p" || exit 1; \
     done
 
-# Apply Nimbus modifications (after initial build)
+# Apply Nimbus modifications
+WORKDIR /workspace/spectec-core
+RUN for p in /workspace/spectec-core/patches/nimbus/*.patch; do \
+        git -C testing_clients/nimbus-eth2 apply --3way "$p" || exit 1; \
+    done
+
+# Bootstrap the Nimbus build system, which builds its own Nim toolchain and
+# vendor tree before the ncli build below can run.
 WORKDIR /workspace/spectec-core/testing_clients/nimbus-eth2
 RUN JOBS=4 && \
-    make -j${JOBS} || make -j2 || make
-
-WORKDIR /workspace/spectec-core
-RUN if [ -f "modified_code/nimbus/ncli.nim" ]; then \
-        cp modified_code/nimbus/ncli.nim testing_clients/nimbus-eth2/ncli/ncli.nim; \
-    fi && \
-    if [ -f "modified_code/nimbus/beacon_chain/extras.nim" ]; then \
-        mkdir -p testing_clients/nimbus-eth2/beacon_chain && \
-        cp modified_code/nimbus/beacon_chain/extras.nim testing_clients/nimbus-eth2/beacon_chain/extras.nim; \
-    fi && \
-    if [ -f "modified_code/nimbus/beacon_chain/spec/state_transition.nim" ]; then \
-        mkdir -p testing_clients/nimbus-eth2/beacon_chain/spec && \
-        cp modified_code/nimbus/beacon_chain/spec/state_transition.nim testing_clients/nimbus-eth2/beacon_chain/spec/state_transition.nim; \
-    fi
+    make -j${JOBS} deps || make -j2 deps || make deps
 
 # Apply Lodestar modifications
 RUN if [ -f "modified_code/lodestar/transition.js" ]; then \
