@@ -218,25 +218,13 @@ RUN mkdir -p lodestar && \
 WORKDIR /workspace/spectec-core
 
 # Apply Lighthouse modifications
-RUN if [ -f "modified_code/lighthouse/transition_blocks.rs" ]; then \
-        cp modified_code/lighthouse/transition_blocks.rs testing_clients/lighthouse/lcli/src/transition_blocks.rs; \
-    fi && \
-    if [ -f "modified_code/lighthouse/epoch_processing.rs" ]; then \
-        cp modified_code/lighthouse/epoch_processing.rs testing_clients/lighthouse/lcli/src/epoch_processing.rs; \
-    fi && \
-    if [ -f "modified_code/lighthouse/operation.rs" ]; then \
-        cp modified_code/lighthouse/operation.rs testing_clients/lighthouse/lcli/src/operation.rs; \
-    fi && \
-    if [ -f "modified_code/lighthouse/sanity_slots.rs" ]; then \
-        cp modified_code/lighthouse/sanity_slots.rs testing_clients/lighthouse/lcli/src/sanity_slots.rs; \
-    fi && \
-    if [ -f "modified_code/lighthouse/consensus/state_processing/src/per_block_processing.rs" ]; then \
-        mkdir -p testing_clients/lighthouse/consensus/state_processing/src && \
-        cp modified_code/lighthouse/consensus/state_processing/src/per_block_processing.rs testing_clients/lighthouse/consensus/state_processing/src/per_block_processing.rs; \
-    fi && \
-    if [ -f "modified_code/lighthouse/lcli/src/main.rs" ]; then \
-        cp modified_code/lighthouse/lcli/src/main.rs testing_clients/lighthouse/lcli/src/main.rs; \
-    fi
+RUN cp modified_code/lighthouse/epoch_processing.rs \
+       modified_code/lighthouse/operation.rs \
+       modified_code/lighthouse/sanity_slots.rs \
+       testing_clients/lighthouse/lcli/src/ && \
+    for p in /workspace/spectec-core/patches/lighthouse/*.patch; do \
+        git -C testing_clients/lighthouse apply --3way "$p" || exit 1; \
+    done
 
 # Apply Prysm modifications
 RUN cp modified_code/prysm/pcli_spectest.go testing_clients/prysm/tools/pcli/ && \

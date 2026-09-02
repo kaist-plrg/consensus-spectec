@@ -1,0 +1,47 @@
+Add a BlockSignatureStrategy that skips only the block signature.
+
+Differential testing runs every client with validate_result = false, which in
+pyspec terms means the block signature and the post-state root are not checked
+while RANDAO and attestation signatures still are. Upstream offers no strategy
+with that shape: VerifyBulk and VerifyIndividual check everything, and
+NoVerification checks nothing, so a client running under it accepts blocks whose
+RANDAO reveal is wrong and disagrees with pyspec on exactly the cases this
+project is looking for.
+
+SkipBlockSignatureOnly maps to VerifySignatures::True so the per-operation
+verification stays on, and the one call it has to suppress -- verify_block_signature
+-- is guarded on the strategy itself.
+diff --git a/consensus/state_processing/src/per_block_processing.rs b/consensus/state_processing/src/per_block_processing.rs
+index 99abbef..28dcb1a 100644
+--- a/consensus/state_processing/src/per_block_processing.rs
++++ b/consensus/state_processing/src/per_block_processing.rs
+@@ -61,6 +61,8 @@ pub enum BlockSignatureStrategy {
+     VerifyRandao,
+     /// Verify all signatures in bulk at the beginning of block processing.
+     VerifyBulk,
++    /// Skip block signature verification only, but verify all other signatures (RANDAO, attestations, etc.)
++    SkipBlockSignatureOnly,
+ }
+ 
+ /// The strategy to be used when validating the block's signatures.
+@@ -144,6 +146,10 @@ pub fn per_block_processing<E: EthSpec, Payload: AbstractExecPayload<E>>(
+         BlockSignatureStrategy::VerifyIndividual => VerifySignatures::True,
+         BlockSignatureStrategy::NoVerification => VerifySignatures::False,
+         BlockSignatureStrategy::VerifyRandao => VerifySignatures::False,
++        BlockSignatureStrategy::SkipBlockSignatureOnly => {
++            // validate_result = false: Skip block signature, but verify other signatures
++            VerifySignatures::True
++        }
+     };
+ 
+     let proposer_index = process_block_header(
+@@ -154,7 +160,8 @@ pub fn per_block_processing<E: EthSpec, Payload: AbstractExecPayload<E>>(
+         spec,
+     )?;
+ 
+-    if verify_signatures.is_true() {
++    // validate_result = false: Skip block signature verification when SkipBlockSignatureOnly
++    if verify_signatures.is_true() && block_signature_strategy != BlockSignatureStrategy::SkipBlockSignatureOnly {
+         verify_block_signature(state, signed_block, ctxt, spec)?;
+     }
+ 
