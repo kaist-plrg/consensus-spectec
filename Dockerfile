@@ -233,13 +233,9 @@ RUN cp modified_code/prysm/pcli_spectest.go testing_clients/prysm/tools/pcli/ &&
     done
 
 # Apply Teku modifications
-RUN if [ -f "modified_code/teku/TransitionCommand.java" ]; then \
-        cp modified_code/teku/TransitionCommand.java testing_clients/teku/teku/src/main/java/tech/pegasys/teku/cli/subcommand/TransitionCommand.java; \
-    fi && \
-    if [ -f "modified_code/teku/ethereum/spec/src/main/java/tech/pegasys/teku/spec/logic/common/block/AbstractBlockProcessor.java" ]; then \
-        mkdir -p testing_clients/teku/ethereum/spec/src/main/java/tech/pegasys/teku/spec/logic/common/block && \
-        cp modified_code/teku/ethereum/spec/src/main/java/tech/pegasys/teku/spec/logic/common/block/AbstractBlockProcessor.java testing_clients/teku/ethereum/spec/src/main/java/tech/pegasys/teku/spec/logic/common/block/AbstractBlockProcessor.java; \
-    fi
+RUN for p in /workspace/spectec-core/patches/teku/*.patch; do \
+        git -C testing_clients/teku apply --3way "$p" || exit 1; \
+    done
 
 # Apply Nimbus modifications (after initial build)
 WORKDIR /workspace/spectec-core/testing_clients/nimbus-eth2

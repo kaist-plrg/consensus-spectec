@@ -1,0 +1,65 @@
+Drop the block signature and post-state root checks from block processing.
+
+Differential testing runs every client with validate_result = false: the block
+signature and the post-state root go unchecked while RANDAO, attestation and
+the other operation signatures are still verified. Teku has no switch for that
+shape -- BLSSignatureVerifier.SIMPLE verifies everything reachable, including
+the block signature -- so the two calls are commented out where they are made.
+
+They are commented rather than deleted, next to the reason, because they are
+what gets re-enabled if validate_result = true is ever wanted here. The methods
+they called stay in the file and pick up @SuppressWarnings("UnusedMethod") so
+Error Prone does not fail the build over the now-dead code.
+diff --git a/ethereum/spec/src/main/java/tech/pegasys/teku/spec/logic/common/block/AbstractBlockProcessor.java b/ethereum/spec/src/main/java/tech/pegasys/teku/spec/logic/common/block/AbstractBlockProcessor.java
+index 57778ba..b33a89a 100644
+--- a/ethereum/spec/src/main/java/tech/pegasys/teku/spec/logic/common/block/AbstractBlockProcessor.java
++++ b/ethereum/spec/src/main/java/tech/pegasys/teku/spec/logic/common/block/AbstractBlockProcessor.java
+@@ -212,15 +212,19 @@ public abstract class AbstractBlockProcessor implements BlockProcessor {
+    * @return A block validation result
+    */
+   @CheckReturnValue
++  @SuppressWarnings("UnusedVariable")
+   private BlockValidationResult validateBlockPostProcessing(
+       final BeaconState preState,
+       final SignedBeaconBlock block,
+       final BeaconState postState,
+       final IndexedAttestationCache indexedAttestationCache,
+       final BLSSignatureVerifier signatureVerifier) {
++    // validate_result = false: Skip state root verification, but verify signatures (RANDAO, attestations, etc.)
++    // verifyBlockSignatures will skip block signature but verify other signatures
+     return BlockValidationResult.allOf(
+-        () -> verifyBlockSignatures(preState, block, indexedAttestationCache, signatureVerifier),
+-        () -> validatePostState(postState, block));
++        () -> verifyBlockSignatures(preState, block, indexedAttestationCache, signatureVerifier)
++        // () -> validatePostState(postState, block)  // Skip state root verification for validate_result = false
++    );
+   }
+ 
+   @CheckReturnValue
+@@ -232,8 +236,9 @@ public abstract class AbstractBlockProcessor implements BlockProcessor {
+     BeaconBlock blockMessage = block.getMessage();
+     BeaconBlockBody blockBody = blockMessage.getBody();
+ 
++    // validate_result = false: Skip block signature verification, but verify other signatures (RANDAO, attestations, etc.)
+     return BlockValidationResult.allOf(
+-        () -> verifyBlockSignature(preState, block, signatureVerifier),
++        // () -> verifyBlockSignature(preState, block, signatureVerifier),  // Skip block signature for validate_result = false
+         () ->
+             verifyAttestationSignatures(
+                 preState, blockBody.getAttestations(), signatureVerifier, indexedAttestationCache),
+@@ -244,6 +249,7 @@ public abstract class AbstractBlockProcessor implements BlockProcessor {
+   }
+ 
+   @CheckReturnValue
++  @SuppressWarnings("UnusedMethod")
+   private BlockValidationResult verifyBlockSignature(
+       final BeaconState state,
+       final SignedBeaconBlock block,
+@@ -270,6 +276,7 @@ public abstract class AbstractBlockProcessor implements BlockProcessor {
+   }
+ 
+   @CheckReturnValue
++  @SuppressWarnings("UnusedMethod")
+   private BlockValidationResult validatePostState(
+       final BeaconState postState, final SignedBeaconBlock block) {
+     if (!block.getMessage().getStateRoot().equals(postState.hashTreeRoot())) {
