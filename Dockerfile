@@ -145,7 +145,43 @@ ENV OCAML_TOPLEVEL_PATH="/root/.opam/eth-spectec/lib/toplevel"
 ENV PATH="/root/.opam/eth-spectec/bin:/root/.opam/default/bin:${PATH}"
 
 # ============================================
-# Stage 8: Copy project files and install Python dependencies
+# Stage 8: Clone and set up clients
+# ============================================
+WORKDIR /workspace/spectec-core/testing_clients
+
+# Clone Lighthouse (v8.0.1)
+RUN git clone --depth 1 --branch v8.0.1 https://github.com/sigp/lighthouse.git
+
+# Clone Prysm (v7.0.0)
+RUN git clone --depth 1 --branch v7.0.0 https://github.com/OffchainLabs/prysm.git
+
+# Clone Teku (25.11.1)
+RUN git clone --depth 1 --branch 25.11.1 https://github.com/ConsenSys/teku.git
+
+# Clone Nimbus (v25.11.1)
+RUN git clone --depth 1 --branch v25.11.1 https://github.com/status-im/nimbus-eth2.git
+
+# Setup Lodestar (create package.json and install dependencies)
+WORKDIR /workspace/spectec-core/testing_clients
+ARG PNPM_VERSION=10.20.0
+ARG LODESTAR_VERSION=1.36.0
+
+# shamefully-hoist puts them where a root-level script can import them.
+RUN mkdir -p lodestar && \
+    cd lodestar && \
+    printf '{\n  "dependencies": {\n    "@lodestar/state-transition": "%s",\n    "@lodestar/types": "%s",\n    "@lodestar/config": "%s",\n    "@lodestar/params": "%s"\n  },\n  "type": "module",\n  "pnpm": {\n    "onlyBuiltDependencies": ["bigint-buffer"]\n  }\n}\n' "${LODESTAR_VERSION}" "${LODESTAR_VERSION}" "${LODESTAR_VERSION}" "${LODESTAR_VERSION}" > package.json && \
+    printf 'shamefully-hoist=true\n' > .npmrc && \
+    npm install -g pnpm@${PNPM_VERSION} && \
+    pnpm install
+
+# Bootstrap the Nimbus build system, which builds its own Nim toolchain and
+# vendor tree before the ncli build below can run.
+WORKDIR /workspace/spectec-core/testing_clients/nimbus-eth2
+RUN JOBS=4 && \
+    make -j${JOBS} deps || make -j2 deps || make deps
+
+# ============================================
+# Stage 9: Copy project files and install Python dependencies
 # ============================================
 COPY . /workspace/spectec-core
 WORKDIR /workspace/spectec-core
@@ -182,40 +218,6 @@ WORKDIR /workspace/spectec-core
 RUN eval $(opam env) && \
     make exe
 
-# Create testing_clients directory
-RUN mkdir -p testing_clients
-
-# ============================================
-# Stage 9: Clone and setup clients
-# ============================================
-WORKDIR /workspace/spectec-core/testing_clients
-
-# Clone Lighthouse (v8.0.1)
-RUN git clone --depth 1 --branch v8.0.1 https://github.com/sigp/lighthouse.git
-
-# Clone Prysm (v7.0.0)
-RUN git clone --depth 1 --branch v7.0.0 https://github.com/OffchainLabs/prysm.git
-
-# Clone Teku (25.11.1)
-RUN git clone --depth 1 --branch 25.11.1 https://github.com/ConsenSys/teku.git
-
-# Clone Nimbus (v25.11.1)
-RUN git clone --depth 1 --branch v25.11.1 https://github.com/status-im/nimbus-eth2.git
-
-# Setup Lodestar (create package.json and install dependencies)
-WORKDIR /workspace/spectec-core/testing_clients
-ARG PNPM_VERSION=10.20.0
-ARG LODESTAR_VERSION=1.36.0
-
-# shamefully-hoist puts them where a root-level script can import them.
-RUN mkdir -p lodestar && \
-    cd lodestar && \
-    printf '{\n  "dependencies": {\n    "@lodestar/state-transition": "%s",\n    "@lodestar/types": "%s",\n    "@lodestar/config": "%s",\n    "@lodestar/params": "%s"\n  },\n  "type": "module",\n  "pnpm": {\n    "onlyBuiltDependencies": ["bigint-buffer"]\n  }\n}\n' "${LODESTAR_VERSION}" "${LODESTAR_VERSION}" "${LODESTAR_VERSION}" "${LODESTAR_VERSION}" > package.json && \
-    printf 'shamefully-hoist=true\n' > .npmrc && \
-    npm install -g pnpm@${PNPM_VERSION} && \
-    pnpm install
-
-# ============================================
 # Stage 10: Apply modified code
 # ============================================
 WORKDIR /workspace/spectec-core
@@ -245,12 +247,6 @@ WORKDIR /workspace/spectec-core
 RUN for p in /workspace/spectec-core/patches/nimbus/*.patch; do \
         git -C testing_clients/nimbus-eth2 apply --3way "$p" || exit 1; \
     done
-
-# Bootstrap the Nimbus build system, which builds its own Nim toolchain and
-# vendor tree before the ncli build below can run.
-WORKDIR /workspace/spectec-core/testing_clients/nimbus-eth2
-RUN JOBS=4 && \
-    make -j${JOBS} deps || make -j2 deps || make deps
 
 # Apply Lodestar modifications
 RUN cp modified_code/lodestar/transition.js \
