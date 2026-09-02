@@ -848,7 +848,7 @@ def process_clients(state, block, paths, spectec_core_dir=None, enable_coverage=
         teku_binary = testing_clients_dir / "teku" / "build" / "install" / "teku-cov" / "bin" / "teku"
         nimbus_binary = testing_clients_dir / "nimbus-eth2" / "ncli" / "ncli-cov"
     else:
-        prysm_binary = testing_clients_dir / "prysm" / "bazel-bin" / "tools" / "pcli" / "pcli_" / "pcli"
+        prysm_binary = testing_clients_dir / "prysm" / "pcli"
         lighthouse_binary = testing_clients_dir / "lighthouse" / "target" / "release" / "lcli"
         teku_binary = testing_clients_dir / "teku" / "build" / "install" / "teku" / "bin" / "teku"
         nimbus_binary = testing_clients_dir / "nimbus-eth2" / "ncli" / "ncli"
@@ -1211,7 +1211,7 @@ def process_clients_sanity_slots(state, slot_value, paths, spectec_core_dir=None
         teku_binary = testing_clients_dir / "teku" / "build" / "install" / "teku-cov" / "bin" / "teku"
         nimbus_binary = testing_clients_dir / "nimbus-eth2" / "ncli" / "ncli-cov"
     else:
-        prysm_binary = testing_clients_dir / "prysm" / "bazel-bin" / "tools" / "pcli" / "pcli_" / "pcli"
+        prysm_binary = testing_clients_dir / "prysm" / "pcli"
         lighthouse_binary = testing_clients_dir / "lighthouse" / "target" / "release" / "lcli"
         teku_binary = testing_clients_dir / "teku" / "build" / "install" / "teku" / "bin" / "teku"
         nimbus_binary = testing_clients_dir / "nimbus-eth2" / "ncli" / "ncli"
@@ -1496,7 +1496,7 @@ def process_clients_operation(state, operation, operation_type, paths, spectec_c
         teku_binary = testing_clients_dir / "teku" / "build" / "install" / "teku-cov" / "bin" / "teku"
         nimbus_binary = testing_clients_dir / "nimbus-eth2" / "ncli" / "ncli-cov"
     else:
-        prysm_binary = testing_clients_dir / "prysm" / "bazel-bin" / "tools" / "pcli" / "pcli_" / "pcli"
+        prysm_binary = testing_clients_dir / "prysm" / "pcli"
         lighthouse_binary = testing_clients_dir / "lighthouse" / "target" / "release" / "lcli"
         teku_binary = testing_clients_dir / "teku" / "build" / "install" / "teku" / "bin" / "teku"
         nimbus_binary = testing_clients_dir / "nimbus-eth2" / "ncli" / "ncli"
@@ -1864,7 +1864,7 @@ def process_clients_epoch_processing(state, epoch_processing_type, paths, specte
         teku_binary = testing_clients_dir / "teku" / "build" / "install" / "teku-cov" / "bin" / "teku"
         nimbus_binary = testing_clients_dir / "nimbus-eth2" / "ncli" / "ncli-cov"
     else:
-        prysm_binary = testing_clients_dir / "prysm" / "bazel-bin" / "tools" / "pcli" / "pcli_" / "pcli"
+        prysm_binary = testing_clients_dir / "prysm" / "pcli"
         lighthouse_binary = testing_clients_dir / "lighthouse" / "target" / "release" / "lcli"
         teku_binary = testing_clients_dir / "teku" / "build" / "install" / "teku" / "bin" / "teku"
         nimbus_binary = testing_clients_dir / "nimbus-eth2" / "ncli" / "ncli"

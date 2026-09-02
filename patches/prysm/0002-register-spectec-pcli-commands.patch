@@ -1,0 +1,23 @@
+Register the ETH2SpecTec pcli commands.
+
+The commands themselves live in tools/pcli/pcli_spectest.go, copied in
+alongside this patch (see modified_code/prysm/). Upstream's stateTransitionCommand
+stays in the tree unused: it compares against an existing post state, whereas
+differential testing needs the post state written out.
+
+diff --git a/tools/pcli/main.go b/tools/pcli/main.go
+index 3596c7e..849c537 100644
+--- a/tools/pcli/main.go
++++ b/tools/pcli/main.go
+@@ -314,7 +314,10 @@ func main() {
+ 		prettyCommand,
+ 		benchmarkHashCommand,
+ 		unrealizedCheckpointsCommand,
+-		stateTransitionCommand,
++		spectecStateTransitionCommand,
++		operationCommand,
++		epochProcessingCommand,
++		sanitySlotsCommand,
+ 	}
+ 	if err := app.Run(os.Args); err != nil {
+ 		log.Error(err.Error())

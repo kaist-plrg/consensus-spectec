@@ -62,7 +62,7 @@ ENV PATH="/root/.cargo/bin:${PATH}"
 # ============================================
 # Stage 3: Install Go (for Prysm)
 # ============================================
-ARG GO_VERSION=1.24.2
+ARG GO_VERSION=1.25.1
 RUN wget -q https://go.dev/dl/go${GO_VERSION}.linux-amd64.tar.gz && \
     tar -C /usr/local -xzf go${GO_VERSION}.linux-amd64.tar.gz && \
     rm go${GO_VERSION}.linux-amd64.tar.gz
@@ -239,13 +239,10 @@ RUN if [ -f "modified_code/lighthouse/transition_blocks.rs" ]; then \
     fi
 
 # Apply Prysm modifications
-RUN if [ -f "modified_code/prysm/main.go" ]; then \
-        cp modified_code/prysm/main.go testing_clients/prysm/tools/pcli/main.go; \
-    fi && \
-    if [ -f "modified_code/prysm/beacon-chain/core/transition/transition_no_verify_sig.go" ]; then \
-        mkdir -p testing_clients/prysm/beacon-chain/core/transition && \
-        cp modified_code/prysm/beacon-chain/core/transition/transition_no_verify_sig.go testing_clients/prysm/beacon-chain/core/transition/transition_no_verify_sig.go; \
-    fi
+RUN cp modified_code/prysm/pcli_spectest.go testing_clients/prysm/tools/pcli/ && \
+    for p in /workspace/spectec-core/patches/prysm/*.patch; do \
+        git -C testing_clients/prysm apply --3way "$p" || exit 1; \
+    done
 
 # Apply Teku modifications
 RUN if [ -f "modified_code/teku/TransitionCommand.java" ]; then \
@@ -298,8 +295,7 @@ RUN cargo build --release --bin lcli
 
 # Build Prysm
 WORKDIR /workspace/spectec-core/testing_clients/prysm
-RUN mkdir -p bazel-bin/tools/pcli/pcli_ && \
-    go build -o bazel-bin/tools/pcli/pcli_/pcli ./tools/pcli
+RUN go build -o pcli ./tools/pcli
 
 # Build Teku
 WORKDIR /workspace/spectec-core/testing_clients/teku

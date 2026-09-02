@@ -5,45 +5,31 @@ import (
 	"context"
 	"fmt"
 	"os"
-	"regexp"
-	"runtime"
 	"strings"
-	"time"
 
 	"github.com/OffchainLabs/prysm/v7/beacon-chain/core/altair"
 	"github.com/OffchainLabs/prysm/v7/beacon-chain/core/blocks"
 	"github.com/OffchainLabs/prysm/v7/beacon-chain/core/epoch"
 	"github.com/OffchainLabs/prysm/v7/beacon-chain/core/epoch/precompute"
 	"github.com/OffchainLabs/prysm/v7/beacon-chain/core/transition"
-	v "github.com/OffchainLabs/prysm/v7/beacon-chain/core/validators"
 	"github.com/OffchainLabs/prysm/v7/beacon-chain/core/validators"
+	v "github.com/OffchainLabs/prysm/v7/beacon-chain/core/validators"
 	"github.com/OffchainLabs/prysm/v7/beacon-chain/state"
 	state_native "github.com/OffchainLabs/prysm/v7/beacon-chain/state/state-native"
 	"github.com/OffchainLabs/prysm/v7/config/params"
 	consensus_blocks "github.com/OffchainLabs/prysm/v7/consensus-types/blocks"
 	"github.com/OffchainLabs/prysm/v7/consensus-types/interfaces"
 	"github.com/OffchainLabs/prysm/v7/crypto/bls"
-	"github.com/OffchainLabs/prysm/v7/encoding/ssz/detect"
 	"github.com/OffchainLabs/prysm/v7/encoding/ssz/equality"
 	enginev1 "github.com/OffchainLabs/prysm/v7/proto/engine/v1"
 	ethpb "github.com/OffchainLabs/prysm/v7/proto/prysm/v1alpha1"
-	prefixed "github.com/OffchainLabs/prysm/v7/runtime/logging/logrus-prefixed-formatter"
-	"github.com/OffchainLabs/prysm/v7/runtime/version"
 	"github.com/OffchainLabs/prysm/v7/testing/util"
-	"github.com/kr/pretty"
 	"github.com/pkg/errors"
-	fssz "github.com/prysmaticlabs/fastssz"
 	log "github.com/sirupsen/logrus"
 	"github.com/urfave/cli/v2"
 	"gopkg.in/d4l3k/messagediff.v1"
 )
 
-var blockPath string
-var preStatePath string
-var expectedPostStatePath string
-var network string
-var sszPath string
-var sszType string
 var operationType string
 var operationPath string
 var operationOutputPath string
@@ -52,152 +38,8 @@ var epochProcessingType string
 var epochProcessingOutputPath string
 var sanitySlotsSlot uint64
 var sanitySlotsOutputPath string
-var prettyCommand = &cli.Command{
-	Name:    "pretty",
-	Aliases: []string{"p"},
-	Usage:   "pretty-print SSZ data",
-	Flags: []cli.Flag{
-		&cli.StringFlag{
-			Name:        "ssz-path",
-			Usage:       "Path to file(ssz)",
-			Required:    true,
-			Destination: &sszPath,
-		},
-		&cli.StringFlag{
-			Name: "data-type",
-			Usage: "ssz file data type: " +
-				"block|" +
-				"blinded_block|" +
-				"signed_block|" +
-				"attestation|" +
-				"block_header|" +
-				"deposit|" +
-				"proposer_slashing|" +
-				"signed_block_header|" +
-				"signed_voluntary_exit|" +
-				"voluntary_exit|" +
-				"state_capella",
-			Required:    true,
-			Destination: &sszType,
-		},
-	},
-	Action: func(c *cli.Context) error {
-		var data fssz.Unmarshaler
-		switch sszType {
-		case "block":
-			data = &ethpb.BeaconBlock{}
-		case "signed_block":
-			data = &ethpb.SignedBeaconBlock{}
-		case "blinded_block":
-			data = &ethpb.BlindedBeaconBlockBellatrix{}
-		case "attestation":
-			data = &ethpb.Attestation{}
-		case "block_header":
-			data = &ethpb.BeaconBlockHeader{}
-		case "deposit":
-			data = &ethpb.Deposit{}
-		case "deposit_message":
-			data = &ethpb.DepositMessage{}
-		case "proposer_slashing":
-			data = &ethpb.ProposerSlashing{}
-		case "signed_block_header":
-			data = &ethpb.SignedBeaconBlockHeader{}
-		case "signed_voluntary_exit":
-			data = &ethpb.SignedVoluntaryExit{}
-		case "voluntary_exit":
-			data = &ethpb.VoluntaryExit{}
-		case "state_capella":
-			data = &ethpb.BeaconStateCapella{}
-		default:
-			log.Fatal("Invalid type")
-		}
-		prettyPrint(sszPath, data)
-		return nil
-	},
-}
 
-var benchmarkHashCommand = &cli.Command{
-	Name:    "benchmark-hash",
-	Aliases: []string{"b"},
-	Usage:   "benchmark-hash SSZ data",
-	Flags: []cli.Flag{
-		&cli.StringFlag{
-			Name:        "ssz-path",
-			Usage:       "Path to file(ssz)",
-			Required:    true,
-			Destination: &sszPath,
-		},
-		&cli.StringFlag{
-			Name: "data-type",
-			Usage: "ssz file data type: " +
-				"block_capella|" +
-				"blinded_block_capella|" +
-				"signed_block_capella|" +
-				"attestation|" +
-				"block_header|" +
-				"deposit|" +
-				"proposer_slashing|" +
-				"signed_block_header|" +
-				"signed_voluntary_exit|" +
-				"voluntary_exit|" +
-				"state_capella",
-			Required:    true,
-			Destination: &sszType,
-		},
-	},
-	Action: func(c *cli.Context) error {
-		benchmarkHash(sszPath, sszType)
-		return nil
-	},
-}
-
-var unrealizedCheckpointsCommand = &cli.Command{
-	Name:     "unrealized-checkpoints",
-	Category: "state-computations",
-	Usage:    "Subcommand to compute manually the unrealized checkpoints",
-	Flags: []cli.Flag{
-		&cli.StringFlag{
-			Name:        "state-path",
-			Usage:       "Path to state file(ssz)",
-			Destination: &preStatePath,
-		},
-	},
-	Action: func(c *cli.Context) error {
-		if preStatePath == "" {
-			log.Info("State path not provided, please provide path")
-			reader := bufio.NewReader(os.Stdin)
-			text, err := reader.ReadString('\n')
-			if err != nil {
-				log.Fatal(err)
-			}
-			if text = strings.ReplaceAll(text, "\n", ""); text == "" {
-				log.Fatal("Empty state path given")
-			}
-			preStatePath = text
-		}
-		stateObj, err := detectState(preStatePath)
-		if err != nil {
-			log.Fatal(err)
-		}
-		preStateRoot, err := stateObj.HashTreeRoot(context.Background())
-		if err != nil {
-			log.Fatal(err)
-		}
-		log.Infof(
-			"Computing unrealized justification for state at slot %d and root %#x",
-			stateObj.Slot(),
-			preStateRoot,
-		)
-		uj, uf, err := precompute.UnrealizedCheckpoints(stateObj)
-		if err != nil {
-			log.Fatal(err)
-		}
-		log.Infof("Computed:\nUnrealized Justified: (Root: %#x, Epoch: %d)\nUnrealized Finalized: (Root: %#x, Epoch: %d).", uj.Root, uj.Epoch, uf.Root, uf.Epoch)
-		return nil
-	},
-}
-
-var stateTransitionCommand = &cli.Command{
+var spectecStateTransitionCommand = &cli.Command{
 	Name:     "state-transition",
 	Category: "state-computations",
 	Usage:    "Subcommand to run manual state transitions",
@@ -284,7 +126,7 @@ var stateTransitionCommand = &cli.Command{
 		if err != nil {
 			log.Fatal(err)
 		}
-		stateObj, err := detectState(preStatePath)
+		stateObj, err := spectecDetectState(preStatePath)
 		if err != nil {
 			log.Fatal(err)
 		}
@@ -300,9 +142,9 @@ var stateTransitionCommand = &cli.Command{
 			blkRoot,
 			preStateRoot,
 		)
-		// validate_result = true: Use debugStateTransition to verify all signatures
-		// debugStateTransition performs signature verification via set.VerifyVerbosely()
-		postState, err := debugStateTransition(context.Background(), stateObj, block)
+		// validate_result = true: Use spectecDebugStateTransition to verify all signatures
+		// spectecDebugStateTransition performs signature verification via set.VerifyVerbosely()
+		postState, err := spectecDebugStateTransition(context.Background(), stateObj, block)
 		if err != nil {
 			log.Fatal(err)
 		}
@@ -338,7 +180,7 @@ var stateTransitionCommand = &cli.Command{
 		}
 		// Diff the state if a post state is provided.
 		if expectedPostStatePath != "" {
-			expectedState, err := detectState(expectedPostStatePath)
+			expectedState, err := spectecDetectState(expectedPostStatePath)
 			if err != nil {
 				log.Fatal(err)
 			}
@@ -394,7 +236,7 @@ var operationCommand = &cli.Command{
 		}
 		setForkConfig(isDeneb)
 
-		preState, err := detectState(preStatePath)
+		preState, err := spectecDetectState(preStatePath)
 		if err != nil {
 			log.Fatal(err)
 		}
@@ -404,7 +246,7 @@ var operationCommand = &cli.Command{
 		if operationType == "execution_payload" && executionValid != "" {
 			executionValidBool = (executionValid == "true")
 		}
-		
+
 		postState, err := processOperation(context.Background(), preState, operationType, operationPath, executionValidBool)
 		if err != nil {
 			log.Fatal(err)
@@ -457,7 +299,7 @@ var epochProcessingCommand = &cli.Command{
 		}
 		setForkConfig(isDeneb)
 
-		preState, err := detectState(preStatePath)
+		preState, err := spectecDetectState(preStatePath)
 		if err != nil {
 			log.Fatal(err)
 		}
@@ -514,7 +356,7 @@ var sanitySlotsCommand = &cli.Command{
 		}
 		setForkConfig(isDeneb)
 
-		preState, err := detectState(preStatePath)
+		preState, err := spectecDetectState(preStatePath)
 		if err != nil {
 			log.Fatal(err)
 		}
@@ -539,39 +381,6 @@ var sanitySlotsCommand = &cli.Command{
 		log.Infof("Sanity slots processed successfully. Post state written to %s", sanitySlotsOutputPath)
 		return nil
 	},
-}
-
-func main() {
-	customFormatter := new(prefixed.TextFormatter)
-	customFormatter.TimestampFormat = "2006-01-02 15:04:05.00"
-	customFormatter.FullTimestamp = true
-	log.SetFormatter(customFormatter)
-	app := cli.App{}
-	app.Name = "pcli"
-	app.Usage = "A command line utility to run Ethereum consensus specific commands"
-	app.Version = version.Version()
-	app.Commands = []*cli.Command{
-		prettyCommand,
-		benchmarkHashCommand,
-		unrealizedCheckpointsCommand,
-		stateTransitionCommand,
-		operationCommand,
-		epochProcessingCommand,
-		sanitySlotsCommand,
-	}
-	if err := app.Run(os.Args); err != nil {
-		log.Error(err.Error())
-		os.Exit(1)
-	}
-}
-
-// dataFetcher fetches and unmarshals data from file to provided data structure.
-func dataFetcher(fPath string, data fssz.Unmarshaler) error {
-	rawFile, err := os.ReadFile(fPath) // #nosec G304
-	if err != nil {
-		return err
-	}
-	return data.UnmarshalSSZ(rawFile)
 }
 
 // detectForkVersionFromState detects fork version by attempting to unmarshal SSZ data
@@ -613,7 +422,7 @@ func setForkConfig(isDeneb bool) {
 	}
 }
 
-func detectState(fPath string) (state.BeaconState, error) {
+func spectecDetectState(fPath string) (state.BeaconState, error) {
 	rawFile, err := os.ReadFile(fPath) // #nosec G304
 	if err != nil {
 		return nil, err
@@ -634,65 +443,7 @@ func detectState(fPath string) (state.BeaconState, error) {
 	return state_native.InitializeFromProtoDeneb(baseDeneb)
 }
 
-func detectBlock(fPath string) (interfaces.SignedBeaconBlock, error) {
-	rawFile, err := os.ReadFile(fPath) // #nosec G304
-	if err != nil {
-		return nil, err
-	}
-	vu, err := detect.FromBlock(rawFile)
-	if err != nil {
-		return nil, err
-	}
-	return vu.UnmarshalBeaconBlock(rawFile)
-}
-
-func prettyPrint(sszPath string, data fssz.Unmarshaler) {
-	if err := dataFetcher(sszPath, data); err != nil {
-		log.Fatal(err)
-	}
-	str := pretty.Sprint(data)
-	re := regexp.MustCompile("(?m)[\r\n]+^.*XXX_.*$")
-	str = re.ReplaceAllString(str, "")
-	fmt.Print(str)
-}
-
-func benchmarkHash(sszPath string, sszType string) {
-	switch sszType {
-	case "state_capella":
-		st := &ethpb.BeaconStateCapella{}
-		rawFile, err := os.ReadFile(sszPath) // #nosec G304
-		if err != nil {
-			log.Fatal(err)
-		}
-
-		startDeserialize := time.Now()
-		if err := st.UnmarshalSSZ(rawFile); err != nil {
-			log.Fatal(err)
-		}
-		deserializeDuration := time.Since(startDeserialize)
-
-		stateTrieState, err := state_native.InitializeFromProtoCapella(st)
-		if err != nil {
-			log.Fatal(err)
-		}
-		start := time.Now()
-		stat := &runtime.MemStats{}
-		runtime.ReadMemStats(stat)
-		root, err := stateTrieState.HashTreeRoot(context.Background())
-		if err != nil {
-			log.Fatal("Couldn't hash")
-		}
-		newStat := &runtime.MemStats{}
-		runtime.ReadMemStats(newStat)
-		fmt.Printf("Deserialize Duration: %v, Hashing Duration: %v HTR: %#x\n", deserializeDuration, time.Since(start), root)
-		fmt.Printf("Total Memory Allocation Differential: %d bytes, Heap Memory Allocation Differential: %d bytes\n", int64(newStat.TotalAlloc)-int64(stat.TotalAlloc), int64(newStat.HeapAlloc)-int64(stat.HeapAlloc))
-		return
-	default:
-		log.Fatal("Invalid type")
-	}
-}
-
-func debugStateTransition(
+func spectecDebugStateTransition(
 	ctx context.Context,
 	st state.BeaconState,
 	signed interfaces.ReadOnlySignedBeaconBlock,
@@ -806,12 +557,12 @@ func processAttestation(ctx context.Context, st state.BeaconState, attestationSS
 	if err := att.UnmarshalSSZ(attestationSSZ); err != nil {
 		return nil, errors.Wrap(err, "failed to unmarshal attestation")
 	}
-	
+
 	// Detect fork version from state to use correct block body type
 	protoState := st.ToProtoUnsafe()
 	var signedBlock interfaces.SignedBeaconBlock
 	var err error
-	
+
 	switch protoState.(type) {
 	case *ethpb.BeaconStateDeneb:
 		b := util.NewBeaconBlockDeneb()
@@ -824,7 +575,7 @@ func processAttestation(ctx context.Context, st state.BeaconState, attestationSS
 	default:
 		return nil, errors.New("unsupported state version for attestation (expected Capella or Deneb)")
 	}
-	
+
 	if err != nil {
 		return nil, errors.Wrap(err, "failed to create signed block")
 	}
@@ -854,7 +605,7 @@ func processBlockHeader(ctx context.Context, st state.BeaconState, blockSSZ []by
 	protoState := st.ToProtoUnsafe()
 	var signedBlock interfaces.SignedBeaconBlock
 	var err error
-	
+
 	switch protoState.(type) {
 	case *ethpb.BeaconStateDeneb:
 		block := &ethpb.BeaconBlockDeneb{}
@@ -871,7 +622,7 @@ func processBlockHeader(ctx context.Context, st state.BeaconState, blockSSZ []by
 	default:
 		return nil, errors.New("unsupported state version for block_header (expected Capella or Deneb)")
 	}
-	
+
 	if err != nil {
 		return nil, errors.Wrap(err, "failed to create signed block")
 	}
@@ -896,12 +647,12 @@ func processDeposit(ctx context.Context, st state.BeaconState, depositSSZ []byte
 	if err := deposit.UnmarshalSSZ(depositSSZ); err != nil {
 		return nil, errors.Wrap(err, "failed to unmarshal deposit")
 	}
-	
+
 	// Detect fork version from state to use correct block body type
 	protoState := st.ToProtoUnsafe()
 	var signedBlock interfaces.SignedBeaconBlock
 	var err error
-	
+
 	switch protoState.(type) {
 	case *ethpb.BeaconStateDeneb:
 		b := util.NewBeaconBlockDeneb()
@@ -914,7 +665,7 @@ func processDeposit(ctx context.Context, st state.BeaconState, depositSSZ []byte
 	default:
 		return nil, errors.New("unsupported state version for deposit (expected Capella or Deneb)")
 	}
-	
+
 	if err != nil {
 		return nil, errors.Wrap(err, "failed to create signed block")
 	}
@@ -932,12 +683,12 @@ func processProposerSlashing(ctx context.Context, st state.BeaconState, proposer
 	if err := ps.UnmarshalSSZ(proposerSlashingSSZ); err != nil {
 		return nil, errors.Wrap(err, "failed to unmarshal proposer slashing")
 	}
-	
+
 	// Detect fork version from state to use correct block body type
 	protoState := st.ToProtoUnsafe()
 	var signedBlock interfaces.SignedBeaconBlock
 	var err error
-	
+
 	switch protoState.(type) {
 	case *ethpb.BeaconStateDeneb:
 		b := util.NewBeaconBlockDeneb()
@@ -950,7 +701,7 @@ func processProposerSlashing(ctx context.Context, st state.BeaconState, proposer
 	default:
 		return nil, errors.New("unsupported state version for proposer_slashing (expected Capella or Deneb)")
 	}
-	
+
 	if err != nil {
 		return nil, errors.Wrap(err, "failed to create signed block")
 	}
@@ -968,12 +719,12 @@ func processAttesterSlashing(ctx context.Context, st state.BeaconState, attester
 	if err := as.UnmarshalSSZ(attesterSlashingSSZ); err != nil {
 		return nil, errors.Wrap(err, "failed to unmarshal attester slashing")
 	}
-	
+
 	// Detect fork version from state to use correct block body type
 	protoState := st.ToProtoUnsafe()
 	var signedBlock interfaces.SignedBeaconBlock
 	var err error
-	
+
 	switch protoState.(type) {
 	case *ethpb.BeaconStateDeneb:
 		b := util.NewBeaconBlockDeneb()
@@ -986,7 +737,7 @@ func processAttesterSlashing(ctx context.Context, st state.BeaconState, attester
 	default:
 		return nil, errors.New("unsupported state version for attester_slashing (expected Capella or Deneb)")
 	}
-	
+
 	if err != nil {
 		return nil, errors.Wrap(err, "failed to create signed block")
 	}
@@ -1004,12 +755,12 @@ func processVoluntaryExit(ctx context.Context, st state.BeaconState, voluntaryEx
 	if err := ve.UnmarshalSSZ(voluntaryExitSSZ); err != nil {
 		return nil, errors.Wrap(err, "failed to unmarshal voluntary exit")
 	}
-	
+
 	// Detect fork version from state to use correct block body type
 	protoState := st.ToProtoUnsafe()
 	var signedBlock interfaces.SignedBeaconBlock
 	var err error
-	
+
 	switch protoState.(type) {
 	case *ethpb.BeaconStateDeneb:
 		b := util.NewBeaconBlockDeneb()
@@ -1022,7 +773,7 @@ func processVoluntaryExit(ctx context.Context, st state.BeaconState, voluntaryEx
 	default:
 		return nil, errors.New("unsupported state version for voluntary_exit (expected Capella or Deneb)")
 	}
-	
+
 	if err != nil {
 		return nil, errors.Wrap(err, "failed to create signed block")
 	}
@@ -1040,12 +791,12 @@ func processBLSToExecutionChange(ctx context.Context, st state.BeaconState, blsT
 	if err := blsChange.UnmarshalSSZ(blsToExecChangeSSZ); err != nil {
 		return nil, errors.Wrap(err, "failed to unmarshal BLS to execution change")
 	}
-	
+
 	// Detect fork version from state to use correct block body type
 	protoState := st.ToProtoUnsafe()
 	var signedBlock interfaces.SignedBeaconBlock
 	var err error
-	
+
 	switch protoState.(type) {
 	case *ethpb.BeaconStateDeneb:
 		b := util.NewBeaconBlockDeneb()
@@ -1058,7 +809,7 @@ func processBLSToExecutionChange(ctx context.Context, st state.BeaconState, blsT
 	default:
 		return nil, errors.New("unsupported state version for bls_to_execution_change (expected Capella or Deneb)")
 	}
-	
+
 	if err != nil {
 		return nil, errors.Wrap(err, "failed to create signed block")
 	}
@@ -1094,12 +845,12 @@ func processSyncCommittee(ctx context.Context, st state.BeaconState, syncAggrega
 	if err := syncAgg.UnmarshalSSZ(syncAggregateSSZ); err != nil {
 		return nil, errors.Wrap(err, "failed to unmarshal sync aggregate")
 	}
-	
+
 	// Detect fork version from state to use correct block body type
 	protoState := st.ToProtoUnsafe()
 	var signedBlock interfaces.SignedBeaconBlock
 	var err error
-	
+
 	switch protoState.(type) {
 	case *ethpb.BeaconStateDeneb:
 		b := util.NewBeaconBlockDeneb()
@@ -1112,7 +863,7 @@ func processSyncCommittee(ctx context.Context, st state.BeaconState, syncAggrega
 	default:
 		return nil, errors.New("unsupported state version for sync_committee (expected Capella or Deneb)")
 	}
-	
+
 	if err != nil {
 		return nil, errors.Wrap(err, "failed to create signed block")
 	}
@@ -1139,7 +890,7 @@ func processExecutionPayload(ctx context.Context, st state.BeaconState, bodySSZ 
 	// Detect fork version from state to use correct block body type
 	var blockBody interfaces.ReadOnlyBeaconBlockBody
 	var err error
-	
+
 	// Check if state is Deneb by checking the proto type
 	protoState := st.ToProtoUnsafe()
 	switch protoState.(type) {
@@ -1178,7 +929,7 @@ func processWithdrawals(ctx context.Context, st state.BeaconState, executionPayl
 	protoState := st.ToProtoUnsafe()
 	var signedBlock interfaces.SignedBeaconBlock
 	var err error
-	
+
 	switch protoState.(type) {
 	case *ethpb.BeaconStateDeneb:
 		execPayload := &enginev1.ExecutionPayloadDeneb{}
@@ -1199,7 +950,7 @@ func processWithdrawals(ctx context.Context, st state.BeaconState, executionPayl
 	default:
 		return nil, errors.New("unsupported state version for withdrawals (expected Capella or Deneb)")
 	}
-	
+
 	if err != nil {
 		return nil, errors.Wrap(err, "failed to create signed block")
 	}
@@ -1224,7 +975,7 @@ func processWithdrawals(ctx context.Context, st state.BeaconState, executionPayl
 	default:
 		return nil, errors.New("unsupported state version for withdrawals (expected Capella or Deneb)")
 	}
-	
+
 	if err != nil {
 		return nil, errors.Wrap(err, "failed to wrap execution payload")
 	}
