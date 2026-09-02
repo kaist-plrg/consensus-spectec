@@ -205,11 +205,14 @@ RUN git clone --depth 1 --branch v25.11.1 https://github.com/status-im/nimbus-et
 # Setup Lodestar (create package.json and install dependencies)
 WORKDIR /workspace/spectec-core/testing_clients
 ARG PNPM_VERSION=10.20.0
+ARG LODESTAR_VERSION=1.36.0
+
+# shamefully-hoist puts them where a root-level script can import them.
 RUN mkdir -p lodestar && \
     cd lodestar && \
-    echo '{\n  "dependencies": {\n    "@lodestar/state-transition": "1.36.0"\n  },\n  "type": "module",\n  "pnpm": {\n    "onlyBuiltDependencies": ["bigint-buffer"]\n  }\n}' > package.json && \
+    printf '{\n  "dependencies": {\n    "@lodestar/state-transition": "%s",\n    "@lodestar/types": "%s",\n    "@lodestar/config": "%s",\n    "@lodestar/params": "%s"\n  },\n  "type": "module",\n  "pnpm": {\n    "onlyBuiltDependencies": ["bigint-buffer"]\n  }\n}\n' "${LODESTAR_VERSION}" "${LODESTAR_VERSION}" "${LODESTAR_VERSION}" "${LODESTAR_VERSION}" > package.json && \
+    printf 'shamefully-hoist=true\n' > .npmrc && \
     npm install -g pnpm@${PNPM_VERSION} && \
-    pnpm i @lodestar/state-transition@1.36.0 && \
     pnpm install
 
 # ============================================
@@ -250,17 +253,15 @@ RUN JOBS=4 && \
     make -j${JOBS} deps || make -j2 deps || make deps
 
 # Apply Lodestar modifications
-RUN if [ -f "modified_code/lodestar/transition.js" ]; then \
-        cp modified_code/lodestar/transition.js testing_clients/lodestar/transition.js; \
-    fi && \
-    if [ -f "modified_code/lodestar/generateCachedStateCapella.js" ]; then \
-        cp modified_code/lodestar/generateCachedStateCapella.js testing_clients/lodestar/generateCachedStateCapella.js; \
-    fi
+RUN cp modified_code/lodestar/transition.js \
+       modified_code/lodestar/generateCachedStateCapella.js \
+       testing_clients/lodestar/
 
 # Comment out postState.commit() calls in Lodestar node_modules
-RUN if [ -f "testing_clients/lodestar/node_modules/@lodestar/state-transition/lib/stateTransition.js" ]; then \
-        sed -i 's/^[[:space:]]*postState\.commit();/    \/\/postState.commit();/g' testing_clients/lodestar/node_modules/@lodestar/state-transition/lib/stateTransition.js; \
-    fi
+RUN f=testing_clients/lodestar/node_modules/@lodestar/state-transition/lib/stateTransition.js && \
+    n=$(grep -c '^[[:space:]]*postState\.commit();' "$f") && \
+    if [ "$n" -ne 3 ]; then echo "expected 3 postState.commit() calls, found $n" >&2; exit 1; fi && \
+    sed -i 's/^\([[:space:]]*\)postState\.commit();/\1\/\/postState.commit();/' "$f"
 
 # ============================================
 # Stage 11: Build original clients (no coverage)
