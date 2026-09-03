@@ -270,7 +270,7 @@ RUN cargo build --release --bin lcli
 
 # Build Prysm
 WORKDIR /workspace/spectec-core/testing_clients/prysm
-RUN go build -o pcli ./tools/pcli
+RUN CGO_CFLAGS="-O2 -D__BLST_PORTABLE__" go build -o pcli ./tools/pcli
 
 # Build Teku
 WORKDIR /workspace/spectec-core/testing_clients/teku
@@ -279,9 +279,11 @@ RUN ./gradlew installDist
 # Build Nimbus
 WORKDIR /workspace/spectec-core/testing_clients/nimbus-eth2
 RUN if [ -f "./env.sh" ]; then \
-        ./env.sh nim c -d:const_preset=mainnet -o:ncli/ncli ncli/ncli.nim; \
+        ./env.sh nim c -d:const_preset=mainnet -d:disableMarchNative \
+            -o:ncli/ncli ncli/ncli.nim; \
     else \
-        nim c -d:const_preset=mainnet -o:ncli/ncli ncli/ncli.nim; \
+        nim c -d:const_preset=mainnet -d:disableMarchNative \
+            -o:ncli/ncli ncli/ncli.nim; \
     fi
 
 # Verify Lodestar (no build needed)
@@ -306,7 +308,7 @@ RUN RUSTFLAGS="-Cinstrument-coverage -Z coverage-options=branch" \
 
 # Build Prysm with coverage
 WORKDIR /workspace/spectec-core/testing_clients/prysm
-RUN go build -cover -o pcli-cov ./tools/pcli
+RUN CGO_CFLAGS="-O2 -D__BLST_PORTABLE__" go build -cover -o pcli-cov ./tools/pcli
 
 # Build Teku with coverage (download JaCoCo agent)
 WORKDIR /workspace/spectec-core/testing_clients/teku
@@ -322,11 +324,11 @@ RUN mkdir -p jacoco && \
 # Build Nimbus with coverage
 WORKDIR /workspace/spectec-core/testing_clients/nimbus-eth2
 RUN if [ -f "./env.sh" ]; then \
-        ./env.sh nim c -d:const_preset=mainnet \
+        ./env.sh nim c -d:const_preset=mainnet -d:disableMarchNative \
             --passC:-fprofile-arcs --passC:-ftest-coverage --passL:-fprofile-arcs \
             -o:ncli/ncli-cov ncli/ncli.nim; \
     else \
-        nim c -d:const_preset=mainnet \
+        nim c -d:const_preset=mainnet -d:disableMarchNative \
             --passC:-fprofile-arcs --passC:-ftest-coverage --passL:-fprofile-arcs \
             -o:ncli/ncli-cov ncli/ncli.nim; \
     fi
