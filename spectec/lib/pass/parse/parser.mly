@@ -627,13 +627,35 @@ prem_list :
 
 prem_post_ :
   | OTHERWISE { ElsePr }
-  | LPAREN prem RPAREN iter*
+  | LPAREN prem RPAREN iter_suffix*
     {
-      let rec iterate prem = function
-        | [] -> prem
-        | iter :: iters -> iterate (IterPr (prem, iter) @@@ $sloc) iters
-      in
-      (iterate $2 $4).it
+      (List.fold_left
+         (fun prem (iter, accumulators_opt) ->
+           match accumulators_opt with
+           | None -> IterPr (prem, iter) @@@ $sloc
+           | Some accumulators -> FoldPr (prem, iter, accumulators) @@@ $sloc)
+         $2 $4)
+        .it
+    }
+
+iter_suffix :
+  | iter option(fold_accumulators) { ($1, $2) }
+
+fold_accumulators :
+  | LBRACE separated_nonempty_list(comma, accumulator) RBRACE { $2 }
+
+accumulator :
+  | exp_atom ARROW varid iter* DOT3 varid iter* ARROW varid iter*
+    {
+      {
+        init = $1;
+        input = $3;
+        input_iters = $4;
+        output = $6;
+        output_iters = $7;
+        final = $9;
+        final_iters = $10;
+      }
     }
 
 prem : prem_ { $1 @@@ $sloc }

@@ -209,11 +209,16 @@ and prem' =
   | ElsePr                         (* `otherwise` *)
   | LetPr of exp * exp             (* `let` exp `=` exp *)
   | IterPr of prem * iterexp       (* prem iterexp *)
+  | FoldPr of prem * iterexp * accumulator list
+                                   (* `(` prem `)*{` accumulator* `}` *)
   | DebugPr of exp                 (* `debug` exp *)
 
 and if_role =
   | Condition
   | Guard  (* failing it means the rule does not apply *)
+
+(* init `->` input `...` output `->` final *)
+and accumulator = { init : exp; input : var; output : var; final : var }
 
 (* Definitions *)
 

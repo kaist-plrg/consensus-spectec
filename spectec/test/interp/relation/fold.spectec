@@ -1,0 +1,145 @@
+var acc : nat
+var n : nat
+
+relation AddElement:
+  nat |- nat : nat
+  hint(input %0 %1)
+
+rule AddElement/add:
+  acc |- n : $(acc + n)
+
+relation SumList:
+  nat |- nat* : nat
+  hint(input %0 %1)
+
+rule SumList/fold:
+  acc_0 |- n* : acc_n
+  -- (AddElement: acc_cur |- n : acc_next)*{
+       acc_0 -> acc_cur ... acc_next -> acc_n
+     }
+
+relation ProductList:
+  nat |- nat* : nat
+  hint(input %0 %1)
+
+rule ProductList/fold:
+  acc_0 |- n* : acc_n
+  -- (if acc_next = $(acc_cur * n))*{
+       acc_0 -> acc_cur ... acc_next -> acc_n
+     }
+
+syntax bag = nat*
+
+var xs : bag
+
+relation PrependElement:
+  bag |- nat : bag
+  hint(input %0 %1)
+
+rule PrependElement/prepend:
+  xs |- n : n::xs
+
+relation ReverseList:
+  nat* |- nat*
+  hint(input %0)
+
+rule ReverseList/fold:
+  n* |- xs_final
+  -- (PrependElement: xs_cur |- n : xs_next)*{
+       eps -> xs_cur ... xs_next -> xs_final
+     }
+
+relation AddDelta:
+  nat nat |- nat
+  hint(input %0 %1)
+
+rule AddDelta/add:
+  acc n |- $(acc + n)
+
+relation AddDeltas:
+  nat* nat* |- nat*
+  hint(input %0 %1)
+
+rule AddDeltas/fold:
+  acc_0* n* |- acc_n*
+  -- (AddDelta: acc_cur n |- acc_next)**{
+       acc_0* -> acc_cur* ... acc_next* -> acc_n*
+     }
+
+var left : nat
+var right : nat
+
+relation AddElementToPair:
+  nat '#' nat |- nat : nat '#' nat
+  hint(input %0 %1 %2)
+
+rule AddElementToPair/add:
+  left '#' right |- n : $(left + n) '#' $(right + n)
+
+relation SumPair:
+  nat '#' nat |- nat* : nat '#' nat
+  hint(input %0 %1 %2)
+
+rule SumPair/fold:
+  left_0 '#' right_0 |- n* : left_n '#' right_n
+  -- (AddElementToPair: left_cur '#' right_cur |- n : left_next '#' right_next)*{
+       left_0 -> left_cur ... left_next -> left_n,
+       right_0 -> right_cur ... right_next -> right_n
+     }
+
+var context : nat
+
+relation AddElementWithContext:
+  nat nat* |- nat : nat
+  hint(input %0 %1 %2)
+
+rule AddElementWithContext/add:
+  acc context* |- n : $(acc + n)
+
+relation SumListWithContext:
+  nat nat* |- nat* : nat
+  hint(input %0 %1 %2)
+
+rule SumListWithContext/fold:
+  acc_0 context* |- n* : acc_n
+  -- (AddElementWithContext: acc_cur context* |- n : acc_next)*{
+       acc_0 -> acc_cur ... acc_next -> acc_n
+     }
+
+relation SumMatrix:
+  nat |- nat** : nat
+  hint(input %0 %1)
+
+rule SumMatrix/fold:
+  acc_0 |- n** : acc_n
+  -- (AddElement: acc_inner_cur |- n : acc_inner_next)
+       *{ acc_cur -> acc_inner_cur ... acc_inner_next -> acc_next }
+       *{ acc_0 -> acc_cur ... acc_next -> acc_n }
+
+relation SumRows:
+  nat |- nat** : nat*
+  hint(input %0 %1)
+
+rule SumRows/map:
+  acc_0 |- n** : acc_n*
+  -- (AddElement: acc_cur |- n : acc_next)
+       *{ acc_0 -> acc_cur ... acc_next -> acc_n }
+       *
+
+relation AddPositiveElement:
+  nat |- nat : nat
+  hint(input %0 %1)
+
+rule AddPositiveElement/add:
+  acc |- n : $(acc + n)
+  -- if $(n > 0)
+
+relation SumStrictlyPositiveList:
+  nat |- nat* : nat
+  hint(input %0 %1)
+
+rule SumStrictlyPositiveList/fold:
+  acc_0 |- n* : acc_n
+  -- (AddPositiveElement: acc_cur |- n : acc_next)*{
+       acc_0 -> acc_cur ... acc_next -> acc_n
+     }

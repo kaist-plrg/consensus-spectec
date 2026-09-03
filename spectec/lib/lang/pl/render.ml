@@ -566,6 +566,22 @@ let rec render_instr ?(level = 0) ?(unordered = false) (instr : instr) : string
         (render_exp_as_code in_prose exp_l)
         (render_exp in_prose exp_r)
         (render_iterexp_suffix in_prose iterexps)
+  | FoldI { fold_iterexp; outer_iterexps; accumulators; body } ->
+      let render_var ({ Il.varid; iters; _ } : Il.var) =
+        render_varid in_code varid
+        ^ String.concat "" (List.map code_of_iter iters)
+        |> adoc_as_code in_prose
+      in
+      let render_accumulator ({ input; output; init; final } : accumulator) =
+        F.asprintf "%s (from %s, updated as %s, ending as %s)"
+          (render_var input) (render_exp in_prose init) (render_var output)
+          (render_var final)
+      in
+      F.asprintf "%sFold with %s%s%s:%s" bullet
+        (render_list (List.map render_accumulator accumulators))
+        (render_iterexp_suffix in_prose [ fold_iterexp ])
+        (render_iterexp_suffix in_prose outer_iterexps)
+        (render_instrs ~level:(level + 1) body)
   | ResultI exps -> (
       match (hints.prose_out, exps) with
       | Some h, _ ->

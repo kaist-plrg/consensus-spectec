@@ -108,6 +108,11 @@ let rec free_id_prem (prem : prem) : IdSet.t =
   | IfPr exp -> free_id_exp exp
   | ElsePr -> IdSet.empty
   | IterPr (prem, _) -> free_id_prem prem
+  | FoldPr (prem, _, accumulators) ->
+      List.fold_left
+        (fun free { init; final; _ } ->
+          IdSet.union free (IdSet.add final (free_id_exp init)))
+        (free_id_prem prem) accumulators
   | DebugPr exp -> free_id_exp exp
 
 and free_id_prems (prems : prem list) : IdSet.t =

@@ -46,6 +46,9 @@ type code =
   (* premise shape *)
   | Negated_premise_takes_inputs
   | Iter_only_rule_or_if_premise
+  | Fold_over_non_list
+  | Fold_var_or_else_premise
+  | Fold_accumulator_dimension_mismatch
   (* relation input hints *)
   | Relation_input_hint_empty
   | Relation_input_hint_duplicate_index
@@ -109,6 +112,9 @@ let string_of_code = function
   | Var_def_type_redefined -> "var-def-type-redefined"
   | Negated_premise_takes_inputs -> "negated-premise-takes-inputs"
   | Iter_only_rule_or_if_premise -> "iter-only-rule-or-if-premise"
+  | Fold_over_non_list -> "fold-over-non-list"
+  | Fold_var_or_else_premise -> "fold-var-or-else-premise"
+  | Fold_accumulator_dimension_mismatch -> "fold-accumulator-dimension-mismatch"
   | Relation_input_hint_empty -> "relation-input-hint-empty"
   | Relation_input_hint_duplicate_index -> "relation-input-hint-duplicate-index"
   | Relation_input_hint_non_hole -> "relation-input-hint-non-hole"

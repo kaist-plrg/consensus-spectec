@@ -226,6 +226,21 @@ and string_of_instr ?(short = false) ?(level = 0) ?(index = 0) instr =
           (string_of_iterexps iterexps)
       in
       if short then s_short else Format.asprintf "%s%s" order s_short
+  | FoldI { fold_iterexp; outer_iterexps; accumulators; body } ->
+      let string_of_accumulator ({ input; output; init; final } : accumulator) =
+        Format.asprintf "%s -> %s ... %s -> %s" (string_of_exp init)
+          (string_of_var input) (string_of_var output) (string_of_var final)
+      in
+      let s_short =
+        Format.asprintf "Fold%s%s with %s"
+          (string_of_iterexp fold_iterexp)
+          (string_of_iterexps outer_iterexps)
+          (String.concat ", " (List.map string_of_accumulator accumulators))
+      in
+      if short then s_short
+      else
+        Format.asprintf "%s%s\n\n%s" order s_short
+          (string_of_block ~level:(level + 1) body)
   | ResultI [] ->
       let s_short = "The relation holds" in
       if short then s_short else Format.asprintf "%s%s" order s_short

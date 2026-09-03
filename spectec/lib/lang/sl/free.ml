@@ -40,6 +40,15 @@ let rec free_instr (instr : instr) : t =
   | LetI (exp_l, exp_r, iterexps, block) ->
       free_exp exp_l + free_exp exp_r + free_iterexps iterexps
       + free_block block
+  | FoldI { fold_iterexp; outer_iterexps; accumulators; body; block } ->
+      free_iterexp fold_iterexp
+      + free_iterexps outer_iterexps
+      + unions
+          (List.map
+             (fun { Il.init; final; _ } ->
+               free_exp init + IdSet.singleton final.varid)
+             accumulators)
+      + free_block body + free_block block
   | ResultI exps -> free_exps exps
   | ReturnI exp -> free_exp exp
   | DebugI (exp, instr) -> free_exp exp + free_instr instr

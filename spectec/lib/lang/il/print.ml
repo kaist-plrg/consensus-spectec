@@ -335,6 +335,22 @@ and string_of_prem prem =
       string_of_prem prem ^ string_of_iterexp iterexp
   | IterPr (prem, iterexp) ->
       "(" ^ string_of_prem prem ^ ")" ^ string_of_iterexp iterexp
+  | FoldPr (prem, (iter, vars), accumulators) ->
+      let string_of_iter_binding var =
+        string_of_var var ^ " <- "
+        ^ string_of_var { var with iters = var.iters @ [ iter ] }
+      in
+      let string_of_accumulator { input; output; init; final } =
+        string_of_exp init ^ " -> " ^ string_of_var input ^ " ... "
+        ^ string_of_var output ^ " -> " ^ string_of_var final
+      in
+      let bindings =
+        List.map string_of_iter_binding vars
+        @ List.map string_of_accumulator accumulators
+      in
+      "(" ^ string_of_prem prem ^ ")" ^ string_of_iter iter ^ "{"
+      ^ String.concat ", " bindings
+      ^ "}"
   | DebugPr exp -> "debug " ^ string_of_exp exp
 
 and string_of_prems prems =

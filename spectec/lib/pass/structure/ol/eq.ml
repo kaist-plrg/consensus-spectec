@@ -63,6 +63,26 @@ and eq_instr (instr_a : instr) (instr_b : instr) : bool =
       && Sl.Eq.eq_exp exp_r_a exp_r_b
       && Sl.Eq.eq_iterexps iterexps_a iterexps_b
       && eq_instrs block_a block_b
+  | ( FoldI
+        {
+          fold_iterexp = iterexp_a;
+          outer_iterexps = iterexps_a;
+          accumulators = accumulators_a;
+          body = body_a;
+          block = block_a;
+        },
+      FoldI
+        {
+          fold_iterexp = iterexp_b;
+          outer_iterexps = iterexps_b;
+          accumulators = accumulators_b;
+          body = body_b;
+          block = block_b;
+        } ) ->
+      Sl.Eq.eq_iterexp iterexp_a iterexp_b
+      && Sl.Eq.eq_iterexps iterexps_a iterexps_b
+      && Sl.Eq.eq_accumulators accumulators_a accumulators_b
+      && eq_instrs body_a body_b && eq_instrs block_a block_b
   | ResultI exps_a, ResultI exps_b -> Sl.Eq.eq_exps exps_a exps_b
   | ReturnI exp_a, ReturnI exp_b -> Sl.Eq.eq_exp exp_a exp_b
   | DebugI (exp_a, instr_a), DebugI (exp_b, instr_b) ->

@@ -304,6 +304,27 @@ and to_doc_prem ?(values = fun _ -> None) (prem : prem) =
   | IterPr (({ it = IterPr _; _ } as inner), iter) ->
       to_doc_prem inner ^^ to_doc_iter iter
   | IterPr (inner, iter) -> P.parens (to_doc_prem inner) ^^ to_doc_iter iter
+  | FoldPr (inner, iter, accumulators) ->
+      P.parens (to_doc_prem inner)
+      ^^ to_doc_iter iter ^^ P.string "{ "
+      ^^ comma_list
+           (fun {
+                  init;
+                  input;
+                  input_iters;
+                  output;
+                  output_iters;
+                  final;
+                  final_iters;
+                } ->
+             to_doc_exp init ^^ P.string " -> " ^^ to_doc_varid input
+             ^^ P.concat_map to_doc_iter input_iters
+             ^^ P.string " ... " ^^ to_doc_varid output
+             ^^ P.concat_map to_doc_iter output_iters
+             ^^ P.string " -> " ^^ to_doc_varid final
+             ^^ P.concat_map to_doc_iter final_iters)
+           accumulators
+      ^^ P.string " }"
   | DebugPr exp -> P.string "debug " ^^ P.align (to_doc_exp exp)
 
 and to_doc_prems prems =

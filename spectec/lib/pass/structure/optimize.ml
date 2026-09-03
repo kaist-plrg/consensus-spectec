@@ -6,6 +6,15 @@ open Ol.Ast
 module RTEnv = Envs.RTEnv
 module TDEnv = Envs.Il.TDEnv
 
+let add_accumulator_outputs fold_output_ids accumulators =
+  List.fold_left
+    (fun fold_output_ids ({ Il.output; _ } : Il.accumulator) ->
+      IdSet.add output.varid fold_output_ids)
+    fold_output_ids accumulators
+
+let preserves_fold_outputs fold_output_ids rename =
+  IdSet.inter fold_output_ids (Renamer.Rename.dom rename) |> IdSet.is_empty
+
 (* [1] Remove redundant, trivial let aliases from the code,
 
    let y = x; if (y == 0) then { let z = y + y; let y = 1; let k = y + y; ... }
@@ -16,53 +25,72 @@ module TDEnv = Envs.Il.TDEnv
 
    Notice the stop condition when we meet a shadowing let binding *)
 
-let rec remove_let_alias (instrs : instr list) : instr list =
+let rec remove_let_alias ?(fold_output_ids = IdSet.empty) (instrs : instr list)
+    : instr list =
   match instrs with
   | [] -> []
   | { it = IfI (exp_cond, iterexps, instrs_then); at; _ } :: instrs_t ->
-      let instrs_then = remove_let_alias instrs_then in
+      let instrs_then = remove_let_alias ~fold_output_ids instrs_then in
       let instr_h = IfI (exp_cond, iterexps, instrs_then) $ at in
-      let instrs_t = remove_let_alias instrs_t in
+      let instrs_t = remove_let_alias ~fold_output_ids instrs_t in
       instr_h :: instrs_t
   | { it = RelAssertI { call; expect; iterexps; block = instrs_then }; at; _ }
     :: instrs_t ->
-      let instrs_then = remove_let_alias instrs_then in
+      let instrs_then = remove_let_alias ~fold_output_ids instrs_then in
       let instr_h =
         RelAssertI { call; expect; iterexps; block = instrs_then } $ at
       in
-      let instrs_t = remove_let_alias instrs_t in
+      let instrs_t = remove_let_alias ~fold_output_ids instrs_t in
       instr_h :: instrs_t
   | { it = CaseI (exp, cases, total); at; _ } :: instrs_t ->
       let cases =
         let guards, blocks = List.split cases in
-        let blocks = List.map remove_let_alias blocks in
+        let blocks = List.map (remove_let_alias ~fold_output_ids) blocks in
         List.combine guards blocks
       in
       let instr_h = CaseI (exp, cases, total) $ at in
-      let instrs_t = remove_let_alias instrs_t in
+      let instrs_t = remove_let_alias ~fold_output_ids instrs_t in
       instr_h :: instrs_t
   | ({ it = LetI (exp_l, exp_r, iterexps, block); _ } as instr_h) :: instrs_t
     -> (
       match (exp_l.it, exp_r.it) with
-      | VarE id_l, VarE id_r ->
+      | VarE id_l, VarE id_r when not (IdSet.mem id_l fold_output_ids) ->
           let rename = Renamer.Rename.singleton id_l id_r in
           let block =
-            block |> Renamer.rename_instrs rename |> remove_let_alias
+            block
+            |> Renamer.rename_instrs rename
+            |> remove_let_alias ~fold_output_ids
           in
-          let instrs_t = remove_let_alias instrs_t in
+          let instrs_t = remove_let_alias ~fold_output_ids instrs_t in
           block @ instrs_t
       | _ ->
-          let block = remove_let_alias block in
+          let block = remove_let_alias ~fold_output_ids block in
           let instr_h = LetI (exp_l, exp_r, iterexps, block) $ instr_h.at in
-          let instrs_t = remove_let_alias instrs_t in
+          let instrs_t = remove_let_alias ~fold_output_ids instrs_t in
           instr_h :: instrs_t)
   | ({ it = RelI { call; iterexps; block }; _ } as instr_h) :: instrs_t ->
-      let block = remove_let_alias block in
+      let block = remove_let_alias ~fold_output_ids block in
       let instr_h = RelI { call; iterexps; block } $ instr_h.at in
-      let instrs_t = remove_let_alias instrs_t in
+      let instrs_t = remove_let_alias ~fold_output_ids instrs_t in
+      instr_h :: instrs_t
+  | ({
+       it = FoldI { fold_iterexp; outer_iterexps; accumulators; body; block };
+       _;
+     } as instr_h)
+    :: instrs_t ->
+      let body_fold_output_ids =
+        add_accumulator_outputs fold_output_ids accumulators
+      in
+      let body = remove_let_alias ~fold_output_ids:body_fold_output_ids body in
+      let block = remove_let_alias ~fold_output_ids block in
+      let instr_h =
+        FoldI { fold_iterexp; outer_iterexps; accumulators; body; block }
+        $ instr_h.at
+      in
+      let instrs_t = remove_let_alias ~fold_output_ids instrs_t in
       instr_h :: instrs_t
   | instr_h :: instrs_t ->
-      let instrs_t = remove_let_alias instrs_t in
+      let instrs_t = remove_let_alias ~fold_output_ids instrs_t in
       instr_h :: instrs_t
 
 (* [2] Parallelize if conditions in logical or *)
@@ -110,6 +138,10 @@ let rec parallelize_if_disjunction (instr : instr) : instr list =
   | RelI { call; iterexps; block } ->
       let block = parallelize_if_disjunctions block in
       [ RelI { call; iterexps; block } $ at ]
+  | FoldI { fold_iterexp; outer_iterexps; accumulators; body; block } ->
+      let body = parallelize_if_disjunctions body in
+      let block = parallelize_if_disjunctions block in
+      [ FoldI { fold_iterexp; outer_iterexps; accumulators; body; block } $ at ]
   | _ -> [ instr ]
 
 and parallelize_if_disjunctions (instrs : instr list) : instr list =
@@ -154,6 +186,10 @@ let rec matchify_if_eq_terminal (instr : instr) : instr =
   | RelI { call; iterexps; block } ->
       let block = matchify_if_eq_terminals block in
       RelI { call; iterexps; block } $ at
+  | FoldI { fold_iterexp; outer_iterexps; accumulators; body; block } ->
+      let body = matchify_if_eq_terminals body in
+      let block = matchify_if_eq_terminals block in
+      FoldI { fold_iterexp; outer_iterexps; accumulators; body; block } $ at
   | _ -> instr
 
 and matchify_if_eq_terminals (instrs : instr list) : instr list =
@@ -318,121 +354,200 @@ module Bind = struct
     | _ -> None
 end
 
-let rec remove_redundant_bindings' (rtenv : RTEnv.t) (bind : Bind.t)
-    (instrs : instr list) : instr list =
+let rec remove_redundant_bindings' (rtenv : RTEnv.t) (fold_output_ids : IdSet.t)
+    (bind : Bind.t) (instrs : instr list) : instr list =
   match instrs with
   | [] -> []
   | { it = IfI (exp_cond, iterexps, instrs_then); at; _ } :: instrs_t ->
-      let instrs_then = instrs_then |> remove_redundant_bindings' rtenv bind in
+      let instrs_then =
+        instrs_then |> remove_redundant_bindings' rtenv fold_output_ids bind
+      in
       let instr_h = IfI (exp_cond, iterexps, instrs_then) $ at in
-      let instrs_t = remove_redundant_bindings' rtenv bind instrs_t in
+      let instrs_t =
+        remove_redundant_bindings' rtenv fold_output_ids bind instrs_t
+      in
       instr_h :: instrs_t
   | { it = RelAssertI { call; expect; iterexps; block = instrs_then }; at; _ }
     :: instrs_t ->
-      let instrs_then = instrs_then |> remove_redundant_bindings' rtenv bind in
+      let instrs_then =
+        instrs_then |> remove_redundant_bindings' rtenv fold_output_ids bind
+      in
       let instr_h =
         RelAssertI { call; expect; iterexps; block = instrs_then } $ at
       in
-      let instrs_t = remove_redundant_bindings' rtenv bind instrs_t in
+      let instrs_t =
+        remove_redundant_bindings' rtenv fold_output_ids bind instrs_t
+      in
       instr_h :: instrs_t
   | { it = CaseI (exp, cases, total); at; _ } :: instrs_t ->
       let cases =
         let guards, blocks = List.split cases in
-        let blocks = List.map (remove_redundant_bindings' rtenv bind) blocks in
+        let blocks =
+          List.map
+            (remove_redundant_bindings' rtenv fold_output_ids bind)
+            blocks
+        in
         List.combine guards blocks
       in
       let instr_h = CaseI (exp, cases, total) $ at in
-      let instrs_t = remove_redundant_bindings' rtenv bind instrs_t in
+      let instrs_t =
+        remove_redundant_bindings' rtenv fold_output_ids bind instrs_t
+      in
       instr_h :: instrs_t
   | ({ it = LetI (exp_l, exp_r, iterexps, block); _ } as instr_h) :: instrs_t
     -> (
-      let block = remove_redundant_bindings' rtenv bind block in
+      let block = remove_redundant_bindings' rtenv fold_output_ids bind block in
       let bind_target = Bind.init_let_bind exp_l exp_r iterexps in
       let rename_opt = Bind.collapse_bind bind bind_target in
       match rename_opt with
-      | Some rename ->
+      | Some rename when preserves_fold_outputs fold_output_ids rename ->
           let block =
             block
             |> Renamer.rename_instrs rename
-            |> remove_redundant_bindings' rtenv bind
+            |> remove_redundant_bindings' rtenv fold_output_ids bind
           in
-          let instrs_t = remove_redundant_bindings' rtenv bind instrs_t in
+          let instrs_t =
+            remove_redundant_bindings' rtenv fold_output_ids bind instrs_t
+          in
           block @ instrs_t
-      | None ->
-          let instrs_t = remove_redundant_bindings' rtenv bind instrs_t in
+      | Some _ | None ->
+          let instrs_t =
+            remove_redundant_bindings' rtenv fold_output_ids bind instrs_t
+          in
           let instr_h = LetI (exp_l, exp_r, iterexps, block) $ instr_h.at in
           instr_h :: instrs_t)
   | ({ it = RelI { call; iterexps; block }; _ } as instr_h) :: instrs_t -> (
-      let block = remove_redundant_bindings' rtenv bind block in
+      let block = remove_redundant_bindings' rtenv fold_output_ids bind block in
       let bind_target =
         Bind.init_rel_bind rtenv call.relid call.notexp iterexps
       in
       let rename_opt = Bind.collapse_bind bind bind_target in
       match rename_opt with
-      | Some rename ->
+      | Some rename when preserves_fold_outputs fold_output_ids rename ->
           let block =
             block
             |> Renamer.rename_instrs rename
-            |> remove_redundant_bindings' rtenv bind
+            |> remove_redundant_bindings' rtenv fold_output_ids bind
           in
-          let instrs_t = remove_redundant_bindings' rtenv bind instrs_t in
+          let instrs_t =
+            remove_redundant_bindings' rtenv fold_output_ids bind instrs_t
+          in
           block @ instrs_t
-      | None ->
-          let instrs_t = remove_redundant_bindings' rtenv bind instrs_t in
+      | Some _ | None ->
+          let instrs_t =
+            remove_redundant_bindings' rtenv fold_output_ids bind instrs_t
+          in
           let instr_h = RelI { call; iterexps; block } $ instr_h.at in
           instr_h :: instrs_t)
+  | ({
+       it = FoldI { fold_iterexp; outer_iterexps; accumulators; body; block };
+       _;
+     } as instr_h)
+    :: instrs_t ->
+      let body_fold_output_ids =
+        add_accumulator_outputs fold_output_ids accumulators
+      in
+      let body =
+        remove_redundant_bindings' rtenv body_fold_output_ids bind body
+      in
+      let block = remove_redundant_bindings' rtenv fold_output_ids bind block in
+      let instr_h =
+        FoldI { fold_iterexp; outer_iterexps; accumulators; body; block }
+        $ instr_h.at
+      in
+      let instrs_t =
+        remove_redundant_bindings' rtenv fold_output_ids bind instrs_t
+      in
+      instr_h :: instrs_t
   | instr_h :: instrs_t ->
-      let instrs_t = remove_redundant_bindings' rtenv bind instrs_t in
+      let instrs_t =
+        remove_redundant_bindings' rtenv fold_output_ids bind instrs_t
+      in
       instr_h :: instrs_t
 
-let rec remove_redundant_bindings (rtenv : RTEnv.t) (instrs : instr list) :
-    instr list =
+let rec remove_redundant_bindings ?(fold_output_ids = IdSet.empty)
+    (rtenv : RTEnv.t) (instrs : instr list) : instr list =
   match instrs with
   | [] -> []
   | { it = IfI (exp_cond, iterexps, instrs_then); at; _ } :: instrs_t ->
-      let instrs_then = instrs_then |> remove_redundant_bindings rtenv in
+      let instrs_then =
+        instrs_then |> remove_redundant_bindings ~fold_output_ids rtenv
+      in
       let instr_h = IfI (exp_cond, iterexps, instrs_then) $ at in
-      let instrs_t = remove_redundant_bindings rtenv instrs_t in
+      let instrs_t =
+        remove_redundant_bindings ~fold_output_ids rtenv instrs_t
+      in
       instr_h :: instrs_t
   | { it = RelAssertI { call; expect; iterexps; block = instrs_then }; at; _ }
     :: instrs_t ->
-      let instrs_then = instrs_then |> remove_redundant_bindings rtenv in
+      let instrs_then =
+        instrs_then |> remove_redundant_bindings ~fold_output_ids rtenv
+      in
       let instr_h =
         RelAssertI { call; expect; iterexps; block = instrs_then } $ at
       in
-      let instrs_t = remove_redundant_bindings rtenv instrs_t in
+      let instrs_t =
+        remove_redundant_bindings ~fold_output_ids rtenv instrs_t
+      in
       instr_h :: instrs_t
   | { it = CaseI (exp, cases, total); at; _ } :: instrs_t ->
       let cases =
         let guards, blocks = List.split cases in
-        let blocks = List.map (remove_redundant_bindings rtenv) blocks in
+        let blocks =
+          List.map (remove_redundant_bindings ~fold_output_ids rtenv) blocks
+        in
         List.combine guards blocks
       in
       let instr_h = CaseI (exp, cases, total) $ at in
-      let instrs_t = remove_redundant_bindings rtenv instrs_t in
+      let instrs_t =
+        remove_redundant_bindings ~fold_output_ids rtenv instrs_t
+      in
       instr_h :: instrs_t
   | ({ it = LetI (exp_l, exp_r, iterexps, block); _ } as instr_h) :: instrs_t ->
-      let block = remove_redundant_bindings rtenv block in
+      let block = remove_redundant_bindings ~fold_output_ids rtenv block in
       let bind = Bind.init_let_bind exp_l exp_r iterexps in
       let instrs_t =
         instrs_t
-        |> remove_redundant_bindings' rtenv bind
-        |> remove_redundant_bindings rtenv
+        |> remove_redundant_bindings' rtenv fold_output_ids bind
+        |> remove_redundant_bindings ~fold_output_ids rtenv
       in
       let instr_h = LetI (exp_l, exp_r, iterexps, block) $ instr_h.at in
       instr_h :: instrs_t
   | ({ it = RelI { call; iterexps; block }; _ } as instr_h) :: instrs_t ->
-      let block = remove_redundant_bindings rtenv block in
+      let block = remove_redundant_bindings ~fold_output_ids rtenv block in
       let bind = Bind.init_rel_bind rtenv call.relid call.notexp iterexps in
       let instrs_t =
         instrs_t
-        |> remove_redundant_bindings' rtenv bind
-        |> remove_redundant_bindings rtenv
+        |> remove_redundant_bindings' rtenv fold_output_ids bind
+        |> remove_redundant_bindings ~fold_output_ids rtenv
       in
       let instr_h = RelI { call; iterexps; block } $ instr_h.at in
       instr_h :: instrs_t
+  | ({
+       it = FoldI { fold_iterexp; outer_iterexps; accumulators; body; block };
+       _;
+     } as instr_h)
+    :: instrs_t ->
+      let body_fold_output_ids =
+        add_accumulator_outputs fold_output_ids accumulators
+      in
+      let body =
+        remove_redundant_bindings ~fold_output_ids:body_fold_output_ids rtenv
+          body
+      in
+      let block = remove_redundant_bindings ~fold_output_ids rtenv block in
+      let instr_h =
+        FoldI { fold_iterexp; outer_iterexps; accumulators; body; block }
+        $ instr_h.at
+      in
+      let instrs_t =
+        remove_redundant_bindings ~fold_output_ids rtenv instrs_t
+      in
+      instr_h :: instrs_t
   | instr_h :: instrs_t ->
-      let instrs_t = instrs_t |> remove_redundant_bindings rtenv in
+      let instrs_t =
+        instrs_t |> remove_redundant_bindings ~fold_output_ids rtenv
+      in
       instr_h :: instrs_t
 
 (* [5] Condition analysis and case analysis insertion *)
@@ -449,79 +564,98 @@ let rec merge_block (instrs_a : instr list) (instrs_b : instr list) : instr list
       merge_block (instr_h :: instrs_a) instrs_b
   | _ -> instrs_a @ instrs_b
 
-let downstream_binding (rtenv : RTEnv.t) (bind : Bind.t) (instrs : instr list) :
-    (instr list * instr list) option =
+let downstream_binding (rtenv : RTEnv.t) (fold_output_ids : IdSet.t)
+    (bind : Bind.t) (instrs : instr list) : (instr list * instr list) option =
   match instrs with
   | { it = LetI (exp_l, exp_r, iterexps, block); _ } :: instrs_t -> (
       let bind_target = Bind.init_let_bind exp_l exp_r iterexps in
       match Bind.collapse_bind bind bind_target with
-      | Some rename ->
+      | Some rename when preserves_fold_outputs fold_output_ids rename ->
           let block = Renamer.rename_instrs rename block in
           Some (block, instrs_t)
-      | None -> None)
+      | Some _ | None -> None)
   | { it = RelI { call; iterexps; block }; _ } :: instrs_t -> (
       let bind_target =
         Bind.init_rel_bind rtenv call.relid call.notexp iterexps
       in
       match Bind.collapse_bind bind bind_target with
-      | Some rename ->
+      | Some rename when preserves_fold_outputs fold_output_ids rename ->
           let block = Renamer.rename_instrs rename block in
           Some (block, instrs_t)
-      | None -> None)
+      | Some _ | None -> None)
   | _ -> None
 
-let rec merge_binding (rtenv : RTEnv.t) (instrs : instr list) : instr list =
+let rec merge_binding ?(fold_output_ids = IdSet.empty) (rtenv : RTEnv.t)
+    (instrs : instr list) : instr list =
   match instrs with
   | [] -> []
   | { it = IfI (exp_cond, iterexps, instrs_then); at; _ } :: instrs_t ->
-      let instrs_then = merge_binding rtenv instrs_then in
+      let instrs_then = merge_binding ~fold_output_ids rtenv instrs_then in
       let instr_h = IfI (exp_cond, iterexps, instrs_then) $ at in
-      let instrs_t = merge_binding rtenv instrs_t in
+      let instrs_t = merge_binding ~fold_output_ids rtenv instrs_t in
       instr_h :: instrs_t
   | { it = RelAssertI { call; expect; iterexps; block = instrs_then }; at; _ }
     :: instrs_t ->
-      let instrs_then = merge_binding rtenv instrs_then in
+      let instrs_then = merge_binding ~fold_output_ids rtenv instrs_then in
       let instr_h =
         RelAssertI { call; expect; iterexps; block = instrs_then } $ at
       in
-      let instrs_t = merge_binding rtenv instrs_t in
+      let instrs_t = merge_binding ~fold_output_ids rtenv instrs_t in
       instr_h :: instrs_t
   | { it = CaseI (exp, cases, total); at; _ } :: instrs_t ->
       let cases =
         let guards, blocks = List.split cases in
-        let blocks = List.map (merge_binding rtenv) blocks in
+        let blocks = List.map (merge_binding ~fold_output_ids rtenv) blocks in
         List.combine guards blocks
       in
       let instr_h = CaseI (exp, cases, total) $ at in
-      let instrs_t = merge_binding rtenv instrs_t in
+      let instrs_t = merge_binding ~fold_output_ids rtenv instrs_t in
       instr_h :: instrs_t
   | ({ it = LetI (exp_l, exp_r, iterexps, block); _ } as instr_h) :: instrs_t
     -> (
       let bind = Bind.init_let_bind exp_l exp_r iterexps in
-      match downstream_binding rtenv bind instrs_t with
+      match downstream_binding rtenv fold_output_ids bind instrs_t with
       | Some (block_merge, instrs_t) ->
           let block = merge_block block block_merge in
           let instr_h = LetI (exp_l, exp_r, iterexps, block) $ instr_h.at in
-          merge_binding rtenv (instr_h :: instrs_t)
+          merge_binding ~fold_output_ids rtenv (instr_h :: instrs_t)
       | None ->
-          let block = merge_binding rtenv block in
+          let block = merge_binding ~fold_output_ids rtenv block in
           let instr_h = LetI (exp_l, exp_r, iterexps, block) $ instr_h.at in
-          let instrs_t = merge_binding rtenv instrs_t in
+          let instrs_t = merge_binding ~fold_output_ids rtenv instrs_t in
           instr_h :: instrs_t)
   | ({ it = RelI { call; iterexps; block }; _ } as instr_h) :: instrs_t -> (
       let bind = Bind.init_rel_bind rtenv call.relid call.notexp iterexps in
-      match downstream_binding rtenv bind instrs_t with
+      match downstream_binding rtenv fold_output_ids bind instrs_t with
       | Some (block_merge, instrs_t) ->
           let block = merge_block block block_merge in
           let instr_h = RelI { call; iterexps; block } $ instr_h.at in
-          merge_binding rtenv (instr_h :: instrs_t)
+          merge_binding ~fold_output_ids rtenv (instr_h :: instrs_t)
       | None ->
-          let block = merge_binding rtenv block in
+          let block = merge_binding ~fold_output_ids rtenv block in
           let instr_h = RelI { call; iterexps; block } $ instr_h.at in
-          let instrs_t = merge_binding rtenv instrs_t in
+          let instrs_t = merge_binding ~fold_output_ids rtenv instrs_t in
           instr_h :: instrs_t)
+  | ({
+       it = FoldI { fold_iterexp; outer_iterexps; accumulators; body; block };
+       _;
+     } as instr_h)
+    :: instrs_t ->
+      let body_fold_output_ids =
+        add_accumulator_outputs fold_output_ids accumulators
+      in
+      let body =
+        merge_binding ~fold_output_ids:body_fold_output_ids rtenv body
+      in
+      let block = merge_binding ~fold_output_ids rtenv block in
+      let instr_h =
+        FoldI { fold_iterexp; outer_iterexps; accumulators; body; block }
+        $ instr_h.at
+      in
+      let instrs_t = merge_binding ~fold_output_ids rtenv instrs_t in
+      instr_h :: instrs_t
   | instr_h :: instrs_t ->
-      let instrs_t = merge_binding rtenv instrs_t in
+      let instrs_t = merge_binding ~fold_output_ids rtenv instrs_t in
       instr_h :: instrs_t
 
 (* Syntactic analysis of conditions
@@ -792,6 +926,19 @@ let rec merge_if (tdenv : TDEnv.t) (instrs : instr list) : instr list =
       let instr_h = RelI { call; iterexps; block } $ instr_h.at in
       let instrs_t = merge_if tdenv instrs_t in
       instr_h :: instrs_t
+  | ({
+       it = FoldI { fold_iterexp; outer_iterexps; accumulators; body; block };
+       _;
+     } as instr_h)
+    :: instrs_t ->
+      let body = merge_if tdenv body in
+      let block = merge_if tdenv block in
+      let instr_h =
+        FoldI { fold_iterexp; outer_iterexps; accumulators; body; block }
+        $ instr_h.at
+      in
+      let instrs_t = merge_if tdenv instrs_t in
+      instr_h :: instrs_t
   | instr_h :: instrs_t ->
       let instrs_t = merge_if tdenv instrs_t in
       instr_h :: instrs_t
@@ -894,6 +1041,19 @@ let rec merge_rel_assert (instrs : instr list) : instr list =
   | ({ it = RelI { call; iterexps; block }; _ } as instr_h) :: instrs_t ->
       let block = merge_rel_assert block in
       let instr_h = RelI { call; iterexps; block } $ instr_h.at in
+      let instrs_t = merge_rel_assert instrs_t in
+      instr_h :: instrs_t
+  | ({
+       it = FoldI { fold_iterexp; outer_iterexps; accumulators; body; block };
+       _;
+     } as instr_h)
+    :: instrs_t ->
+      let body = merge_rel_assert body in
+      let block = merge_rel_assert block in
+      let instr_h =
+        FoldI { fold_iterexp; outer_iterexps; accumulators; body; block }
+        $ instr_h.at
+      in
       let instrs_t = merge_rel_assert instrs_t in
       instr_h :: instrs_t
   | instr_h :: instrs_t ->
@@ -1155,6 +1315,19 @@ let rec casify (tdenv : TDEnv.t) (instrs : instr list) : instr list =
       let instr_h = RelI { call; iterexps; block } $ instr_h.at in
       let instrs_t = casify tdenv instrs_t in
       instr_h :: instrs_t
+  | ({
+       it = FoldI { fold_iterexp; outer_iterexps; accumulators; body; block };
+       _;
+     } as instr_h)
+    :: instrs_t ->
+      let body = casify tdenv body in
+      let block = casify tdenv block in
+      let instr_h =
+        FoldI { fold_iterexp; outer_iterexps; accumulators; body; block }
+        $ instr_h.at
+      in
+      let instrs_t = casify tdenv instrs_t in
+      instr_h :: instrs_t
   | instr_h :: instrs_t ->
       let instrs_t = casify tdenv instrs_t in
       instr_h :: instrs_t
@@ -1223,6 +1396,10 @@ and totalize_case_analysis' (tdenv : TDEnv.t) (instr : instr) : instr =
   | RelI { call; iterexps; block } ->
       let block = totalize_case_analysis tdenv block in
       RelI { call; iterexps; block } $ at
+  | FoldI { fold_iterexp; outer_iterexps; accumulators; body; block } ->
+      let body = totalize_case_analysis tdenv body in
+      let block = totalize_case_analysis tdenv block in
+      FoldI { fold_iterexp; outer_iterexps; accumulators; body; block } $ at
   | _ -> instr
 
 (* Apply optimizations until it reaches a fixed point *)

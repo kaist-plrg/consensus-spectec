@@ -122,6 +122,10 @@ and guard =
   | CheckLetSubG of typ * exp        (* scrut <: typ, bind scrut as exp *)
   | CheckLetMatchG of pattern * exp  (* scrut matches pattern, bind scrut as exp *)
 
+(* init `->` input `...` output `->` final *)
+
+and accumulator = { init : exp; input : Il.var; output : Il.var; final : Il.var }
+
 (* Instructions *)
 
 and instr = (instr' phrase) Annot.t
@@ -133,6 +137,12 @@ and instr' =
   | OtherwiseI of instr
   | TryI of block list
   | LetI of exp * exp * iterexp list
+  | FoldI of {
+      fold_iterexp : iterexp;
+      outer_iterexps : iterexp list;
+      accumulators : accumulator list;
+      body : block;
+    }
   | ResultI of exp list
   | ReturnI of exp
   | DebugI of exp

@@ -109,6 +109,11 @@ let rec collect_chains_prem (prem : Il.prem) : (string * field_step list) list =
   | Il.IfPr { cond; _ } | Il.DebugPr cond -> collect_chains cond
   | Il.LetPr (e1, e2) -> collect_chains e1 @ collect_chains e2
   | Il.IterPr (inner, _) -> collect_chains_prem inner
+  | Il.FoldPr (inner, _, accumulators) ->
+      collect_chains_prem inner
+      @ List.concat_map
+          (fun ({ init; _ } : Il.accumulator) -> collect_chains init)
+          accumulators
   | Il.RelPr { notexp; _ } ->
       Il.Mixfix.args notexp |> List.concat_map collect_chains
   | Il.RelAssertPr { call = { notexp; _ }; _ } ->

@@ -60,6 +60,18 @@ and string_of_instr ?(level = 0) ?(index = 0) instr =
         (string_of_iterexps iterexps)
       ^ "\n\n"
       ^ string_of_instrs ~level:(level + 1) block
+  | FoldI { fold_iterexp; outer_iterexps; accumulators; body; block } ->
+      let string_of_accumulator { Lang.Il.input; output; init; final } =
+        Format.asprintf "%s -> %s ... %s -> %s" (string_of_exp init)
+          (string_of_var input) (string_of_var output) (string_of_var final)
+      in
+      Format.asprintf "%sFold%s%s with %s\n\n%s" order
+        (string_of_iterexp fold_iterexp)
+        (string_of_iterexps outer_iterexps)
+        (String.concat ", " (List.map string_of_accumulator accumulators))
+        (string_of_instrs ~level:(level + 1) body)
+      ^ "\n\n"
+      ^ string_of_instrs ~level:(level + 1) block
   | ResultI [] -> Format.asprintf "%sThe relation holds" order
   | ResultI exps ->
       Format.asprintf "%sResult in %s" order (string_of_exps ", " exps)
