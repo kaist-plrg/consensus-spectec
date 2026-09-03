@@ -54,10 +54,6 @@ def $exit_epoch_eq(validator, epoch) = true
 def $exit_epoch_eq(validator, epoch) = false
   -- otherwise
 
-;; fold for max over epochs 
-dec $fold_max_epoch(epoch, epoch) : epoch
-def $fold_max_epoch(epoch_acc, epoch_x) = $max_uint64(epoch_acc, epoch_x)
-
 ;; helper: churn >= limit -> epoch + 1, else epoch
 dec $select_epoch_exit_queue(epoch, uint64, uint64) : epoch
 def $select_epoch_exit_queue(epoch_exit_queue_0, uint64_churn, uint64_limit)
@@ -94,7 +90,9 @@ rule InitiateValidatorExit/main:
   -- if validator.EXIT_EPOCH = $FAR_FUTURE_EPOCH
   -- if $filter_list_<validator>(state.VALIDATORS, def $exit_epoch_not_far_future) = validator_exit*
   -- if (validator_exit.EXIT_EPOCH = epoch_exit)*
-  -- if $fold_<epoch, epoch>(def $fold_max_epoch, 0, epoch_exit* ++ [ $compute_activation_exit_epoch($get_current_epoch(state)) ]) = epoch_exit_queue_0
+  -- (if $max_uint64(epoch_cur, epoch_exit) = epoch_next)*{
+       $compute_activation_exit_epoch($get_current_epoch(state)) -> epoch_cur ... epoch_next -> epoch_exit_queue_0
+     }
   -- if $filter_list_2_<validator, epoch>(validator_exit*, epoch_exit_queue_0, def $exit_epoch_eq) = validator_exit_queue*
   -- if |validator_exit_queue*| = uint64_exit_queue_churn
   -- if $get_validator_churn_limit(state) = uint64_churn_limit
