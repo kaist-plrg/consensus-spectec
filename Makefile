@@ -77,6 +77,80 @@ vsix:
 	cd editors/vscode && npx -y @vscode/vsce package -o $(NAME).vsix
 	@echo "#### extension written to editors/vscode/$(NAME).vsix"
 
+# Differential-testing fixtures
+#
+# The official test vectors are release assets of ethereum/consensus-specs,
+# not content of this repo. `make download-fixture` pulls the pinned tarball once
+# into $(FIXTURE_CACHE) and unpacks the selected forks and suites into
+# Converter/OfficialTestSuite/, the layout diff_testing.py, run_test_suite.py and
+# Converter/generate_json_test_cases.py expect.
+#
+# Override the pin or the selection on the command line:
+#   make download-fixture SPEC_TESTS_FORKS=capella SPEC_TESTS_SUITES=sanity
+#
+# `make clean-fixture` drops the unpacked vectors but keeps the cached tarball,
+# so re-unpacking a different selection costs no download.
+
+# Match the consensus-specs gitlink (f96d3e7, v1.6.0); update both pins together.
+SPEC_TESTS_VERSION ?= v1.6.0
+SPEC_TESTS_PRESET ?= mainnet
+SPEC_TESTS_FORKS ?= capella deneb
+SPEC_TESTS_SUITES ?= sanity random finality
+# SHA-256 digests published with the ethereum/consensus-specs release assets.
+SPEC_TESTS_SHA256_v1.6.0_mainnet = dbdda1dd6d857edb34604c600d3cb161ef4eb3b4746d9217b8068c3bc3fa925e
+SPEC_TESTS_SHA256_v1.6.0_minimal = d491c81a0de054c8ef7066111d1e5cc1d0e03af5f8ee847f316a7a83201e65f0
+SPEC_TESTS_SHA256 ?= $(SPEC_TESTS_SHA256_$(SPEC_TESTS_VERSION)_$(SPEC_TESTS_PRESET))
+FIXTURE_SHA256 = $(shell command -v sha256sum 2>/dev/null || echo shasum -a 256)
+
+FIXTURE_DIR = Converter/OfficialTestSuite
+FIXTURE_CACHE = Converter/.fixture-cache
+FIXTURE_TARBALL = $(FIXTURE_CACHE)/$(SPEC_TESTS_PRESET)-$(SPEC_TESTS_VERSION).tar.gz
+FIXTURE_URL = https://github.com/ethereum/consensus-specs/releases/download/$(SPEC_TESTS_VERSION)/$(SPEC_TESTS_PRESET).tar.gz
+
+.PHONY: download-fixture clean-fixture
+
+download-fixture:
+	@set -eu; \
+	if [ -z "$(SPEC_TESTS_SHA256)" ]; then \
+	  echo "Set SPEC_TESTS_SHA256 to the release asset digest for $(SPEC_TESTS_VERSION)/$(SPEC_TESTS_PRESET)." >&2; \
+	  exit 1; \
+	fi; \
+	mkdir -p "$(FIXTURE_CACHE)" "$(dir $(FIXTURE_DIR))"; \
+	tmp=$$(mktemp -d "$(FIXTURE_DIR).tmp.XXXXXX"); \
+	trap 'rm -rf "$$tmp"' 0; \
+	trap 'exit 1' 1 2 15; \
+	archive="$(FIXTURE_TARBALL)"; \
+	if [ ! -f "$$archive" ]; then \
+	  archive="$$tmp/archive.tar.gz"; \
+	  curl -fL --progress-bar -o "$$archive" "$(FIXTURE_URL)"; \
+	fi; \
+	printf '%s  %s\n' "$(SPEC_TESTS_SHA256)" "$$archive" | $(FIXTURE_SHA256) -c - || { \
+	  echo "Fixture checksum mismatch; remove $(FIXTURE_TARBALL) if cached and retry." >&2; \
+	  exit 1; \
+	}; \
+	if [ "$$archive" != "$(FIXTURE_TARBALL)" ]; then \
+	  mv "$$archive" "$(FIXTURE_TARBALL)"; \
+	fi; \
+	set --; \
+	for fork in $(SPEC_TESTS_FORKS); do \
+	  for suite in $(SPEC_TESTS_SUITES); do \
+	    set -- "$$@" "tests/$(SPEC_TESTS_PRESET)/$$fork/$$suite"; \
+	  done; \
+	done; \
+	[ "$$#" -gt 0 ] || { echo "Select at least one fork and suite." >&2; exit 1; }; \
+	mkdir "$$tmp/vectors"; \
+	tar -xzf "$(FIXTURE_TARBALL)" -C "$$tmp/vectors" --strip-components=2 "$$@"; \
+	rm -rf "$(FIXTURE_DIR)"; \
+	mv "$$tmp/vectors" "$(FIXTURE_DIR)"; \
+	printf '%s\n' "source=$(FIXTURE_URL)" "version=$(SPEC_TESTS_VERSION)" \
+	  "preset=$(SPEC_TESTS_PRESET)" "sha256=$(SPEC_TESTS_SHA256)" \
+	  "forks=$(SPEC_TESTS_FORKS)" "suites=$(SPEC_TESTS_SUITES)" > "$(FIXTURE_DIR)/.fixture-info"
+	@echo "#### $(SPEC_TESTS_PRESET) $(SPEC_TESTS_VERSION) vectors ready in $(FIXTURE_DIR)"
+
+clean-fixture:
+	rm -rf "$(FIXTURE_DIR)"
+	@echo "#### removed $(FIXTURE_DIR) (cached tarball kept in $(FIXTURE_CACHE))"
+
 # Tests
 #
 # Individual tests:

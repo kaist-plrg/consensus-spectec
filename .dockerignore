@@ -43,3 +43,8 @@ testing_clients/
 # Improve caching
 Dockerfile
 .dockerignore
+
+# Ignore test fixtures
+Converter/OfficialTestSuite/
+Converter/OfficialTestSuite.tmp.*/
+Converter/.fixture-cache/

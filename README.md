@@ -56,6 +56,13 @@ docker build --platform=linux/amd64 -t eth2test:coverage --target coverage .
 
 On an x86_64 host `--platform=linux/amd64` is a no-op and may be omitted.
 
+The Dockerfile intentionally leaves out the official test vectors to keep the
+image smaller. After building, start a container and run `make download-fixture`
+from `/workspace/spectec-core` before testing (see step 4). Downloaded vectors
+and cached archives disappear when the container is removed unless their parent
+directory, `/workspace/spectec-core/Converter`, is stored in a persistent volume
+or bind mount.
+
 ### 2. Building the Project
 
 **Use spectec-core executable:**
@@ -157,7 +164,46 @@ The P4 target (`spectec/targets/p4/p4.ml`) is the working example.
 
 **Note:** This script must be run from the project root directory (where `Makefile` is located).
 
-### 4. Run Converter scripts (eth2spec integration)
+### 4. Fetch the official test vectors
+
+The official consensus test vectors are release assets of
+[ethereum/consensus-specs](https://github.com/ethereum/consensus-specs/releases/tag/v1.6.0),
+not content of this repository. Pull them before running the converter or
+`diff_testing.py`:
+
+```bash
+# Inside the container:
+cd /workspace/spectec-core
+
+make download-fixture
+```
+
+This downloads the pinned `mainnet.tar.gz` (v1.6.0, matching the `consensus-specs`
+submodule) once into
+`Converter/.fixture-cache/` and unpacks the Capella and Deneb `sanity`, `random`
+and `finality` suites into `Converter/OfficialTestSuite/<fork>/<suite>/...`, the
+layout the scripts below expect. Both directories are gitignored.
+
+The SHA-256 digest pinned in the Makefile is checked on every run, including
+cached downloads. Each run extracts the selected suites into a temporary
+directory, then replaces the entire fixture tree after extraction succeeds.
+The release URL, version, preset, checksum and selection are recorded in
+`Converter/OfficialTestSuite/.fixture-info`. Existing directories are never
+treated as proof of a complete extraction; suites outside the new selection
+are removed. A failed download, checksum check or extraction leaves the
+previous fixture tree intact and makes the target fail.
+
+Narrow or widen the selection on the command line. For a different release or
+an unpinned preset, supply its published SHA-256 digest with
+`SPEC_TESTS_SHA256`; update the `consensus-specs` submodule to match the release.
+
+```bash
+make download-fixture SPEC_TESTS_FORKS=capella SPEC_TESTS_SUITES="sanity random"
+make download-fixture SPEC_TESTS_PRESET=minimal      # also has a pinned digest
+make clean-fixture                                  # drop vectors, keep the tarball
+```
+
+### 5. Run Converter scripts (eth2spec integration)
 
 ```bash
 # Inside the container:
@@ -167,7 +213,7 @@ cd /workspace/spectec-core
 python3 Converter/generate_json_test_cases.py   Converter/OfficialTestSuite/capella/sanity/blocks/pyspec_tests   --fork capella  --output-dir eth-tests   -v
 ```
 
-### 5. diff_testing.py
+### 6. diff_testing.py
 
 Performs differential testing across multiple Ethereum 2.0 clients (Lighthouse, Prysm, Nimbus, Teku, Lodestar) by running state transitions and comparing results.
 
@@ -229,7 +275,7 @@ python3 diff_testing.py \
   --cleanup-after-report
 
 python3 diff_testing.py \
-  --test-suite Converter/OfficialTestSuite/capella/finality/pyspec_tests \
+  --test-suite Converter/OfficialTestSuite/capella/finality/finality/pyspec_tests \
   --test-type state-transition \
   --workflow sequential \
   --fork-version capella \

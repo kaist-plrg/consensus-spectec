@@ -16,3 +16,7 @@ editors/vscode/*.vsix
 
 # testing_clients - managed by Dockerfile, not git
 testing_clients/
+
+# consensus-spec-tests vectors - fetched by `make download-fixture`, not git
+Converter/OfficialTestSuite/
+Converter/.fixture-cache/
