@@ -10,13 +10,16 @@ ETH2SpecTec is a SpecTec implementation of the official Ethereum 2.0 Consensus S
 - **Base Image:** Ubuntu 22.04 LTS
 - **Requirements:** Docker installed on your system
 - **Platform:** Linux (x86_64), macOS, or Windows with WSL2
+- **Architecture:** the image is `linux/amd64` only. The Go, Nim and JDK
+  installs all resolve amd64 paths, so on Apple Silicon pass
+  `--platform=linux/amd64` and build under emulation.
 
 The Dockerfile provides a reproducible, isolated environment for building and testing all Ethereum 2.0 client implementations (Lighthouse, Prysm, Nimbus, Teku, Lodestar) with coverage instrumentation support.
 
 **What it does:**
 1. Installs all required dependencies:
    - Rust (stable + nightly with llvm-tools-preview)
-   - Go 1.24.2 (for Prysm)
+   - Go 1.25.1 (for Prysm)
    - Java 21 (OpenJDK for Teku)
    - Node.js 20 (for Lodestar)
    - Nim 1.6.20 (for Nimbus)
@@ -32,18 +35,26 @@ The Dockerfile provides a reproducible, isolated environment for building and te
    - Nimbus (v25.11.1)
    - Teku (25.11.1)
    - Lodestar (v1.36.0 @state-transition)
-4. Applies code modifications for differential testing compatibility (see `modified_code/` directory for client-specific changes)
+4. Applies the client changes needed for differential testing:
+   - `patches/<client>/*.patch`: edits to existing client source, applied
+     with `git apply --3way`. This is the primary mechanism; each patch is a
+     numbered, self-describing commit exported from the client repository.
+   - `modified_code/<client>/`: whole new files copied into the client tree
+     (the spectec subcommands for Lighthouse's `lcli` and Prysm's `pcli`, and
+     the Lodestar driver scripts).
 5. Builds both base binaries and coverage-instrumented binaries
 
 **Build Docker Images:**
 
 ```bash
 # Build base environment (clones and builds original clients)
-docker build -t eth2test:base --target base .
+docker build --platform=linux/amd64 -t eth2test:base --target base .
 
 # Build with coverage binaries (recommended for coverage testing)
-docker build -t eth2test:coverage --target coverage .
+docker build --platform=linux/amd64 -t eth2test:coverage --target coverage .
 ```
+
+On an x86_64 host `--platform=linux/amd64` is a no-op and may be omitted.
 
 ### 2. Building the Project
 
