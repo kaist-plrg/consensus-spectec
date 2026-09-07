@@ -1675,8 +1675,12 @@ application of clause set_priorities_of_tableEntryListIR(TBLC, TBLS*{TBLS <- TBL
 └── condition tableEntryPriorityOptIR matches (_) was not met
 
 >>> Running typechecker test on ../../../../../spectec/testdata/interp/p4/p4c/p4_16_errors/init-entries-error3-bmv2.p4
-CRASHED (counted as failure): ../../../../../spectec/testdata/interp/p4/p4c/p4_16_errors/init-entries-error3-bmv2.p4
-uncaught exception: "Assert_failure lib/lang/xl/num.ml:88:15"
+Expected typechecker failure: ../../../../../spectec/testdata/interp/p4/p4c/p4_16_errors/init-entries-error3-bmv2.p4
+error: invocation of function $set_priorities_of_tableEntryListIR'(TBLC, n, tableEntryIR_t*{tableEntryIR_t <- tableEntryIR_t*}) failed
+application of clause set_priorities_of_tableEntryListIR'(TBLC, n_last, tableEntryIR*{tableEntryIR <- tableEntryIR*}) failed
+└── condition int <: nat was not met
+application of clause set_priorities_of_tableEntryListIR'(TBLC, n_last, tableEntryIR*{tableEntryIR <- tableEntryIR*}) failed
+└── condition tableEntryPriorityOptIR matches (_) was not met
 
 >>> Running typechecker test on ../../../../../spectec/testdata/interp/p4/p4c/p4_16_errors/inro.p4
 Expected typechecker failure: ../../../../../spectec/testdata/interp/p4/p4c/p4_16_errors/inro.p4
