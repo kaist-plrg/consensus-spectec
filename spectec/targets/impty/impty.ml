@@ -25,21 +25,24 @@ let contains_substring s sub =
 
 module Target : Spectec.Target.S = struct
   let name = "impty"
-  let spec_dir = "spectec/specs/impty/base"
+
+  let spec_dir =
+    match Impty_sites.Sites.specs with
+    | dir :: _ -> dir
+    | [] -> "spectec/specs/impty/base"
 
   (* The impty spec is fully self-contained: arithmetic, comparison, boolean,
      and list/map operations are SpecTec primitives or defined in the spec. *)
   let builtins : (string * Builtins.Define.t) list = []
 
-  let handler f =
+  let with_state f =
     let vid_counter = ref 0 in
     let fresh_vid () =
       let v = !vid_counter in
       incr vid_counter;
       v
     in
-    Lang.Il.Value.GlobalVidProvider.set fresh_vid;
-    f ()
+    Lang.Il.Value.GlobalVidProvider.with_provider fresh_vid f
 
   let is_impure_func _ = false
   let is_impure_rel _ = false
@@ -88,8 +91,7 @@ module Typecheck = struct
   let collect = collect_with ~classify:typecheck_classify
 
   let parse_input ~spec:_ { filename; _ } =
-    Parse.parse_file ~handler:Target.handler filename
-    |> Result.map (fun v -> ("Check_prog", [ v ]))
+    Parse.parse_file filename |> Result.map (fun v -> ("Check_prog", [ v ]))
 
   let format_output _ = "Typecheck succeeded"
 end
@@ -101,8 +103,7 @@ module Eval = struct
   let collect = collect_with ~classify:eval_classify
 
   let parse_input ~spec:_ { filename; _ } =
-    Parse.parse_file ~handler:Target.handler filename
-    |> Result.map (fun v -> ("Run_prog", [ v ]))
+    Parse.parse_file filename |> Result.map (fun v -> ("Run_prog", [ v ]))
 
   let format_output = function
     | [] -> "Eval succeeded (no output)"
@@ -129,8 +130,6 @@ end
 
 module Cli : Cli.Target_cli.S = struct
   module Target = Target
-
-  let name = Target.name
 
   let command =
     let target = (module Target : Spectec.Target.S) in

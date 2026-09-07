@@ -1,5 +1,6 @@
 (executable
  (public_name spectec)
+ (package spectec)
  (name main)
  (preprocess
   (pps ppx_let))
@@ -9,15 +10,14 @@
   spectec.cli
   spectec.grammar
   spectec.backend.splice
-  spectec.targets.p4
-  spectec.targets.impty
-  targets
+  digestif.ocaml
   core
   core_unix
   core_unix.command_unix))
 
 (executable
  (public_name spectecx-lsp)
+ (package spectec)
  (name lsp_main)
  (modules lsp_main)
  (libraries spectec.lsp))

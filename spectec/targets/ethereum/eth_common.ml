@@ -2,8 +2,12 @@
 
 open Lang
 
-(* Paths are relative to the repo root (where the binary runs from) *)
-let spec_dir = "spec/spec_capella"
+(* Source-tree fallback for builds without an installed target package. *)
+let spec_dir =
+  match Ethereum_sites.Sites.capella_specs with
+  | dir :: _ -> dir
+  | [] -> "spec/spec_capella"
+
 let test_base_dir = "eth-tests"
 
 (* Helper functions for file discovery *)
@@ -16,18 +20,17 @@ module Target : Runner.Target.S = struct
   let spec_dir = spec_dir
   let builtins = Builtin_eth.builtins
 
-  (* Monotonic across handler calls so vids never repeat in a process. The
+  (* Monotonic across target runs so vids never repeat in a process. The
      provenance side table is keyed by vid, so a repeat would alias entries. *)
   let vid_counter = ref 0
 
-  let handler f =
+  let with_state f =
     let fresh_vid () =
       let vid = !vid_counter in
       incr vid_counter;
       vid
     in
-    Lang.Il.Value.GlobalVidProvider.set fresh_vid;
-    f ()
+    Lang.Il.Value.GlobalVidProvider.with_provider fresh_vid f
 
   let is_impure_func _ = false
   let is_impure_rel _ = false

@@ -3,24 +3,27 @@ NAME = spectec-core
 SWITCH ?= eth-spectec
 
 OPAM_EXEC = opam exec --switch=$(SWITCH) --
-DUNE = cd spectec && $(OPAM_EXEC) dune
+DUNE = $(OPAM_EXEC) dune
 
 # Compile & Format
 
 .PHONY: exe lsp check fmt fmt-check promote clean
 
-EXESPEC = spectec/_build/default/bin/main.exe
-EXELSP = spectec/_build/default/bin/lsp_main.exe
+EXELSP = _build/default/spectec/bin/lsp_main.exe
 
 exe:
 	rm -f ./$(NAME)
-	$(DUNE) build bin/main.exe --profile=release
+	$(DUNE) build --promote-install-files=false @install --profile=release
 	@echo
-	ln -f $(EXESPEC) ./$(NAME)
+	@printf '%s\n' \
+	  '#!/bin/sh' \
+	  'exec opam exec --switch=$(SWITCH) -- dune exec --no-print-directory --root "$(abspath .)" --no-build spectec -- "$$@"' \
+	  > ./$(NAME)
+	chmod +x ./$(NAME)
 
 lsp:
 	rm -f ./$(NAME)-lsp
-	$(DUNE) build bin/lsp_main.exe --profile=release
+	$(DUNE) build spectec/bin/lsp_main.exe --profile=release
 	@echo
 	ln -f $(EXELSP) ./$(NAME)-lsp
 
@@ -89,6 +92,7 @@ vsix:
 #   make test-roundtrip-il - EL<->IL premise roundtrip test (impty base + closure, p4)
 #   make test-roundtrip-el - EL pretty-printer roundtrip test (mini-spec, p4-old, p4, impty)
 #   make test-parsegen   - Grammar-driven parser differential test (impty expressions + programs)
+#   make test-package    - Package ownership and plugin discovery tests
 #   make test-il-pos     - IL interpreter positive tests (slow)
 #   make test-il-neg     - IL interpreter negative tests
 #   make test-sl-pos     - SL interpreter positive tests (slow)
@@ -100,15 +104,16 @@ vsix:
 #   make test-il-pos-old / test-il-neg-old / test-sl-pos-old / test-sl-neg-old
 #   make test-pl-pos-old / test-pl-neg-old
 #
-# Per-case interpreter negative corpus (impty IL, one cram test per case):
-#   make test-interp-neg - Per-case impty IL negative tests
+# Relation and per-case interpreter tests:
+#   make test-interp-relation - Relation tests across IL/SL/PL
+#   make test-interp-neg      - Per-case impty IL negative tests
 #
-# CLI snapshot tests (impty CLI + instrumentation, cram against hello.imp):
-#   make test-cli        - impty CLI command and instrumentation snapshots
+# CLI snapshot tests (target commands and instrumentation):
+#   make test-cli        - target CLI and instrumentation snapshots
 #   make test-lsp        - LSP diagnostics snapshot (Check.run -> LSP JSON)
 #
 # Grouped tests:
-#   make test-quick      - Fast tests, including BytesV and instrumentation
+#   make test-quick      - Fast tests, including local and upstream coverage
 #   make test-dep        - Dependency mutation-report golden (slow, opt-in)
 #   make test-il         - IL tests for new p4 (pos + neg)
 #   make test-sl         - SL tests for new p4 (pos + neg)
@@ -124,9 +129,14 @@ vsix:
 #   make test-impty-<v>                              - per-variant il+sl
 #   make test-impty                                  - all impty tests
 #
+# Mini-ML interpreter tests:
+#   make test-miniml-il-pos / -il-neg / -sl-pos / -sl-neg / -pl-pos / -pl-neg
+#   make test-miniml-il / -sl / -pl                  - per-mode pos+neg
+#   make test-miniml                                  - all Mini-ML tests
+#
 #   make test            - quick + new p4 il/sl/pl
 
-.PHONY: test test-quick test-elab test-elab-neg test-interp-neg test-cli test-lsp test-struct test-annotate test-roundtrip-il test-roundtrip-el test-parsegen test-bytesv test-instrumentation test-testgen-checkpoint test-dep
+.PHONY: test test-quick test-elab test-elab-neg test-interp-relation test-interp-neg test-cli test-lsp test-struct test-annotate test-roundtrip-il test-roundtrip-el test-parsegen test-package test-bytesv test-instrumentation test-testgen-checkpoint test-dep
 .PHONY: test-il test-il-pos test-il-neg
 .PHONY: test-sl test-sl-pos test-sl-neg
 .PHONY: test-pl test-pl-pos test-pl-neg
@@ -141,47 +151,55 @@ vsix:
 .PHONY: test-impty-base-pl-pos test-impty-base-pl-neg
 .PHONY: test-impty-closure-il-pos test-impty-closure-il-neg
 .PHONY: test-impty-closure-sl-pos test-impty-closure-sl-neg
+.PHONY: test-miniml test-miniml-il test-miniml-sl test-miniml-pl
+.PHONY: test-miniml-il-pos test-miniml-il-neg
+.PHONY: test-miniml-sl-pos test-miniml-sl-neg
+.PHONY: test-miniml-pl-pos test-miniml-pl-neg
 .PHONY: promote
 
 test-elab:
 	@echo "#### Running elaboration test"
-	@$(DUNE) build @test/elab/runtest --profile=release && echo OK
+	@$(DUNE) build @spectec/test/elab/runtest --profile=release && echo OK
 
 test-roundtrip-el:
 	@echo "#### Running EL pretty-printer roundtrip test"
-	@$(DUNE) build @test/roundtrip/el/runtest --profile=release && echo OK
+	@$(DUNE) build @spectec/test/roundtrip/el/runtest --profile=release && echo OK
 
 test-elab-neg:
 	@echo "#### Running elaboration negative tests"
-	@$(DUNE) build @test/elab/neg/runtest --profile=release && echo OK
+	@$(DUNE) build @spectec/test/elab/neg/runtest --profile=release && echo OK
+
+test-interp-relation:
+	@echo "#### Running interpreter relation tests"
+	@$(DUNE) build @spectec/test/interp/relation/runtest --profile=release && echo OK
 
 test-interp-neg:
 	@echo "#### Running interpreter negative tests (per-case impty IL corpus)"
-	@$(DUNE) build @test/interp/neg/runtest --profile=release && echo OK
+	@$(DUNE) build @spectec/test/interp/neg/runtest --profile=release && echo OK
 
 test-cli:
-	@echo "#### Running CLI snapshot tests (impty CLI + instrumentation)"
-	@$(DUNE) build @test/cli/runtest --profile=release && echo OK
+	@echo "#### Running CLI snapshot tests"
+	@$(DUNE) build @spectec/test/cli/runtest --profile=release && echo OK
 
 test-lsp:
 	@echo "#### Running LSP diagnostics test"
-	@$(DUNE) build @test/lsp/runtest --profile=release && echo OK
+	@$(DUNE) build @spectec/test/lsp/runtest --profile=release && echo OK
 
 test-struct:
 	@echo "#### Running structuring test"
-	@$(DUNE) build @test/struct/runtest --profile=release && echo OK
+	@$(DUNE) build @spectec/test/struct/runtest --profile=release && echo OK
 
 test-bytesv:
 	@echo "#### Running BytesV hex/width test"
-	@$(DUNE) build @test/bytesv/runtest --profile=release && echo OK
+	@$(DUNE) build @spectec/test/bytesv/runtest --profile=release && echo OK
 
 test-instrumentation:
 	@echo "#### Running instrumentation tests"
-	@$(DUNE) build @test/instrumentation/runtest --profile=release && echo OK
+	@$(DUNE) build @spectec/test/instrumentation/runtest --profile=release && echo OK
 
 test-testgen-checkpoint:
 	@echo "#### Running testgen checkpoint compatibility test"
-	@$(DUNE) build @test/testgen_checkpoint/runtest --profile=release && echo OK
+	@$(DUNE) build @spectec/test/testgen_checkpoint/runtest --profile=release && echo OK
 
 test-dep: exe
 	@echo "#### Running dependency mutation-report golden (attestation_0)"
@@ -189,23 +207,27 @@ test-dep: exe
 
 test-annotate:
 	@echo "#### Running annotate test"
-	@$(DUNE) build @test/annotate/runtest --profile=release && echo OK
+	@$(DUNE) build @spectec/test/annotate/runtest --profile=release && echo OK
 
 test-roundtrip-il:
 	@echo "#### Running EL<->IL premise roundtrip test"
-	@$(DUNE) build @test/roundtrip/il/runtest --profile=release && echo OK
+	@$(DUNE) build @spectec/test/roundtrip/il/runtest --profile=release && echo OK
 
 test-parsegen:
 	@echo "#### Running grammar-driven parser differential test"
-	@$(DUNE) build @test/parsegen/runtest --profile=release && echo OK
+	@$(DUNE) build @spectec/test/parsegen/runtest --profile=release && echo OK
+
+test-package:
+	@echo "#### Running package ownership and plugin discovery tests"
+	@$(DUNE) build --promote-install-files=false @spectec/test/package/runtest --profile=release && echo OK
 
 # $(1): target prefix (p4 / p4-old)
 # $(2): il / sl
 # $(3): pos / neg
 define run_interp_test
 	@echo "#### Running $(2) interpreter $(3) tests ($(1))"
-	@$(DUNE) build @test/interp/$(1)-$(2)-$(3) --profile=release
-	@cat spectec/_build/default/test/interp/$(1)-$(2)-$(3).err >&2
+	@$(DUNE) build @spectec/test/interp/$(1)-$(2)-$(3) --profile=release
+	@cat _build/default/spectec/test/interp/$(1)-$(2)-$(3).err >&2
 	@echo OK
 endef
 
@@ -245,7 +267,7 @@ test-pl-pos-old:
 test-pl-neg-old:
 	$(call run_interp_test,p4-old,pl,neg)
 
-test-quick: test-elab test-elab-neg test-interp-neg test-cli test-lsp test-struct test-annotate test-roundtrip-il test-roundtrip-el test-impty test-parsegen test-bytesv test-instrumentation test-testgen-checkpoint
+test-quick: test-elab test-elab-neg test-interp-relation test-interp-neg test-cli test-lsp test-struct test-annotate test-roundtrip-il test-roundtrip-el test-impty test-miniml test-parsegen test-package test-bytesv test-instrumentation test-testgen-checkpoint
 	@echo "#### Quick tests passed"
 
 test-il: test-il-pos test-il-neg
@@ -332,5 +354,35 @@ test-impty-closure: test-impty-closure-il test-impty-closure-sl test-impty-closu
 test-impty: test-impty-base test-impty-closure
 	@echo "#### impty interpreter tests passed"
 
+test-miniml-il-pos:
+	$(call run_interp_test,miniml,il,pos)
+
+test-miniml-il-neg:
+	$(call run_interp_test,miniml,il,neg)
+
+test-miniml-sl-pos:
+	$(call run_interp_test,miniml,sl,pos)
+
+test-miniml-sl-neg:
+	$(call run_interp_test,miniml,sl,neg)
+
+test-miniml-pl-pos:
+	$(call run_interp_test,miniml,pl,pos)
+
+test-miniml-pl-neg:
+	$(call run_interp_test,miniml,pl,neg)
+
+test-miniml-il: test-miniml-il-pos test-miniml-il-neg
+	@echo "#### IL (Mini-ML) tests passed"
+
+test-miniml-sl: test-miniml-sl-pos test-miniml-sl-neg
+	@echo "#### SL (Mini-ML) tests passed"
+
+test-miniml-pl: test-miniml-pl-pos test-miniml-pl-neg
+	@echo "#### PL (Mini-ML) tests passed"
+
+test-miniml: test-miniml-il test-miniml-sl test-miniml-pl
+	@echo "#### Mini-ML interpreter tests passed"
+
 test: test-quick test-il test-sl test-pl
-	@echo "#### All quick tests + p4 + impty interpreter tests passed"
+	@echo "#### All quick tests + p4 + impty + Mini-ML interpreter tests passed"

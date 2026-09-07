@@ -1,0 +1,3 @@
+(cram
+ (package spectec)
+ (deps %{bin:spectec} ../../../../spectec.install))

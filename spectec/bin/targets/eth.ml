@@ -1,4 +1,5 @@
 open Targets_eth.Eth
+module Target = Targets_eth.Eth.Target
 
 module State_transition_cli : Cli.Task_cli.S = struct
   module Task = StateTransition

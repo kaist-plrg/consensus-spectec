@@ -1,5 +1,7 @@
 open Spectec
 
+(* Native target plugins resolve virtual-library implementations from the host. *)
+let () = ignore Digestif.SHA256.empty
 let version = "0.1"
 let ( let* ) = Result.bind
 
@@ -146,20 +148,7 @@ let splice_command =
       ~doc:"FILE write the unused-keys report to this path"
   and color = Cli.Cli_args.Output.color_flag in
   fun () ->
-    Cli.Error_handling.guard ~color ~on_ok:(fun (spec_el, spec_pl) ->
-        let inputs = collect_files ~exts:[ ".adoc" ] input_dir in
-        let pairs =
-          List.map
-            (fun rel_path ->
-              ( Filename.concat input_dir rel_path,
-                Filename.concat output_dir rel_path ))
-            inputs
-        in
-        let report =
-          Splice.Driver.run ~spec_el ~spec_pl
-            ~source_entries:Splice.Registry.source
-            ~prose_entries:Splice.Registry.prose ~filenames:pairs
-        in
+    Cli.Error_handling.guard ~color ~on_ok:(fun report ->
         match missing_path with
         | Some path ->
             let oc = open_out path in
@@ -175,22 +164,31 @@ let splice_command =
     let henv = henv_of_el_spec spec in
     let henv = henv_with_il_spec henv spec_il in
     let spec_pl = annotate ~henv spec_sl |> shorten in
-    Ok (spec, spec_pl)
+    let inputs = collect_files ~exts:[ ".adoc" ] input_dir in
+    let pairs =
+      List.map
+        (fun rel_path ->
+          ( Filename.concat input_dir rel_path,
+            Filename.concat output_dir rel_path ))
+        inputs
+    in
+    let report =
+      Splice.Driver.run ~spec_el:spec ~spec_pl
+        ~source_entries:Splice.Registry.source
+        ~prose_entries:Splice.Registry.prose ~filenames:pairs
+    in
+    Ok report
 
 let command =
-  let module P4 = Targets_p4.P4.Cli in
-  let module Impty = Targets_impty.Impty.Cli in
   Core.Command.group ~summary:"SpecTec command line tools"
-    [
-      ("unparse", unparse_command);
-      ("elab", elab_command);
-      ("grammar", grammar_command);
-      ("struct", structure_command);
-      ("annotate", annotate_command);
-      ("splice", splice_command);
-      (P4.name, P4.command);
-      (Impty.name, Impty.command);
-      (Targets.Eth.name, Targets.Eth.command);
-    ]
+    ([
+       ("unparse", unparse_command);
+       ("elab", elab_command);
+       ("grammar", grammar_command);
+       ("struct", structure_command);
+       ("annotate", annotate_command);
+       ("splice", splice_command);
+     ]
+    @ Cli.Plugin_loader.commands ())
 
 let () = Command_unix.run ~version command

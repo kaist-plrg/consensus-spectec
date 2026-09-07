@@ -1,5 +1,8 @@
 (library
  (name targets)
+ (public_name spectec.targets.ethereum.cli)
+ (modules
+  (:standard \ register))
  (libraries
   core
   spectec
@@ -9,3 +12,16 @@
   spectec.targets.ethereum)
  (preprocess
   (pps ppx_let)))
+
+(library
+ (name register_ethereum)
+ (public_name spectec.targets.ethereum.plugin)
+ (modules register)
+ (libraries spectec.cli spectec.targets.ethereum.cli))
+
+(plugin
+ (name ethereum)
+ (package spectec)
+ (libraries spectec.targets.ethereum.plugin)
+ (site
+  (spectec target_plugins)))

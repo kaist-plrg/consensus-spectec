@@ -9,4 +9,4 @@
   spectec.interp.builtins
   bls12-381
   bls12-381-signature
-  digestif))
+  digestif.ocaml))

@@ -1,6 +1,34 @@
 # ETH2SpecTec
 
-ETH2SpecTec is a SpecTec implementation of the official Ethereum 2.0 Consensus Spec. It extends [SpecTec-Core](https://github.com/kaist-plrg/spectec-core) with support for large byte values, and includes python scripts for conversion as well as a diff-testing framework for Ethereum 2.0 clients.
+ETH2SpecTec is a SpecTec implementation of the official Ethereum 2.0 Consensus Spec. It extends [SpecTecX](https://github.com/kaist-plrg/spectecx) with support for large byte values, and includes Python scripts for conversion as well as a differential-testing framework for Ethereum 2.0 clients.
+
+## Installation
+
+Create an OCaml switch:
+
+```bash
+opam switch create eth-spectec 5.1.1
+eval $(opam env)
+```
+
+Install the forked SpecTec package and any optional upstream target packages from the checkout:
+
+```bash
+opam install ./spectec.opam
+opam install ./spectec-target-p4.opam
+opam install ./spectec-target-miniml.opam
+opam install ./spectec-target-impty.opam
+```
+
+The `spectec` package includes the Ethereum command plugin and the Capella and Deneb specifications. Each optional target package installs its own command plugin and default specification. The `spectec` executable discovers installed target plugins at startup.
+
+For development, install every package's pinned dependency versions without installing the packages themselves:
+
+```bash
+opam install . --deps-only --locked
+```
+
+The lockfile (`spectec.opam.locked`) records the exact transitive dependency set CI uses. The unlocked constraints live in `dune-project` and surface in the generated opam files.
 
 ## Testing Scripts
 
@@ -78,15 +106,18 @@ Repository layout:
 spectec/lib/lang/        ASTs for el / il / sl / xl
 spectec/lib/pass/        parse, elaborate (EL→IL), structure (IL→SL)
 spectec/lib/interp/      IL and SL interpreters, builtins, target interface
-spectec/lib/cli/         reusable CLI machinery (Target_cli, Task_cli, Subcommand)
+spectec/lib/cli/         reusable CLI machinery and target plugin loading
 spectec/lib/spectec.ml   public facade (pipeline + eval + Error/Task/Target)
-spectec/targets/<t>/     per-target code, including each target's CLI module
-spectec/bin/             top-level entrypoint that registers each target's CLI
+spectec/targets/<t>/     per-target code, CLI modules, and plugin registration
+spectec/bin/             target-independent command-line entrypoint
 spectec/test/            diff-based test drivers
 spectec/testdata/        test inputs
 ```
 
 ### Commands
+
+The P4, Mini-ML, and Impty examples require the corresponding target package. Ethereum support is included in this repository's `spectec` package.
+
 ```bash
 # print out the IL representation of a SpecTec spec
 ./spectec-core elab spec/*.spectec
@@ -141,9 +172,11 @@ Targets live in `spectec/targets/<name>/`, separate from `spectec/lib/`. The reu
 2. Add target-specific built-ins under `spectec/targets/<name>/builtins/`.
 3. For each task, implement a `Cli.Task_cli.S` module that parses command-line flags into the task's input.
 4. Compose those task-CLIs into a `Cli : Cli.Target_cli.S` module using `Cli.Subcommand` constructors (`make_task`, `make_parse`, `make_batch`, `make_checkpoint`).
-5. Register the target in `spectec/bin/main.ml` by adding `(Your_target.Cli.name, Your_target.Cli.command)` to the top-level command group.
+5. Add a plugin entry module that calls `Cli.Target_registry.register (module Your_target.Cli)` when loaded.
+6. Declare a target package in `dune-project`, including any named installation directories for packaged specifications.
+7. Add a Dune `plugin` stanza that installs the entry module in the core package's `target_plugins` directory. Use `generate_sites_module` when target code needs to locate packaged specifications.
 
-The P4 target (`spectec/targets/p4/p4.ml`) is the working example.
+The Ethereum, P4, Mini-ML, and Impty targets are packaged independently, so adding a target does not require changing `spectec/bin/main.ml`.
 
 **Note:** This script must be run from the project root directory (where `Makefile` is located).
 

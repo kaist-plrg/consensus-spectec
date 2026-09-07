@@ -1,0 +1,7 @@
+(install
+ (package spectec)
+ (section
+  (site
+   (spectec capella_specs)))
+ (files
+  (glob_files *.spectec)))

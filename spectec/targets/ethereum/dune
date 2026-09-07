@@ -1,4 +1,8 @@
 (library
  (name targets_eth)
  (public_name spectec.targets.ethereum)
- (libraries spectec.runner spectec.interp.builtins.eth yojson))
+ (libraries spectec.runner spectec.interp.builtins.eth dune-site yojson))
+
+(generate_sites_module
+ (module ethereum_sites)
+ (sites spectec))

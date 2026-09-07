@@ -1,5 +1,11 @@
 (cram
  (deps
   %{bin:spectec}
+  (package spectec)
+  (package spectec-target-impty)
+  (package spectec-target-miniml)
+  (package spectec-target-p4)
   (source_tree ../../specs/impty)
-  (source_tree ../../testdata/interp/impty)))
+  (source_tree ../../specs/miniml)
+  (source_tree ../../testdata/interp/impty)
+  (source_tree ../../testdata/interp/miniml)))
