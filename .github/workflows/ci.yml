@@ -3,7 +3,9 @@ name: CI
 on:
   pull_request:
   push:
-    branches: [main]
+    branches:
+      - main
+      - "sync/**"
 
 permissions:
   contents: read
@@ -48,6 +50,10 @@ jobs:
       - name: Quick tests
         run: make test-quick
 
+      - name: Dependency report regression
+        if: github.event_name == 'push' && matrix.os == 'ubuntu-latest'
+        run: make test-dep
+
       - name: Full tests
-        if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+        if: github.event_name == 'push'
         run: make test
