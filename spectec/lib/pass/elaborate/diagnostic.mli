@@ -67,6 +67,9 @@ type code =
   (* premise shape *)
   | Negated_premise_takes_inputs
   | Iter_only_rule_or_if_premise
+  | Fold_over_non_list
+  | Fold_var_or_else_premise
+  | Fold_accumulator_dimension_mismatch
   (* relation input hints *)
   | Relation_input_hint_empty
   | Relation_input_hint_duplicate_index

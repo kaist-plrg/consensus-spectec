@@ -127,6 +127,15 @@ and string_of_iterexp (iter, _) = Il.Print.string_of_iter iter
 and string_of_iterexps iterexps =
   iterexps |> List.map string_of_iterexp |> String.concat ""
 
+and string_of_accumulators accumulators =
+  accumulators
+  |> List.map (fun { Il.input; output; init; final } ->
+         Format.asprintf "%s -> %s ... %s -> %s" (string_of_exp init)
+           (Il.Print.string_of_var input)
+           (Il.Print.string_of_var output)
+           (Il.Print.string_of_var final))
+  |> String.concat ", "
+
 (* Patterns *)
 
 and string_of_pattern pattern = Il.Print.string_of_pattern pattern
@@ -287,6 +296,13 @@ and string_of_instr ?(level = 0) ?(index = 0) instr =
         (string_of_exp exp_r)
         (string_of_iterexps iterexps)
         (fst (string_of_instrs_from ~level ~index:(index + 1) block))
+  | FoldI { fold_iterexp; outer_iterexps; accumulators; body; block } ->
+      Format.asprintf "%sFold%s%s with %s\n\n%s\n\n%s" order
+        (string_of_iterexp fold_iterexp)
+        (string_of_iterexps outer_iterexps)
+        (string_of_accumulators accumulators)
+        (string_of_instrs ~level:(level + 1) body)
+        (fst (string_of_instrs_from ~level ~index:(index + 1) block))
   | ResultI [] -> Format.asprintf "%sThe relation holds" order
   | ResultI exps ->
       Format.asprintf "%sResult in %s" order (string_of_exps ", " exps)
@@ -313,6 +329,15 @@ and string_of_instr_with_next ?(level = 0) ~(index : int) instr =
       ( Format.asprintf "%s(%s: %s)%s\n\n%s" order (string_of_relid relid)
           (string_of_notexp notexp)
           (string_of_iterexps iterexps)
+          block,
+        next )
+  | FoldI { fold_iterexp; outer_iterexps; accumulators; body; block } ->
+      let block, next = string_of_instrs_from ~level ~index:(index + 1) block in
+      ( Format.asprintf "%sFold%s%s with %s\n\n%s\n\n%s" order
+          (string_of_iterexp fold_iterexp)
+          (string_of_iterexps outer_iterexps)
+          (string_of_accumulators accumulators)
+          (string_of_instrs ~level:(level + 1) body)
           block,
         next )
   | DebugI (exp, instr_body) ->

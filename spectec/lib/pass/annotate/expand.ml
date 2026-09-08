@@ -496,6 +496,12 @@ and expand_sub_blocks relmodes (ids_used : IdSet.t) (instr : instr) :
   | LetI (exp_l, exp_r, iterexps, block) ->
       let ids_used, block = expand_block relmodes ids_used block in
       (ids_used, rebuild (LetI (exp_l, exp_r, iterexps, block)))
+  | FoldI { fold_iterexp; outer_iterexps; accumulators; body; block } ->
+      let ids_used, body = expand_block relmodes ids_used body in
+      let ids_used, block = expand_block relmodes ids_used block in
+      ( ids_used,
+        rebuild
+          (FoldI { fold_iterexp; outer_iterexps; accumulators; body; block }) )
   | DebugI (exp, instr_inner) ->
       let ids_used, instr_inner = expand_instr relmodes ids_used instr_inner in
       (ids_used, rebuild (DebugI (exp, instr_inner)))

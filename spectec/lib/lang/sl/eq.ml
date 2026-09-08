@@ -51,6 +51,23 @@ let eq_iterexp (iterexp_a : iterexp) (iterexp_b : iterexp) : bool =
 let eq_iterexps (iterexps_a : iterexp list) (iterexps_b : iterexp list) : bool =
   Il.Eq.eq_iterexps iterexps_a iterexps_b
 
+let eq_accumulator (acc_a : accumulator) (acc_b : accumulator) : bool =
+  let Il.{ input = input_a; output = output_a; init = init_a; final = final_a }
+      =
+    acc_a
+  in
+  let Il.{ input = input_b; output = output_b; init = init_b; final = final_b }
+      =
+    acc_b
+  in
+  eq_var input_a input_b && eq_var output_a output_b && eq_exp init_a init_b
+  && eq_var final_a final_b
+
+let eq_accumulators (accumulators_a : accumulator list)
+    (accumulators_b : accumulator list) : bool =
+  List.length accumulators_a = List.length accumulators_b
+  && List.for_all2 eq_accumulator accumulators_a accumulators_b
+
 (* Relation calls *)
 
 let eq_relcall (call_a : relcall) (call_b : relcall) : bool =
@@ -177,6 +194,26 @@ and eq_instr (instr_a : instr) (instr_b : instr) : bool =
       eq_exp exp_l_a exp_l_b && eq_exp exp_r_a exp_r_b
       && eq_iterexps iterexps_a iterexps_b
       && eq_instrs block_a block_b
+  | ( FoldI
+        {
+          fold_iterexp = iterexp_a;
+          outer_iterexps = iterexps_a;
+          accumulators = accumulators_a;
+          body = body_a;
+          block = block_a;
+        },
+      FoldI
+        {
+          fold_iterexp = iterexp_b;
+          outer_iterexps = iterexps_b;
+          accumulators = accumulators_b;
+          body = body_b;
+          block = block_b;
+        } ) ->
+      eq_iterexp iterexp_a iterexp_b
+      && eq_iterexps iterexps_a iterexps_b
+      && eq_accumulators accumulators_a accumulators_b
+      && eq_instrs body_a body_b && eq_instrs block_a block_b
   | ResultI exps_a, ResultI exps_b -> eq_exps exps_a exps_b
   | ReturnI exp_a, ReturnI exp_b -> eq_exp exp_a exp_b
   | DebugI (exp_a, instr_a), DebugI (exp_b, instr_b) ->

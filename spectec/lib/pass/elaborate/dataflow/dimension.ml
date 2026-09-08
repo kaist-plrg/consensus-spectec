@@ -300,6 +300,107 @@ and annotate_prem (binds : VEnv.t) (bounds : VEnv.t) (prem : prem) :
               occurs itervars
           in
           (occurs, prem))
+  | FoldPr (_, (_, _ :: _), _) -> assert false
+  | FoldPr (prem, (iter, []), accumulators) ->
+      let add_accumulator_bounds bounds accumulators =
+        List.fold_left
+          (fun bounds { input; output; _ } ->
+            bounds
+            |> VEnv.add input.varid (input.typ, input.iters)
+            |> VEnv.add output.varid (output.typ, output.iters))
+          bounds accumulators
+      in
+      let accumulator_local_ids =
+        List.concat_map
+          (fun { input; output; _ } -> [ input.varid; output.varid ])
+          accumulators
+        |> IdSet.of_list
+      in
+      let accumulator_bounds = add_accumulator_bounds bounds accumulators in
+      (* Accumulator-local variables and inner iterations cannot determine the
+         enclosing fold's iteration dimension. *)
+      let rec collect_direct_occurs bounds (prem : prem) =
+        match prem.it with
+        | IterPr (prem, _) -> collect_direct_occurs bounds prem
+        | FoldPr (prem, _, nested_accumulators) ->
+            let nested_bounds =
+              add_accumulator_bounds bounds nested_accumulators
+            in
+            let occurs = collect_direct_occurs nested_bounds prem in
+            List.fold_left
+              (fun occurs { init; final; _ } ->
+                let occurs_init, _ = annotate_exp bounds init in
+                union occurs occurs_init
+                |> VEnv.add final.varid (final.typ, final.iters))
+              occurs nested_accumulators
+        | _ -> fst (annotate_prem binds bounds prem)
+      in
+      let direct_occurs =
+        collect_direct_occurs accumulator_bounds prem
+        |> VEnv.filter (fun id _ ->
+               (not (IdSet.mem id accumulator_local_ids))
+               && VEnv.mem id accumulator_bounds
+               && not (VEnv.mem id binds))
+      in
+      let candidate_itervars =
+        collect_itervars accumulator_bounds direct_occurs iter
+      in
+      let remove_outer_iter (typ, iters) =
+        match List.rev iters with
+        | [] -> (typ, [])
+        | _ :: rev -> (typ, List.rev rev)
+      in
+      let body_bounds =
+        List.fold_left
+          (fun bounds { varid; _ } ->
+            let typ = VEnv.find varid bounds in
+            VEnv.add varid (remove_outer_iter typ) bounds)
+          accumulator_bounds candidate_itervars
+      in
+      let body_binds =
+        List.fold_left
+          (fun binds { output; _ } ->
+            VEnv.add output.varid (output.typ, output.iters) binds)
+          binds accumulators
+      in
+      let occurs, prem = annotate_prem body_binds body_bounds prem in
+      let fold_occurs =
+        VEnv.filter
+          (fun id _ -> not (IdSet.mem id accumulator_local_ids))
+          occurs
+      in
+      let itervars = collect_itervars accumulator_bounds fold_occurs iter in
+      let has_prebound_itervar =
+        List.exists (fun { varid; _ } -> not (VEnv.mem varid binds)) itervars
+      in
+      if not has_prebound_itervar then
+        error at "a fold must iterate over at least one list"
+          ~code:Dataflow_empty_iter_premise;
+      let endpoint_occurrences, accumulators =
+        List.fold_left_map
+          (fun endpoint_occurrences ({ init; final; _ } as accumulator) ->
+            let occurs_init, init = annotate_exp bounds init in
+            let endpoint_occurrences =
+              union endpoint_occurrences occurs_init
+              |> VEnv.add final.varid (final.typ, final.iters)
+            in
+            (endpoint_occurrences, { accumulator with init }))
+          empty accumulators
+      in
+      let prem = FoldPr (prem, (iter, itervars), accumulators) $ at in
+      let occurs =
+        VEnv.bindings occurs
+        |> List.filter (fun (id, _) -> not (IdSet.mem id accumulator_local_ids))
+        |> List.fold_left (fun occurs (id, typ) -> VEnv.add id typ occurs) empty
+      in
+      let occurs =
+        List.fold_left
+          (fun occurs { varid; typ; iters } ->
+            VEnv.add varid (typ, iters @ [ iter ]) occurs)
+          occurs itervars
+      in
+      let occurs = union occurs endpoint_occurrences in
+      (occurs, prem)
   | DebugPr exp ->
       let occurs, exp = annotate_exp bounds exp in
       let prem = DebugPr exp $ at in

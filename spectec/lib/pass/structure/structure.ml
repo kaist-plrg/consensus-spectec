@@ -43,6 +43,19 @@ and struct_prems' (prems_internalized : (prem * iterexp list) list)
       | LetPr (exp_l, exp_r) ->
           let instr_t = struct_prems' prems_internalized_t instr_ret in
           Ol.Ast.LetI (exp_l, exp_r, iterexps_h, [ instr_t ]) $ at
+      | FoldPr (prem_body, fold_iterexp, accumulators) ->
+          (* `ResultI []` ends one iteration without ending the enclosing rule. *)
+          let instr_t = struct_prems' prems_internalized_t instr_ret in
+          let body = [ struct_prems [ prem_body ] (Ol.Ast.ResultI [] $ at) ] in
+          Ol.Ast.FoldI
+            {
+              fold_iterexp;
+              outer_iterexps = iterexps_h;
+              accumulators;
+              body;
+              block = [ instr_t ];
+            }
+          $ at
       | DebugPr exp ->
           let instr_t = struct_prems' prems_internalized_t instr_ret in
           Ol.Ast.DebugI (exp, instr_t) $ at

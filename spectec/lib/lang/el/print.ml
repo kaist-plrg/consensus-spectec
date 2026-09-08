@@ -229,6 +229,27 @@ and string_of_prem prem =
   | IterPr (({ it = IterPr _; _ } as prem), iter) ->
       string_of_prem prem ^ string_of_iter iter
   | IterPr (prem, iter) -> "(" ^ string_of_prem prem ^ ")" ^ string_of_iter iter
+  | FoldPr (prem, iter, accumulators) ->
+      "(" ^ string_of_prem prem ^ ")" ^ string_of_iter iter ^ "{ "
+      ^ String.concat ", "
+          (List.map
+             (fun {
+                    init;
+                    input;
+                    input_iters;
+                    output;
+                    output_iters;
+                    final;
+                    final_iters;
+                  } ->
+               string_of_exp init ^ " -> " ^ string_of_varid input
+               ^ String.concat "" (List.map string_of_iter input_iters)
+               ^ " ... " ^ string_of_varid output
+               ^ String.concat "" (List.map string_of_iter output_iters)
+               ^ " -> " ^ string_of_varid final
+               ^ String.concat "" (List.map string_of_iter final_iters))
+             accumulators)
+      ^ " }"
   | DebugPr exp -> "debug " ^ string_of_exp exp
 
 and string_of_prems prems =

@@ -933,6 +933,8 @@ and eval_instr (ctx : Ctx.t) (instr : instr) : Ctx.t * Sign.t =
   | CaseI (exp, cases, _phantom_opt) -> eval_case_instr ctx exp cases
   | OtherwiseI instr -> eval_instr ctx instr
   | LetI (exp_l, exp_r, iterexps) -> eval_let_instr ctx exp_l exp_r iterexps
+  | FoldI { fold_iterexp; outer_iterexps; accumulators; body } ->
+      eval_fold_instr ctx fold_iterexp outer_iterexps accumulators body
   | ResultI exps -> eval_result_instr ctx exps
   | ReturnI exp -> eval_return_instr ctx exp
   | DebugI exp -> eval_debug_instr ctx exp
@@ -1151,6 +1153,171 @@ and eval_rel_assert_instr (ctx : Ctx.t) (id : id) (notexp : notexp)
     eval_rel_assert_cond_iter ctx id notexp iterexps
   in
   if cond then eval_instrs ctx Cont block else (ctx, Cont)
+
+and eval_fold_instr (ctx : Ctx.t) (fold_iterexp : iterexp)
+    (outer_iterexps : iterexp list) (accumulators : accumulator list)
+    (body : instr list) : Ctx.t * Sign.t =
+  let eval_fold ctx =
+    let _iter, vars = fold_iterexp in
+    let ctx, accumulator_values =
+      List.fold_left_map
+        (fun ctx (accumulator : accumulator) -> eval_exp ctx accumulator.init)
+        ctx accumulators
+    in
+    let vars_bound, vars_binding =
+      List.partition
+        (fun { Il.varid; iters; _ } ->
+          Ctx.bound_value Local ctx (varid, iters @ [ Il.List ]))
+        vars
+    in
+    let ctxs_sub = Ctx.sub_list ctx vars_bound in
+    let ctx, accumulator_values, values_binding =
+      match ctxs_sub with
+      | [] ->
+          let values_binding =
+            List.init (List.length vars_binding) (fun _ -> [])
+          in
+          (ctx, accumulator_values, values_binding)
+      | _ ->
+          let ctx, accumulator_values, values_binding_batch_rev =
+            List.fold_left
+              (fun (ctx, accumulator_values, values_binding_batch_rev) ctx_sub
+                 ->
+                let ctx_sub =
+                  List.fold_left2
+                    (fun ctx_sub (accumulator : accumulator) value ->
+                      Ctx.add_value Local ctx_sub
+                        (accumulator.input.varid, accumulator.input.iters)
+                        value)
+                    ctx_sub accumulators accumulator_values
+                in
+                let ctx_sub, _sign = eval_instrs ctx_sub Cont body in
+                let ctx = Ctx.commit ctx ctx_sub in
+                let accumulator_values =
+                  List.map
+                    (fun (accumulator : accumulator) ->
+                      Ctx.find_value Local ctx_sub
+                        (accumulator.output.varid, accumulator.output.iters))
+                    accumulators
+                in
+                let value_binding_batch =
+                  List.map
+                    (fun { Il.varid = id_binding; iters = iters_binding; _ } ->
+                      Ctx.find_value Local ctx_sub (id_binding, iters_binding))
+                    vars_binding
+                in
+                ( ctx,
+                  accumulator_values,
+                  value_binding_batch :: values_binding_batch_rev ))
+              (ctx, accumulator_values, [])
+              ctxs_sub
+          in
+          let values_binding =
+            values_binding_batch_rev |> List.rev |> Ctx.transpose
+          in
+          (ctx, accumulator_values, values_binding)
+    in
+    let ctx =
+      List.fold_left2
+        (fun ctx (accumulator : accumulator) value ->
+          Ctx.add_value Local ctx
+            (accumulator.final.varid, accumulator.final.iters)
+            value)
+        ctx accumulators accumulator_values
+    in
+    let ctx =
+      List.fold_left2
+        (fun ctx
+             { Il.varid = id_binding; typ = typ_binding; iters = iters_binding }
+             values_binding ->
+          let value_binding =
+            let typ =
+              Il.Typ.iterate typ_binding (iters_binding @ [ Il.List ])
+            in
+            values_binding |> Value.Make.list typ.it
+          in
+          Ctx.add_value Local ctx
+            (id_binding, iters_binding @ [ Il.List ])
+            value_binding)
+        ctx vars_binding values_binding
+    in
+    ctx
+  in
+  let rec eval_fold_iter ctx = function
+    | [] -> eval_fold ctx
+    | (Il.List, vars) :: iterexps ->
+        let vars_bound, vars_binding =
+          List.partition
+            (fun { Il.varid; iters; _ } ->
+              Ctx.bound_value Local ctx (varid, iters @ [ Il.List ]))
+            vars
+        in
+        let ctxs_sub = Ctx.sub_list ctx vars_bound in
+        let ctx, values_binding =
+          match ctxs_sub with
+          | [] -> (ctx, List.init (List.length vars_binding) (fun _ -> []))
+          | _ ->
+              let ctx, values_binding_batch_rev =
+                List.fold_left
+                  (fun (ctx, batches) ctx_sub ->
+                    let ctx_sub = eval_fold_iter ctx_sub iterexps in
+                    let ctx = Ctx.commit ctx ctx_sub in
+                    let batch =
+                      List.map
+                        (fun { Il.varid; iters; _ } ->
+                          Ctx.find_value Local ctx_sub (varid, iters))
+                        vars_binding
+                    in
+                    (ctx, batch :: batches))
+                  (ctx, []) ctxs_sub
+              in
+              (ctx, values_binding_batch_rev |> List.rev |> Ctx.transpose)
+        in
+        List.fold_left2
+          (fun ctx { Il.varid; typ; iters } values ->
+            let typ = Il.Typ.iterate typ (iters @ [ Il.List ]) in
+            Ctx.add_value Local ctx
+              (varid, iters @ [ Il.List ])
+              (Value.Make.list typ.it values))
+          ctx vars_binding values_binding
+    | (Il.Opt, vars) :: iterexps ->
+        let vars_bound, vars_binding =
+          List.partition
+            (fun { Il.varid; iters; _ } ->
+              Ctx.bound_value Local ctx (varid, iters @ [ Il.Opt ]))
+            vars
+        in
+        let ctx, values_binding =
+          match Ctx.sub_opt ctx vars_bound with
+          | None ->
+              let values =
+                List.map
+                  (fun { Il.typ; iters; _ } ->
+                    let typ = Il.Typ.iterate typ (iters @ [ Il.Opt ]) in
+                    Value.Make.opt typ.it None)
+                  vars_binding
+              in
+              (ctx, values)
+          | Some ctx_sub ->
+              let ctx_sub = eval_fold_iter ctx_sub iterexps in
+              let ctx = Ctx.commit ctx ctx_sub in
+              let values =
+                List.map
+                  (fun { Il.varid; typ; iters } ->
+                    let typ = Il.Typ.iterate typ (iters @ [ Il.Opt ]) in
+                    let value = Ctx.find_value Local ctx_sub (varid, iters) in
+                    Value.Make.opt typ.it (Some value))
+                  vars_binding
+              in
+              (ctx, values)
+        in
+        List.fold_left2
+          (fun ctx { Il.varid; iters; _ } value ->
+            Ctx.add_value Local ctx (varid, iters @ [ Il.Opt ]) value)
+          ctx vars_binding values_binding
+  in
+  let ctx = eval_fold_iter ctx (List.rev outer_iterexps) in
+  (ctx, Cont)
 
 (* Case analysis instruction evaluation *)
 

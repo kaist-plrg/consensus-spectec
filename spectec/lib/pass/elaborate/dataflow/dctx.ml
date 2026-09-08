@@ -35,6 +35,10 @@ let add_free (dctx : t) (id : Id.t) =
   let frees = IdSet.add id dctx.frees in
   { dctx with frees }
 
+let add_bound (dctx : t) (id : Id.t) (typ : Typ.t) =
+  let bounds = VEnv.add id typ dctx.bounds in
+  { dctx with bounds }
+
 (* Finders *)
 
 let find_reltyp (dctx : t) (id : Id.t) =

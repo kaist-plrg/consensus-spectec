@@ -1,0 +1,19 @@
+;; A fold passes one accumulator value from one element to the next.
+
+relation Step:
+  nat |- nat : nat
+  hint(input %0 %1)
+
+var acc : nat
+var n : nat
+
+rule Step/add:
+  acc |- n : $(acc + n)
+
+relation Sum:
+  nat |- nat* : nat
+  hint(input %0 %1)
+
+rule Sum/fold:
+  acc_0 |- n* : acc_n
+  -- (Step: acc_cur |- n : acc_next)*{ acc_0 -> acc_cur ... acc_next -> acc_n }

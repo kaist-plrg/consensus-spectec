@@ -1,0 +1,25 @@
+;; The input endpoint gives `eps` the accumulator's `map<key, val>` type.
+
+syntax pair<K,V> = K -> V
+syntax map<K,V> = (pair<K,V>)*
+
+syntax key = _KEY text
+syntax val = _VAL nat
+
+var m : map<key, val>
+var k : key
+
+relation Insert:
+  map<key, val> |- key : map<key, val>
+  hint(input %0 %1)
+
+rule Insert/one:
+  m |- k : (k -> _VAL 0)::m
+
+relation Collect:
+  |- key*
+  hint(input %0)
+
+rule Collect/fold:
+  |- k*
+  -- (Insert: m_cur |- k : m_next)*{ eps -> m_cur ... m_next -> m_final }

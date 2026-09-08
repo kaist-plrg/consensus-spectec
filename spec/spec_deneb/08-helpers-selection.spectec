@@ -44,13 +44,9 @@ dec $compute_shuffled_index(uint64, uint64, bytes32) : uint64
 
 def $compute_shuffled_index(i, i_count, seed) = i_shuffled
   -- if $range($SHUFFLE_ROUND_COUNT) = uint64_round*
-  -- if uint64_round*[0] = uint64_round_first
-  -- if uint64_round*[$SHUFFLE_ROUND_COUNT - 1] = uint64_round_last
-  -- if $fold_<uint64, (bytes32, uint64, uint64)>(
-         def $apply_shuffle_round,
-         i,
-         (seed, i_count, uint64_round)*
-       ) = i_shuffled
+  -- (if $apply_shuffle_round(i_cur, (seed, i_count, uint64_round)) = i_next)*{
+       i -> i_cur ... i_next -> i_shuffled
+     }
 
 
 ;; [Custom | loop : compute_proposer_index]

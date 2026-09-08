@@ -10,6 +10,7 @@ type exp = Sl.exp
 type notexp = Sl.notexp
 type relcall = Sl.relcall
 type iterexp = Sl.iterexp
+type accumulator = Sl.accumulator
 type pattern = Sl.pattern
 type tparam = Sl.tparam
 type typ = Sl.typ
@@ -41,6 +42,12 @@ and instr' =
   | OtherwiseI of block
   | TryI of block list
   | LetI of exp * exp * iterexp list
+  | FoldI of {
+      fold_iterexp : iterexp;
+      outer_iterexps : iterexp list;
+      accumulators : accumulator list;
+      body : block;
+    }
   | ResultI of exp list
   | ReturnI of exp
   | DebugI of exp

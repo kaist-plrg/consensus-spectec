@@ -1,0 +1,21 @@
+;; An iterated fold body cannot produce a scalar accumulator.
+
+relation Apply:
+  nat |- nat : nat
+  hint(input %0 %1)
+
+var acc : nat
+var n : nat
+
+rule Apply/add:
+  acc |- n : $(acc + n)
+
+relation IterInFold:
+  nat |- nat** : nat
+  hint(input %0 %1)
+
+rule IterInFold/mismatch:
+  acc_0 |- n** : acc_n
+  -- (Apply: acc_cur |- n : acc_next)
+       *
+       *{ acc_0 -> acc_cur ... acc_next -> acc_n }

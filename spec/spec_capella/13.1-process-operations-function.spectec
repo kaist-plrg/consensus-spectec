@@ -41,17 +41,15 @@ rule ProcessProposerSlashing:
   ----
   -- SlashValidator: state SLASH `[ vid_proposer `] BY eps ~> state_slashed
 
-;; folder for ProcessProposerSlashing
 relation ProcessProposerSlashings:
   beaconState proposerSlashing* ~> beaconState
   hint(input %0 %1)
 
-rule ProcessProposerSlashings/nil:
-  state eps ~> state
-rule ProcessProposerSlashings/cons:
-  state (proposerSlashing_h :: proposerSlashing_t*) ~> state_out
-  -- ProcessProposerSlashing: state proposerSlashing_h ~> state_mid
-  -- ProcessProposerSlashings:  state_mid proposerSlashing_t* ~> state_out
+rule ProcessProposerSlashings/fold:
+  state proposerSlashing* ~> state_out
+  -- (ProcessProposerSlashing: state_cur proposerSlashing ~> state_next)*{
+       state -> state_cur ... state_next -> state_out
+     }
 
 
 ;; [Phase0]
@@ -77,21 +75,20 @@ rule ProcessAttesterSlashing:
           $to_set_<validatorIndex>(indexedAttestation_2.ATTESTING_INDICES)
         ) = vid_intersection*
   -- if $sort_<validatorIndex>(vid_intersection*) = vid_sorted*
-  -- SlashIfEligible_over_validators: state SLASH '?' `[ vid_sorted* `] ~> state_slashed '#' SLASHED bool_slashed_any
+  -- SlashIfEligible_over_validators: state SLASH '?' `[ vid_sorted* `] ~> state_slashed '#' SLASHED bit_slashed_any
   ;; assert 4: slashed_any
-  -- if bool_slashed_any
+  -- if bit_slashed_any
 
 ;; fold ProcessAttesterSlashing over attesterSlashing*
 relation ProcessAttesterSlashings:
   beaconState attesterSlashing* ~> beaconState
   hint(input %0 %1)
 
-rule ProcessAttesterSlashings/nil:
-  state eps ~> state
-rule ProcessAttesterSlashings/cons:
-  state (attesterSlashing_h :: attesterSlashing_t*) ~> state_out
-  -- ProcessAttesterSlashing: state attesterSlashing_h ~> state_mid
-  -- ProcessAttesterSlashings:  state_mid attesterSlashing_t* ~> state_out
+rule ProcessAttesterSlashings/fold:
+  state attesterSlashing* ~> state_out
+  -- (ProcessAttesterSlashing: state_cur attesterSlashing ~> state_next)*{
+       state -> state_cur ... state_next -> state_out
+     }
 
 
 ;; [Phase0 -> Altair]
@@ -175,12 +172,11 @@ relation ProcessAttestations:
   beaconState attestation* ~> beaconState
   hint(input %0 %1)
 
-rule ProcessAttestations/nil:
-  state eps ~> state
-rule ProcessAttestations/cons:
-  state (attestation_h :: attestation_t*) ~> state_t
-  -- ProcessAttestation: state attestation_h ~> state_h
-  -- ProcessAttestations:  state_h attestation_t* ~> state_t
+rule ProcessAttestations/fold:
+  state attestation* ~> state_out
+  -- (ProcessAttestation: state_cur attestation ~> state_next)*{
+       state -> state_cur ... state_next -> state_out
+     }
 
 
 ;; [Phase0]
@@ -214,12 +210,11 @@ relation ProcessDeposits:
   beaconState deposit* ~> beaconState
   hint(input %0 %1)
 
-rule ProcessDeposits/nil:
-  state eps ~> state
-rule ProcessDeposits/cons:
-  state (deposit_h :: deposit_t*) ~> state_t
-  -- ProcessDeposit: state deposit_h ~> state_h
-  -- ProcessDeposits:  state_h deposit_t* ~> state_t
+rule ProcessDeposits/fold:
+  state deposit* ~> state_out
+  -- (ProcessDeposit: state_cur deposit ~> state_next)*{
+       state -> state_cur ... state_next -> state_out
+     }
 
 
 ;; [Phase0]
@@ -260,12 +255,11 @@ relation ProcessVoluntaryExits:
   beaconState signedVoluntaryExit* ~> beaconState
   hint(input %0 %1)
 
-rule ProcessVoluntaryExits/nil:
-  state eps ~> state
-rule ProcessVoluntaryExits/cons:
-  state (signedVoluntaryExit_h :: signedVoluntaryExit_t*) ~> state_t
-  -- ProcessVoluntaryExit: state signedVoluntaryExit_h ~> state_h
-  -- ProcessVoluntaryExits:  state_h signedVoluntaryExit_t* ~> state_t
+rule ProcessVoluntaryExits/fold:
+  state signedVoluntaryExit* ~> state_out
+  -- (ProcessVoluntaryExit: state_cur signedVoluntaryExit ~> state_next)*{
+       state -> state_cur ... state_next -> state_out
+     }
 
 
 ;; [Capella]
@@ -299,9 +293,8 @@ relation ProcessBlsToExecutionChanges:
   beaconState signedBlsToExecutionChange* ~> beaconState
   hint(input %0 %1)
 
-rule ProcessBlsToExecutionChanges/nil:
-  state eps ~> state
-rule ProcessBlsToExecutionChanges/cons:
-  state (signedBlsToExecutionChange_h :: signedBlsToExecutionChange_t*) ~> state_t
-  -- ProcessBlsToExecutionChange: state signedBlsToExecutionChange_h ~> state_h
-  -- ProcessBlsToExecutionChanges:  state_h signedBlsToExecutionChange_t* ~> state_t
+rule ProcessBlsToExecutionChanges/fold:
+  state signedBlsToExecutionChange* ~> state_out
+  -- (ProcessBlsToExecutionChange: state_cur signedBlsToExecutionChange ~> state_next)*{
+       state -> state_cur ... state_next -> state_out
+     }

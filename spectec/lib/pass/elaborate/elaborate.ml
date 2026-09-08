@@ -1549,6 +1549,8 @@ and elab_prem' (ctx : Ctx.t) (prem : prem') : Ctx.t * Il.prem' option =
   | IfPr exp -> elab_if_prem ctx exp |> wrap_some
   | ElsePr -> elab_else_prem () |> wrap_ctx |> wrap_some
   | IterPr (prem, iter) -> elab_iter_prem ctx prem iter |> wrap_some
+  | FoldPr (prem, iter, accumulators) ->
+      elab_fold_prem ctx prem iter accumulators |> wrap_some
   | DebugPr exp -> elab_debug_prem ctx exp |> wrap_some
 
 and elab_prem_with_bind (ctx : Ctx.t) (prem : prem) : Ctx.t * Il.prem list =
@@ -1651,6 +1653,76 @@ and elab_iter_prem (ctx : Ctx.t) (prem : prem) (iter : iter) : Ctx.t * Il.prem'
   let ctx, prem_il_opt = elab_prem ctx prem in
   let prem_il = Option.get prem_il_opt in
   let prem_il = Il.IterPr (prem_il, (iter_il, [])) in
+  (ctx, prem_il)
+
+and elab_fold_prem (ctx : Ctx.t) (prem : prem) (iter : iter)
+    (accumulators : accumulator list) : Ctx.t * Il.prem' =
+  check (iter = List) prem.at "a fold can only iterate over a list `*`"
+    ~code:Fold_over_non_list
+    ~detail:
+      "A fold applies its body in list order and passes each accumulator value \
+       to the next iteration, so only `*` can be folded, not `?`.";
+  check
+    (match prem.it with VarPr _ | ElsePr -> false | _ -> true)
+    prem.at "`var` and `otherwise` premises cannot be folded"
+    ~code:Fold_var_or_else_premise
+    ~detail:
+      "`var` and `otherwise` premises apply once per rule, so a fold cannot \
+       contain either premise.";
+  let iter_il = elab_iter iter in
+  let ctx, prem_il_opt = elab_prem ctx prem in
+  let prem_il = Option.get prem_il_opt in
+  let fail_accumulator_dimension (at : region) =
+    error at "a fold accumulator's endpoints have inconsistent dimensions"
+      ~code:Fold_accumulator_dimension_mismatch
+      ~detail:
+        "The current and next accumulator variables must have the same suffix \
+         and the same element type."
+  in
+  let ctx, accumulators_il =
+    List.fold_left_map
+      (fun ctx
+           {
+             init;
+             input;
+             input_iters;
+             output;
+             output_iters;
+             final;
+             final_iters;
+           } ->
+        let input_iters = List.map elab_iter input_iters in
+        let output_iters = List.map elab_iter output_iters in
+        let final_iters = List.map elab_iter final_iters in
+        if input_iters <> output_iters then fail_accumulator_dimension output.at;
+        if input_iters <> final_iters then fail_accumulator_dimension final.at;
+        let find_endpoint_typ id =
+          match Ctx.find_metavar_opt ctx (Var.strip_var_suffix id) with
+          | Some typ -> typ
+          | None -> fail_accumulator_dimension id.at
+        in
+        let input_typ = find_endpoint_typ input in
+        let output_typ = find_endpoint_typ output in
+        let final_typ = find_endpoint_typ final in
+        if not (Types.equiv_typ ctx.tdenv input_typ output_typ) then
+          fail_accumulator_dimension output.at;
+        if not (Types.equiv_typ ctx.tdenv input_typ final_typ) then
+          fail_accumulator_dimension final.at;
+        let accumulator_typ = Il.Typ.iterate input_typ input_iters in
+        let+ ctx, init_il = elab_exp ctx accumulator_typ init in
+        let input =
+          { Il.varid = input; typ = input_typ; iters = input_iters }
+        in
+        let output =
+          { Il.varid = output; typ = output_typ; iters = output_iters }
+        in
+        let final =
+          { Il.varid = final; typ = final_typ; iters = final_iters }
+        in
+        (ctx, { Il.input; output; init = init_il; final }))
+      ctx accumulators
+  in
+  let prem_il = Il.FoldPr (prem_il, (iter_il, []), accumulators_il) in
   (ctx, prem_il)
 
 (* Elaboration of debug premises *)

@@ -33,6 +33,14 @@ let rec linearize_instr (instr : Sl.instr) : Ll.block =
       let block_ll = linearize_block block in
       let instr_ll = Ll.LetI (exp_l, exp_r, iterexps) $ at in
       instr_ll :: block_ll
+  | Sl.FoldI { fold_iterexp; outer_iterexps; accumulators; body; block } ->
+      let body_ll = linearize_block body in
+      let block_ll = linearize_block block in
+      let instr_ll =
+        Ll.FoldI { fold_iterexp; outer_iterexps; accumulators; body = body_ll }
+        $ at
+      in
+      instr_ll :: block_ll
   | Sl.ResultI exps -> [ Ll.ResultI exps $ at ]
   | Sl.ReturnI exp -> [ Ll.ReturnI exp $ at ]
   | Sl.DebugI (exp, body) ->

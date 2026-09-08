@@ -72,6 +72,7 @@ type exp' = Il.exp'
 
 type notexp = Il.notexp
 type iterexp = Il.iterexp
+type accumulator = Il.accumulator
 
 (* Patterns *)
 
@@ -143,6 +144,13 @@ and instr' =
   | CaseI of exp * case list * phantom option
   | OtherwiseI of instr
   | LetI of exp * exp * iterexp list * instr list
+  | FoldI of {
+      fold_iterexp : iterexp;
+      outer_iterexps : iterexp list;
+      accumulators : accumulator list;
+      body : instr list;
+      block : instr list;
+    }
   | ResultI of exp list
   | ReturnI of exp
   | DebugI of exp * instr

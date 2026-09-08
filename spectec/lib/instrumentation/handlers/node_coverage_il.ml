@@ -68,6 +68,7 @@ let rec is_fallible prem =
   match prem.it with
   | LetPr _ | ElsePr | DebugPr _ | RelAssertPr _ -> false
   | IterPr (inner, _) -> is_fallible inner
+  | FoldPr (inner, _, _) -> is_fallible inner
   | IfPr _ | RelPr _ -> true
 
 module M : Instrumentation_api.Handler.S = struct
@@ -83,6 +84,7 @@ module M : Instrumentation_api.Handler.S = struct
     | LetPr _ | ElsePr | DebugPr _ | RelAssertPr _ ->
         State.total_prems := !State.total_prems + 1
     | IterPr (inner, _) -> count_prem inner
+    | FoldPr (inner, _, _) -> count_prem inner
     | IfPr _ ->
         State.total_prems := !State.total_prems + 1;
         State.total_fallible_prems := !State.total_fallible_prems + 1;
@@ -133,6 +135,7 @@ module M : Instrumentation_api.Handler.S = struct
             match prem.it with
             | LetPr _ | ElsePr | DebugPr _ | RelAssertPr _ -> ()
             | IterPr (inner, _) -> incr_failures inner
+            | FoldPr (inner, _, _) -> incr_failures inner
             | IfPr _ | RelPr _ ->
                 let key = prem_key prem in
                 State.incr_count State.prems_failed key

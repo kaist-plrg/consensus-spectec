@@ -114,6 +114,9 @@ let rec analyze_prem (dctx : Dctx.t) (prem : prem) :
       assert false
   | IterPr (_, (_, _ :: _)) -> assert false
   | IterPr (prem, (iter, [])) -> analyze_iter_prem dctx prem.at prem iter
+  | FoldPr (_, (_, _ :: _), _) -> assert false
+  | FoldPr (prem, (iter, []), accumulators) ->
+      analyze_fold_prem dctx prem.at prem iter accumulators
   | DebugPr exp -> analyze_debug_prem dctx prem.at exp
 
 and analyze_rule_prem (dctx : Dctx.t) (at : region) (id : id) (notexp : notexp)
@@ -202,6 +205,48 @@ and analyze_iter_prem (dctx : Dctx.t) (at : region) (prem : prem) (iter : iter)
   let venv = VEnv.map (Typ.add_iter iter) venv in
   let prems = List.map (fun prem -> IterPr (prem, (iter, [])) $ at) prems in
   let prem = IterPr (prem, (iter, [])) $ at in
+  (dctx, venv, prem, prems)
+
+and analyze_fold_prem (dctx : Dctx.t) (at : region) (prem : prem) (iter : iter)
+    (accumulators : accumulator list) : Dctx.t * VEnv.t * prem * prem list =
+  let var_typ ({ typ; iters; _ } : var) = (typ, iters) in
+  let accumulator_local_ids =
+    List.concat_map
+      (fun { input; output; _ } -> [ input.varid; output.varid ])
+      accumulators
+    |> IdSet.of_list
+  in
+  List.iter (fun { init; _ } -> analyze_exp_as_bound dctx init) accumulators;
+  let dctx =
+    List.fold_left
+      (fun dctx { input; _ } -> Dctx.add_bound dctx input.varid (var_typ input))
+      dctx accumulators
+  in
+  let dctx, venv, prem, prems = analyze_prem dctx prem in
+  List.iter
+    (fun { output; _ } ->
+      match VEnv.find_opt output.varid venv with
+      | Some typ when Typ.equiv typ (var_typ output) -> ()
+      | _ ->
+          error output.varid.at
+            "a fold body produces its accumulator at the wrong dimension"
+            ~code:Fold_accumulator_dimension_mismatch
+            ~detail:
+              "The next accumulator value produced by the fold body must have \
+               the dimension declared on the accumulator endpoint.")
+    accumulators;
+  let venv =
+    venv
+    |> VEnv.filter (fun id _ -> not (IdSet.mem id accumulator_local_ids))
+    |> VEnv.map (Typ.add_iter iter)
+  in
+  let venv =
+    List.fold_left
+      (fun venv { final; _ } -> VEnv.add final.varid (var_typ final) venv)
+      venv accumulators
+  in
+  let prems = List.map (fun prem -> IterPr (prem, (iter, [])) $ at) prems in
+  let prem = FoldPr (prem, (iter, []), accumulators) $ at in
   (dctx, venv, prem, prems)
 
 and analyze_debug_prem (dctx : Dctx.t) (at : region) (exp : exp) :

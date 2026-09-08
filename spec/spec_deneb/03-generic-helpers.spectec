@@ -25,15 +25,6 @@ def $filter_list_2_<X, Y>(X_h :: X_t*, Y, def $cond)
   -- if $cond(X_h, Y) = false
 
 ;; =========================
-;; Generic fold 
-;; =========================
-dec $fold_<X, Y>(def $fold_func(X, Y): X, X, Y*) : X
-def $fold_<X, Y>(def $fold_func, X, eps) = X
-def $fold_<X, Y>(def $fold_func, X, Y_h :: Y_t*)
-= $fold_<X, Y>(def $fold_func, $fold_func(X, Y_h), Y_t*)
-
-
-;; =========================
 ;; flag helpers
 ;; =========================
 ;; [Custom : ProcessAttestations / AddFlag ] has_flag: flags[i] = 1

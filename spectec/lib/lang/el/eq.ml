@@ -171,6 +171,17 @@ and eq_prem (a : prem) (b : prem) : bool =
   | IfPr ea, IfPr eb -> eq_exp ea eb
   | ElsePr, ElsePr -> true
   | IterPr (pa, ia), IterPr (pb, ib) -> eq_prem pa pb && eq_iter ia ib
+  | FoldPr (pa, ia, accsa), FoldPr (pb, ib, accsb) ->
+      eq_prem pa pb && eq_iter ia ib
+      && List.equal
+           (fun a b ->
+             eq_exp a.init b.init && eq_id a.input b.input
+             && List.equal eq_iter a.input_iters b.input_iters
+             && eq_id a.output b.output
+             && List.equal eq_iter a.output_iters b.output_iters
+             && eq_id a.final b.final
+             && List.equal eq_iter a.final_iters b.final_iters)
+           accsa accsb
   | DebugPr ea, DebugPr eb -> eq_exp ea eb
   | _ -> false
 

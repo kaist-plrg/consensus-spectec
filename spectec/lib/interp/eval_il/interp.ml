@@ -949,7 +949,7 @@ and eval_prem (ctx : Ctx.t) (prem : prem) : Ctx.t attempt =
     Ok ctx
   in
   (match prem.it with
-  | IterPr _ -> ()
+  | IterPr _ | FoldPr _ -> ()
   | _ ->
       Instrumentation.Dispatcher.emit_on_demand @@ fun () ->
       let values =
@@ -979,10 +979,12 @@ and eval_prem (ctx : Ctx.t) (prem : prem) : Ctx.t attempt =
     | ElsePr -> Ok ctx
     | LetPr (exp_l, exp_r) -> eval_let_prem ctx exp_l exp_r
     | IterPr (prem, iterexp) -> eval_iter_prem ctx prem iterexp
+    | FoldPr (prem, iterexp, accumulators) ->
+        eval_fold_prem ctx prem iterexp accumulators
     | DebugPr exp -> eval_debug_prem ctx exp
   in
   (match prem.it with
-  | IterPr _ -> ()
+  | IterPr _ | FoldPr _ -> ()
   | _ ->
       Instrumentation.Dispatcher.emit_on_demand @@ fun () ->
       let ctx_out = Result.value ~default:ctx result in
@@ -1193,6 +1195,89 @@ and eval_iter_prem (ctx : Ctx.t) (prem : prem) (iterexp : iterexp) :
   match iter with
   | Opt -> eval_iter_prem_opt ctx prem vars
   | List -> eval_iter_prem_list ctx prem vars
+
+and eval_fold_prem (ctx : Ctx.t) (prem : prem) (iterexp : iterexp)
+    (accumulators : accumulator list) : Ctx.t attempt =
+  let iter, vars = iterexp in
+  let* () = guard (iter = List) prem.at "a fold can only iterate over a list" in
+  let ctx, accumulator_values =
+    List.fold_left_map
+      (fun ctx { init; _ } -> eval_exp ctx init)
+      ctx accumulators
+  in
+  let vars_bound, vars_binding =
+    List.partition
+      (fun { varid; iters; _ } -> Ctx.bound_value ctx (varid, iters @ [ List ]))
+      vars
+  in
+  let* ctxs_sub = Ctx.sub_list ctx vars_bound in
+  let* ctx, accumulator_values, values_binding =
+    match ctxs_sub with
+    | [] ->
+        let values_binding =
+          List.init (List.length vars_binding) (fun _ -> [])
+        in
+        Ok (ctx, accumulator_values, values_binding)
+    | _ ->
+        let* ctx, accumulator_values, values_binding_batch_rev =
+          List.fold_left
+            (fun state ctx_sub ->
+              let* ctx, accumulator_values, values_binding_batch_rev = state in
+              let ctx_sub =
+                List.fold_left2
+                  (fun ctx_sub { input; _ } value ->
+                    Ctx.add_value ctx_sub (input.varid, input.iters) value)
+                  ctx_sub accumulators accumulator_values
+              in
+              Instrumentation.Dispatcher.emit
+                (Events.Iter_prem_enter { prem; at = prem.at });
+              let* ctx_sub = eval_prem ctx_sub prem in
+              Instrumentation.Dispatcher.emit
+                (Events.Iter_prem_exit { at = prem.at });
+              let accumulator_values =
+                List.map
+                  (fun { output; _ } ->
+                    Ctx.find_value ctx_sub (output.varid, output.iters))
+                  accumulators
+              in
+              let value_binding_batch =
+                List.map
+                  (fun { varid = id_binding; iters = iters_binding; _ } ->
+                    Ctx.find_value ctx_sub (id_binding, iters_binding))
+                  vars_binding
+              in
+              Ok
+                ( ctx,
+                  accumulator_values,
+                  value_binding_batch :: values_binding_batch_rev ))
+            (Ok (ctx, accumulator_values, []))
+            ctxs_sub
+        in
+        let* values_binding =
+          values_binding_batch_rev |> List.rev |> Ctx.transpose
+        in
+        Ok (ctx, accumulator_values, values_binding)
+  in
+  let ctx =
+    List.fold_left2
+      (fun ctx { final; _ } value ->
+        Ctx.add_value ctx (final.varid, final.iters) value)
+      ctx accumulators accumulator_values
+  in
+  let ctx =
+    List.fold_left2
+      (fun ctx { varid = id_binding; typ = typ_binding; iters = iters_binding }
+           values_binding ->
+        let value_binding =
+          let typ =
+            Lang.Il.Typ.iterate typ_binding (iters_binding @ [ List ])
+          in
+          values_binding |> Value.Make.list typ.it
+        in
+        Ctx.add_value ctx (id_binding, iters_binding @ [ List ]) value_binding)
+      ctx vars_binding values_binding
+  in
+  Ok ctx
 
 (* Invoke a relation *)
 

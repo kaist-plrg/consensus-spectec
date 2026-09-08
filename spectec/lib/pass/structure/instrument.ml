@@ -152,6 +152,10 @@ and insert_phantom' (tdenv : TDEnv.t) (pathconds : pathcond list)
   | LetI (exp_l, exp_r, iterexps, block) ->
       let block = insert_phantom tdenv pathconds block in
       Sl.LetI (exp_l, exp_r, iterexps, block) $ at
+  | FoldI { fold_iterexp; outer_iterexps; accumulators; body; block } ->
+      let body = insert_phantom tdenv pathconds body in
+      let block = insert_phantom tdenv pathconds block in
+      Sl.FoldI { fold_iterexp; outer_iterexps; accumulators; body; block } $ at
   | ResultI exps -> Sl.ResultI exps $ at
   | ReturnI exp -> Sl.ReturnI exp $ at
   | DebugI (exp, instr_body) ->
@@ -198,6 +202,10 @@ and insert_nothing' (instr : instr) : Sl.instr =
   | LetI (exp_l, exp_r, iterexps, block) ->
       let block = insert_nothing block in
       Sl.LetI (exp_l, exp_r, iterexps, block) $ at
+  | FoldI { fold_iterexp; outer_iterexps; accumulators; body; block } ->
+      let body = insert_nothing body in
+      let block = insert_nothing block in
+      Sl.FoldI { fold_iterexp; outer_iterexps; accumulators; body; block } $ at
   | ResultI exps -> Sl.ResultI exps $ at
   | ReturnI exp -> Sl.ReturnI exp $ at
   | DebugI (exp, instr_body) ->

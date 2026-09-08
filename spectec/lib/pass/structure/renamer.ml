@@ -22,6 +22,11 @@ let rename_iterexp (rename : t) (iterexp : iterexp) : iterexp =
   in
   (iter, vars)
 
+let rename_var (rename : t) (var : Il.var) : Il.var =
+  match Rename.find_opt var.varid rename with
+  | Some varid -> { var with varid }
+  | None -> var
+
 let rename_iterexps (rename : t) (iterexps : iterexp list) : iterexp list =
   List.map (rename_iterexp rename) iterexps
 
@@ -188,6 +193,23 @@ and rename_instr (rename : t) (instr : instr) : instr =
       let iterexps = List.map (rename_iterexp rename) iterexps in
       let block = List.map (rename_instr rename) block in
       LetI (exp_l, exp_r, iterexps, block) $ at
+  | FoldI { fold_iterexp; outer_iterexps; accumulators; body; block } ->
+      let fold_iterexp = rename_iterexp rename fold_iterexp in
+      let outer_iterexps = List.map (rename_iterexp rename) outer_iterexps in
+      let accumulators =
+        List.map
+          (fun { Il.input; output; init; final } ->
+            {
+              Il.input = rename_var rename input;
+              output = rename_var rename output;
+              init = rename_exp rename init;
+              final = rename_var rename final;
+            })
+          accumulators
+      in
+      let body = List.map (rename_instr rename) body in
+      let block = List.map (rename_instr rename) block in
+      FoldI { fold_iterexp; outer_iterexps; accumulators; body; block } $ at
   | ResultI exps ->
       let exps = List.map (rename_exp rename) exps in
       ResultI exps $ at

@@ -94,32 +94,30 @@ def $is_valid_indexed_attestation(state, indexedAttestation)
 ;; [Custom]
 ;;  modifies: .VALIDATORS[](.EXIT_EPOCH, .WITHDRAWABLE_EPOCH, .SLASHED) .SLASHINGS, .BALANCES
 relation SlashIfEligible:
-  beaconState SLASH '?' `[ validatorIndex `] ~> beaconState '#' SLASHED bool
-  hint(input %0 %1)
+  beaconState SLASH '?' `[ validatorIndex `] '#' SLASHED bool ~> beaconState '#' SLASHED bool
+  hint(input %0 %1 %2)
 
 rule SlashIfEligible/true:
-  state SLASH '?' `[ vid `] ~> state_slashed '#' SLASHED true
+  state SLASH '?' `[ vid `] '#' SLASHED _ ~> state_slashed '#' SLASHED true
   -- if $(vid < |state.VALIDATORS|)
   -- if $is_slashable_validator(state.VALIDATORS[vid], $get_current_epoch(state))
   -- SlashValidator: state SLASH `[ vid `] BY eps ~> state_slashed
 
 rule SlashIfEligible/false:
-  state SLASH '?' `[ vid `] ~> state '#' SLASHED false
+  state SLASH '?' `[ vid `] '#' SLASHED bit_cur ~> state '#' SLASHED bit_cur
   -- if $(vid < |state.VALIDATORS|)
   -- if ~$is_slashable_validator(state.VALIDATORS[vid], $get_current_epoch(state))
 
-;; folder for SlashIfEligible
 relation SlashIfEligible_over_validators:
   beaconState SLASH '?' `[ validatorIndex* `] ~> beaconState '#' SLASHED bool
   hint(input %0 %1)
 
-rule SlashIfEligible_over_validators/nil:
-  state SLASH '?' `[ eps `] ~> state '#' SLASHED false
-
-rule SlashIfEligible_over_validators/cons:
-  state SLASH '?' `[ vid_h :: vid_t* `] ~> state_t '#' SLASHED (bool_h \/ bool_t)
-  -- SlashIfEligible: state SLASH '?' `[ vid_h `] ~> state_h '#' SLASHED bool_h
-  -- SlashIfEligible_over_validators: state_h SLASH '?' `[ vid_t* `] ~> state_t '#' SLASHED bool_t
+rule SlashIfEligible_over_validators/fold:
+  state SLASH '?' `[ vid* `] ~> state_out '#' SLASHED bit_slashed_any
+  -- (SlashIfEligible: state_cur SLASH '?' `[ vid `] '#' SLASHED bit_cur ~> state_next '#' SLASHED bit_next)*{
+       state -> state_cur ... state_next -> state_out,
+       false -> bit_cur ... bit_next -> bit_slashed_any
+     }
 
 ;; [Custom | branch : get_attestation_participation_flag_indices]
 dec $source_flag_list(uint64) : nat*

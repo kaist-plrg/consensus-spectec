@@ -149,6 +149,14 @@ and recurse_into_nested (instr : Pl.instr) : Pl.instr =
         Pl.CheckLetI (e_l, e_r, shorten_block block_inner)
     | Pl.OptionGetI (e_l, e_r, block_inner) ->
         Pl.OptionGetI (e_l, e_r, shorten_block block_inner)
+    | Pl.FoldI { fold_iterexp; outer_iterexps; accumulators; body } ->
+        Pl.FoldI
+          {
+            fold_iterexp;
+            outer_iterexps;
+            accumulators;
+            body = shorten_block body;
+          }
     | Pl.LetI _ | Pl.RelI _ | Pl.ResultI _ | Pl.ReturnI _ | Pl.DebugI _
     | Pl.DestructI _ ->
         instr.node.it

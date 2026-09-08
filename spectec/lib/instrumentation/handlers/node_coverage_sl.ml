@@ -59,6 +59,10 @@ let instr_header instr =
         (Sl.Print.string_of_exp exp_l)
         (Sl.Print.string_of_exp exp_r)
         (Sl.Print.string_of_iterexps iterexps)
+  | Sl.FoldI { fold_iterexp; outer_iterexps; _ } ->
+      Format.sprintf "Fold%s%s"
+        (Sl.Print.string_of_iterexp fold_iterexp)
+        (Sl.Print.string_of_iterexps outer_iterexps)
   | Sl.ResultI [] -> "Relation holds"
   | Sl.ResultI exps ->
       Format.sprintf "Result %s" (Sl.Print.string_of_exps ", " exps)
@@ -84,6 +88,9 @@ module M : Instrumentation_api.Handler.S = struct
         List.iter (fun (_, instrs) -> List.iter count_instr instrs) cases
     | Sl.OtherwiseI inner -> count_instr inner
     | Sl.LetI (_, _, _, block) -> List.iter count_instr block
+    | Sl.FoldI { body; block; _ } ->
+        List.iter count_instr body;
+        List.iter count_instr block
     | _ -> ()
 
   let init ~spec =

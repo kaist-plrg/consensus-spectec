@@ -149,7 +149,20 @@ and prem' =
   | IfPr of exp                    (* `if` exp *)
   | ElsePr                         (* `otherwise` *)
   | IterPr of prem * iter          (* prem iter *)
+  | FoldPr of prem * iter * accumulator list
+                                   (* `(` prem `)*{` list(accumulator, `,`) `}` *)
   | DebugPr of exp                 (* `debug` exp *)
+
+(* init `->` input iter* `...` output iter* `->` final iter* *)
+and accumulator = {
+  init : exp;
+  input : id;
+  input_iters : iter list;
+  output : id;
+  output_iters : iter list;
+  final : id;
+  final_iters : iter list;
+}
 
 (* Hints *)
 

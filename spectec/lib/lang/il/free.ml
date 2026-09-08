@@ -77,6 +77,11 @@ let rec free_prem (prem : prem) : t =
   | LetPr (exp_l, exp_r) -> free_exp exp_l + free_exp exp_r
   | ElsePr -> empty
   | IterPr (prem, _) -> free_prem prem
+  | FoldPr (prem, _, accumulators) ->
+      List.fold_left
+        (fun free { init; final; _ } ->
+          free + free_exp init + IdSet.singleton final.varid)
+        (free_prem prem) accumulators
   | DebugPr exp -> free_exp exp
 
 and free_prems (prems : prem list) : t =

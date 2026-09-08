@@ -239,6 +239,21 @@ let rec annotate_instr (ctx : Ctx.t) (instr : Ll.instr) : Pl.instr =
           | _ -> Pl.Annot.empty
         in
         (Pl.LetI (exp_l_pl, exp_r_pl, iterexps), hints)
+    | Ll.FoldI { fold_iterexp; outer_iterexps; accumulators; body } ->
+        let accumulators =
+          List.map
+            (fun { Il.input; output; init; final } ->
+              { Pl.input; output; init = annotate_exp ctx init; final })
+            accumulators
+        in
+        ( Pl.FoldI
+            {
+              fold_iterexp;
+              outer_iterexps;
+              accumulators;
+              body = annotate_block ctx body;
+            },
+          Pl.Annot.empty )
     | Ll.ResultI exps ->
         ( Pl.ResultI (List.map (annotate_exp ctx) exps),
           hints_of_result_instr ctx )

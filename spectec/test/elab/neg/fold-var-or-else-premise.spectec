@@ -1,0 +1,11 @@
+;; A `var` premise is declared once per rule, not once per fold step.
+
+syntax foo = nat
+
+relation R:
+  foo |- foo
+  hint(input %0)
+
+rule R/fold:
+  0 |- 0
+  -- (var x_cur : foo)*{ x_0 -> x_cur ... x_next -> x_n }
