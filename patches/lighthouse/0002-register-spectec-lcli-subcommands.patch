@@ -1,0 +1,169 @@
+Register the ETH2SpecTec lcli subcommands.
+
+sanity-slots, epoch-processing and operation cover the consensus-spec-tests
+suites that transition-blocks alone cannot reach. Their implementations live in
+lcli/src/{sanity_slots,epoch_processing,operation}.rs, copied in alongside this
+patch (see modified_code/lighthouse/), so the module declarations this patch
+adds have something to resolve to.
+
+Each subcommand takes --post-state-output-path: differential testing needs the
+post state written out for comparison, whereas upstream's runners check against
+a state that is already known.
+diff --git a/lcli/src/main.rs b/lcli/src/main.rs
+index a21dfd4..db0a367 100644
+--- a/lcli/src/main.rs
++++ b/lcli/src/main.rs
+@@ -1,11 +1,14 @@
+ mod block_root;
+ mod check_deposit_data;
++mod epoch_processing;
+ mod generate_bootnode_enr;
+ mod http_sync;
+ mod indexed_attestations;
+ mod mnemonic_validators;
+ mod mock_el;
++mod operation;
+ mod parse_ssz;
++mod sanity_slots;
+ mod skip_slots;
+ mod state_root;
+ mod transition_blocks;
+@@ -130,6 +133,116 @@ fn main() {
+                         .display_order(0)
+                 )
+         )
++        .subcommand(
++            Command::new("sanity-slots")
++                .about("Process a BeaconState through a specified number of slots (for sanity_slots test cases)")
++                .arg(
++                    Arg::new("pre-state-path")
++                        .long("pre-state-path")
++                        .value_name("PATH")
++                        .action(ArgAction::Set)
++                        .required(true)
++                        .help("Path to a SSZ file of the pre-state.")
++                        .display_order(0)
++                )
++                .arg(
++                    Arg::new("slots")
++                        .long("slots")
++                        .value_name("INTEGER")
++                        .action(ArgAction::Set)
++                        .required(true)
++                        .help("Number of slots to process.")
++                        .display_order(0)
++                )
++                .arg(
++                    Arg::new("post-state-output-path")
++                        .long("post-state-output-path")
++                        .value_name("PATH")
++                        .action(ArgAction::Set)
++                        .required(true)
++                        .help("Path to output the post-state as SSZ.")
++                        .display_order(0)
++                )
++        )
++        .subcommand(
++            Command::new("epoch-processing")
++                .about("Process epoch operations on a BeaconState (for epoch_processing test cases)")
++                .arg(
++                    Arg::new("epoch-processing-type")
++                        .long("epoch-processing-type")
++                        .value_name("STRING")
++                        .action(ArgAction::Set)
++                        .required(true)
++                        .help("Type of epoch processing operation (e.g., justification_and_finalization, rewards_and_penalties).")
++                        .display_order(0)
++                )
++                .arg(
++                    Arg::new("pre-state-path")
++                        .long("pre-state-path")
++                        .value_name("PATH")
++                        .action(ArgAction::Set)
++                        .required(true)
++                        .help("Path to a SSZ file of the pre-state.")
++                        .display_order(0)
++                )
++                .arg(
++                    Arg::new("post-state-output-path")
++                        .long("post-state-output-path")
++                        .value_name("PATH")
++                        .action(ArgAction::Set)
++                        .required(true)
++                        .help("Path to output the post-state as SSZ.")
++                        .display_order(0)
++                )
++        )
++        .subcommand(
++            Command::new("operation")
++                .about("Process individual operations on a BeaconState (for operation test cases)")
++                .arg(
++                    Arg::new("operation-type")
++                        .long("operation-type")
++                        .value_name("STRING")
++                        .action(ArgAction::Set)
++                        .required(true)
++                        .help("Type of operation (e.g., attestation, block_header, deposit).")
++                        .display_order(0)
++                )
++                .arg(
++                    Arg::new("pre-state-path")
++                        .long("pre-state-path")
++                        .value_name("PATH")
++                        .action(ArgAction::Set)
++                        .required(true)
++                        .help("Path to a SSZ file of the pre-state.")
++                        .display_order(0)
++                )
++                .arg(
++                    Arg::new("operation-path")
++                        .long("operation-path")
++                        .value_name("PATH")
++                        .action(ArgAction::Set)
++                        .required(true)
++                        .help("Path to a SSZ file of the operation.")
++                        .display_order(0)
++                )
++                .arg(
++                    Arg::new("post-state-output-path")
++                        .long("post-state-output-path")
++                        .value_name("PATH")
++                        .action(ArgAction::Set)
++                        .required(true)
++                        .help("Path to output the post-state as SSZ.")
++                        .display_order(0)
++                )
++                .arg(
++                    Arg::new("execution-valid")
++                        .long("execution-valid")
++                        .value_name("BOOLEAN")
++                        .action(ArgAction::Set)
++                        .help("Whether execution payload is valid (for execution_payload operation).")
++                        .display_order(0)
++                )
++        )
+         .subcommand(
+             Command::new("transition-blocks")
+                 .about("Performs a state transition given a pre-state and block")
+@@ -728,6 +841,21 @@ fn run<E: EthSpec>(env_builder: EnvironmentBuilder<E>, matches: &ArgMatches) ->
+             skip_slots::run::<E>(env, network_config, matches)
+                 .map_err(|e| format!("Failed to skip slots: {}", e))
+         }
++        Some(("sanity-slots", matches)) => {
++            let network_config = get_network_config()?;
++            sanity_slots::run::<E>(env, network_config, matches)
++                .map_err(|e| format!("Failed to process sanity slots: {}", e))
++        }
++        Some(("epoch-processing", matches)) => {
++            let network_config = get_network_config()?;
++            epoch_processing::run::<E>(env, network_config, matches)
++                .map_err(|e| format!("Failed to process epoch operations: {}", e))
++        }
++        Some(("operation", matches)) => {
++            let network_config = get_network_config()?;
++            operation::run::<E>(env, network_config, matches)
++                .map_err(|e| format!("Failed to process operation: {}", e))
++        }
+         Some(("pretty-ssz", matches)) => {
+             let network_config = get_network_config()?;
+             run_parse_ssz::<E>(network_config, matches)

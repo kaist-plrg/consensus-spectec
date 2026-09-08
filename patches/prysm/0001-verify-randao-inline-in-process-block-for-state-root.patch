@@ -1,0 +1,23 @@
+Verify the RANDAO signature inline during block processing.
+
+Upstream ProcessBlockForStateRoot uses ProcessRandaoNoVerify and instead returns
+the RANDAO signature in the batch that ProcessBlockNoVerifyAnySig hands back, so
+a bad reveal only surfaces after the whole block has been processed. pyspec's
+process_randao raises at that point in the sequence, before eth1_data and the
+operations, and differential testing compares which failure a client reports.
+
+diff --git a/beacon-chain/core/transition/transition_no_verify_sig.go b/beacon-chain/core/transition/transition_no_verify_sig.go
+index 2873301..f4425a6 100644
+--- a/beacon-chain/core/transition/transition_no_verify_sig.go
++++ b/beacon-chain/core/transition/transition_no_verify_sig.go
+@@ -340,8 +340,8 @@ func ProcessBlockForStateRoot(
+ 		}
+ 	}
+ 
+-	randaoReveal := signed.Block().Body().RandaoReveal()
+-	state, err = b.ProcessRandaoNoVerify(state, randaoReveal[:])
++	// validate_result = false: Verify RANDAO signature (block signature is skipped in main.go)
++	state, err = b.ProcessRandao(ctx, state, signed)
+ 	if err != nil {
+ 		tracing.AnnotateError(span, err)
+ 		return nil, errors.Wrap(err, "could not verify and process randao")

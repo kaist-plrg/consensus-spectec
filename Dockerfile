@@ -62,7 +62,7 @@ ENV PATH="/root/.cargo/bin:${PATH}"
 # ============================================
 # Stage 3: Install Go (for Prysm)
 # ============================================
-ARG GO_VERSION=1.24.2
+ARG GO_VERSION=1.25.1
 RUN wget -q https://go.dev/dl/go${GO_VERSION}.linux-amd64.tar.gz && \
     tar -C /usr/local -xzf go${GO_VERSION}.linux-amd64.tar.gz && \
     rm go${GO_VERSION}.linux-amd64.tar.gz
@@ -85,18 +85,6 @@ RUN apt-get update && \
 
 ENV JAVA_HOME=/usr/lib/jvm/java-21-openjdk-amd64
 ENV PATH="${JAVA_HOME}/bin:${PATH}"
-
-# ============================================
-# Stage 5: Install Bazel (for Prysm)
-# ============================================
-RUN curl -fsSL https://bazel.build/bazel-release.pub.gpg | gpg --dearmor > bazel-archive-keyring.gpg && \
-    mv bazel-archive-keyring.gpg /usr/share/keyrings && \
-    echo "deb [arch=amd64 signed-by=/usr/share/keyrings/bazel-archive-keyring.gpg] https://storage.googleapis.com/bazel-apt stable jdk1.8" > /etc/apt/sources.list.d/bazel.list && \
-    apt-get update && \
-    apt-get install -y bazel-7.4.1 && \
-    ln -s /usr/bin/bazel-7.4.1 /usr/bin/bazel && \
-    apt-get clean && \
-    rm -rf /var/lib/apt/lists/*
 
 # ============================================
 # Stage 6: Install Node.js 20 (for Lodestar)
@@ -134,11 +122,22 @@ RUN apt-get update && \
     && rm -rf /var/lib/apt/lists/*
 
 # Initialize opam and create OCaml switch (name must match Makefile SWITCH=eth-spectec)
-# Pin menhir to 20211012: newer menhir drops MenhirLib.General used by spectec parser_debug.ml
+# The package list mirrors the (depends ...) stanza of spectec/dune-project; keep the
+# two in sync.
 RUN opam init --disable-sandboxing -y && \
     opam switch create eth-spectec ocaml-base-compiler.5.1.0 && \
     eval $(opam env --switch=eth-spectec) && \
-    opam install -y dune bignum menhir.20211012 core core_unix bisect_ppx yojson digestif bls12-381 bls12-381-signature
+    opam install -y \
+        dune \
+        menhir menhirLib \
+        bignum \
+        bls12-381 bls12-381-signature \
+        core core_unix \
+        digestif \
+        ppx_let \
+        pprint \
+        linol-eio eio_main \
+        yojson bisect_ppx
 
 ENV OPAM_SWITCH_PREFIX="/root/.opam/eth-spectec"
 ENV CAML_LD_LIBRARY_PATH="/root/.opam/eth-spectec/lib/stublibs:/root/.opam/default/lib/stublibs"
@@ -146,18 +145,54 @@ ENV OCAML_TOPLEVEL_PATH="/root/.opam/eth-spectec/lib/toplevel"
 ENV PATH="/root/.opam/eth-spectec/bin:/root/.opam/default/bin:${PATH}"
 
 # ============================================
-# Stage 8: Copy project files and install Python dependencies
+# Stage 8: Clone and set up clients
+# ============================================
+WORKDIR /workspace/spectec-core/testing_clients
+
+# Clone Lighthouse (v8.0.1)
+RUN git clone --depth 1 --branch v8.0.1 https://github.com/sigp/lighthouse.git
+
+# Clone Prysm (v7.0.0)
+RUN git clone --depth 1 --branch v7.0.0 https://github.com/OffchainLabs/prysm.git
+
+# Clone Teku (25.11.1)
+RUN git clone --depth 1 --branch 25.11.1 https://github.com/ConsenSys/teku.git
+
+# Clone Nimbus (v25.11.1)
+RUN git clone --depth 1 --branch v25.11.1 https://github.com/status-im/nimbus-eth2.git
+
+# Setup Lodestar (create package.json and install dependencies)
+WORKDIR /workspace/spectec-core/testing_clients
+ARG PNPM_VERSION=10.20.0
+ARG LODESTAR_VERSION=1.36.0
+
+# shamefully-hoist puts them where a root-level script can import them.
+RUN mkdir -p lodestar && \
+    cd lodestar && \
+    printf '{\n  "dependencies": {\n    "@lodestar/state-transition": "%s",\n    "@lodestar/types": "%s",\n    "@lodestar/config": "%s",\n    "@lodestar/params": "%s"\n  },\n  "type": "module",\n  "pnpm": {\n    "onlyBuiltDependencies": ["bigint-buffer"]\n  }\n}\n' "${LODESTAR_VERSION}" "${LODESTAR_VERSION}" "${LODESTAR_VERSION}" "${LODESTAR_VERSION}" > package.json && \
+    printf 'shamefully-hoist=true\n' > .npmrc && \
+    npm install -g pnpm@${PNPM_VERSION} && \
+    pnpm install
+
+# Bootstrap the Nimbus build system, which builds its own Nim toolchain and
+# vendor tree before the ncli build below can run.
+WORKDIR /workspace/spectec-core/testing_clients/nimbus-eth2
+RUN JOBS=4 && \
+    make -j${JOBS} deps || make -j2 deps || make deps
+
+# ============================================
+# Stage 9: Copy project files and install Python dependencies
 # ============================================
 COPY . /workspace/spectec-core
 WORKDIR /workspace/spectec-core
 
-# Initialize git submodules (consensus-specs, consensus-spec-tests)
-RUN git submodule update --init --recursive
+# Initialize git submodules (consensus-specs)
+RUN git submodule update --init --depth 1 consensus-specs
 
 # Configure sparse-checkout for consensus-specs (required for eth2spec)
 WORKDIR /workspace/spectec-core/consensus-specs
 RUN git sparse-checkout init --cone && \
-    git sparse-checkout set tests/core/pyspec specs/ configs/ presets/ pysetup/ sync/ .
+    git sparse-checkout set tests/core/pyspec specs configs presets pysetup sync
 
 # Install uv (Python package manager for eth2spec)
 # uv install script may install to ~/.cargo/bin (already in PATH from Rust) or ~/.local/bin
@@ -183,125 +218,46 @@ WORKDIR /workspace/spectec-core
 RUN eval $(opam env) && \
     make exe
 
-# Create testing_clients directory
-RUN mkdir -p testing_clients
-
-# ============================================
-# Stage 9: Clone and setup clients
-# ============================================
-WORKDIR /workspace/spectec-core/testing_clients
-
-# Clone Lighthouse (v8.0.1)
-RUN git clone https://github.com/sigp/lighthouse.git && \
-    cd lighthouse && \
-    git checkout v8.0.1 && \
-    git reset --hard v8.0.1 && \
-    git clean -fd
-
-# Clone Prysm (v7.0.0)
-RUN git clone https://github.com/prysmaticlabs/prysm.git && \
-    cd prysm && \
-    git checkout v7.0.0 && \
-    git reset --hard v7.0.0 && \
-    git clean -fd
-
-# Clone Teku (25.11.1)
-RUN git clone https://github.com/ConsenSys/teku.git && \
-    cd teku && \
-    git checkout 25.11.1 && \
-    git reset --hard 25.11.1 && \
-    git clean -fd
-
-# Clone Nimbus (v25.11.1)
-RUN git clone https://github.com/status-im/nimbus-eth2.git && \
-    cd nimbus-eth2 && \
-    git checkout v25.11.1 && \
-    git reset --hard v25.11.1 && \
-    git clean -fd
-
-# Setup Lodestar (create package.json and install dependencies)
-WORKDIR /workspace/spectec-core/testing_clients
-RUN mkdir -p lodestar && \
-    cd lodestar && \
-    echo '{\n  "dependencies": {\n    "@lodestar/state-transition": "1.36.0"\n  },\n  "type": "module"\n}' > package.json && \
-    npm install -g pnpm && \
-    pnpm i @lodestar/state-transition@1.36.0 && \
-    pnpm install
-
-# ============================================
 # Stage 10: Apply modified code
 # ============================================
 WORKDIR /workspace/spectec-core
 
 # Apply Lighthouse modifications
-RUN if [ -f "modified_code/lighthouse/transition_blocks.rs" ]; then \
-        cp modified_code/lighthouse/transition_blocks.rs testing_clients/lighthouse/lcli/src/transition_blocks.rs; \
-    fi && \
-    if [ -f "modified_code/lighthouse/epoch_processing.rs" ]; then \
-        cp modified_code/lighthouse/epoch_processing.rs testing_clients/lighthouse/lcli/src/epoch_processing.rs; \
-    fi && \
-    if [ -f "modified_code/lighthouse/operation.rs" ]; then \
-        cp modified_code/lighthouse/operation.rs testing_clients/lighthouse/lcli/src/operation.rs; \
-    fi && \
-    if [ -f "modified_code/lighthouse/sanity_slots.rs" ]; then \
-        cp modified_code/lighthouse/sanity_slots.rs testing_clients/lighthouse/lcli/src/sanity_slots.rs; \
-    fi && \
-    if [ -f "modified_code/lighthouse/consensus/state_processing/src/per_block_processing.rs" ]; then \
-        mkdir -p testing_clients/lighthouse/consensus/state_processing/src && \
-        cp modified_code/lighthouse/consensus/state_processing/src/per_block_processing.rs testing_clients/lighthouse/consensus/state_processing/src/per_block_processing.rs; \
-    fi && \
-    if [ -f "modified_code/lighthouse/lcli/src/main.rs" ]; then \
-        cp modified_code/lighthouse/lcli/src/main.rs testing_clients/lighthouse/lcli/src/main.rs; \
-    fi
+RUN cp modified_code/lighthouse/epoch_processing.rs \
+       modified_code/lighthouse/operation.rs \
+       modified_code/lighthouse/sanity_slots.rs \
+       testing_clients/lighthouse/lcli/src/ && \
+    for p in /workspace/spectec-core/patches/lighthouse/*.patch; do \
+        git -C testing_clients/lighthouse apply --3way "$p" || exit 1; \
+    done
 
 # Apply Prysm modifications
-RUN if [ -f "modified_code/prysm/main.go" ]; then \
-        cp modified_code/prysm/main.go testing_clients/prysm/tools/pcli/main.go; \
-    fi && \
-    if [ -f "modified_code/prysm/beacon-chain/core/transition/transition_no_verify_sig.go" ]; then \
-        mkdir -p testing_clients/prysm/beacon-chain/core/transition && \
-        cp modified_code/prysm/beacon-chain/core/transition/transition_no_verify_sig.go testing_clients/prysm/beacon-chain/core/transition/transition_no_verify_sig.go; \
-    fi
+RUN cp modified_code/prysm/pcli_spectest.go testing_clients/prysm/tools/pcli/ && \
+    for p in /workspace/spectec-core/patches/prysm/*.patch; do \
+        git -C testing_clients/prysm apply --3way "$p" || exit 1; \
+    done
 
 # Apply Teku modifications
-RUN if [ -f "modified_code/teku/TransitionCommand.java" ]; then \
-        cp modified_code/teku/TransitionCommand.java testing_clients/teku/teku/src/main/java/tech/pegasys/teku/cli/subcommand/TransitionCommand.java; \
-    fi && \
-    if [ -f "modified_code/teku/ethereum/spec/src/main/java/tech/pegasys/teku/spec/logic/common/block/AbstractBlockProcessor.java" ]; then \
-        mkdir -p testing_clients/teku/ethereum/spec/src/main/java/tech/pegasys/teku/spec/logic/common/block && \
-        cp modified_code/teku/ethereum/spec/src/main/java/tech/pegasys/teku/spec/logic/common/block/AbstractBlockProcessor.java testing_clients/teku/ethereum/spec/src/main/java/tech/pegasys/teku/spec/logic/common/block/AbstractBlockProcessor.java; \
-    fi
+RUN for p in /workspace/spectec-core/patches/teku/*.patch; do \
+        git -C testing_clients/teku apply --3way "$p" || exit 1; \
+    done
 
-# Apply Nimbus modifications (after initial build)
-WORKDIR /workspace/spectec-core/testing_clients/nimbus-eth2
-RUN JOBS=4 && \
-    make -j${JOBS} || make -j2 || make
-
+# Apply Nimbus modifications
 WORKDIR /workspace/spectec-core
-RUN if [ -f "modified_code/nimbus/ncli.nim" ]; then \
-        cp modified_code/nimbus/ncli.nim testing_clients/nimbus-eth2/ncli/ncli.nim; \
-    fi && \
-    if [ -f "modified_code/nimbus/beacon_chain/extras.nim" ]; then \
-        mkdir -p testing_clients/nimbus-eth2/beacon_chain && \
-        cp modified_code/nimbus/beacon_chain/extras.nim testing_clients/nimbus-eth2/beacon_chain/extras.nim; \
-    fi && \
-    if [ -f "modified_code/nimbus/beacon_chain/spec/state_transition.nim" ]; then \
-        mkdir -p testing_clients/nimbus-eth2/beacon_chain/spec && \
-        cp modified_code/nimbus/beacon_chain/spec/state_transition.nim testing_clients/nimbus-eth2/beacon_chain/spec/state_transition.nim; \
-    fi
+RUN for p in /workspace/spectec-core/patches/nimbus/*.patch; do \
+        git -C testing_clients/nimbus-eth2 apply --3way "$p" || exit 1; \
+    done
 
 # Apply Lodestar modifications
-RUN if [ -f "modified_code/lodestar/transition.js" ]; then \
-        cp modified_code/lodestar/transition.js testing_clients/lodestar/transition.js; \
-    fi && \
-    if [ -f "modified_code/lodestar/generateCachedStateCapella.js" ]; then \
-        cp modified_code/lodestar/generateCachedStateCapella.js testing_clients/lodestar/generateCachedStateCapella.js; \
-    fi
+RUN cp modified_code/lodestar/transition.js \
+       modified_code/lodestar/generateCachedStateCapella.js \
+       testing_clients/lodestar/
 
 # Comment out postState.commit() calls in Lodestar node_modules
-RUN if [ -f "testing_clients/lodestar/node_modules/@lodestar/state-transition/lib/stateTransition.js" ]; then \
-        sed -i 's/^[[:space:]]*postState\.commit();/    \/\/postState.commit();/g' testing_clients/lodestar/node_modules/@lodestar/state-transition/lib/stateTransition.js; \
-    fi
+RUN f=testing_clients/lodestar/node_modules/@lodestar/state-transition/lib/stateTransition.js && \
+    n=$(grep -c '^[[:space:]]*postState\.commit();' "$f") && \
+    if [ "$n" -ne 3 ]; then echo "expected 3 postState.commit() calls, found $n" >&2; exit 1; fi && \
+    sed -i 's/^\([[:space:]]*\)postState\.commit();/\1\/\/postState.commit();/' "$f"
 
 # ============================================
 # Stage 11: Build original clients (no coverage)
@@ -314,8 +270,7 @@ RUN cargo build --release --bin lcli
 
 # Build Prysm
 WORKDIR /workspace/spectec-core/testing_clients/prysm
-RUN mkdir -p bazel-bin/tools/pcli/pcli_ && \
-    go build -o bazel-bin/tools/pcli/pcli_/pcli ./tools/pcli
+RUN CGO_CFLAGS="-O2 -D__BLST_PORTABLE__" go build -o pcli ./tools/pcli
 
 # Build Teku
 WORKDIR /workspace/spectec-core/testing_clients/teku
@@ -324,9 +279,11 @@ RUN ./gradlew installDist
 # Build Nimbus
 WORKDIR /workspace/spectec-core/testing_clients/nimbus-eth2
 RUN if [ -f "./env.sh" ]; then \
-        ./env.sh nim c -d:const_preset=mainnet -o:ncli/ncli ncli/ncli.nim; \
+        ./env.sh nim c -d:const_preset=mainnet -d:disableMarchNative \
+            -o:ncli/ncli ncli/ncli.nim; \
     else \
-        nim c -d:const_preset=mainnet -o:ncli/ncli ncli/ncli.nim; \
+        nim c -d:const_preset=mainnet -d:disableMarchNative \
+            -o:ncli/ncli ncli/ncli.nim; \
     fi
 
 # Verify Lodestar (no build needed)
@@ -351,7 +308,7 @@ RUN RUSTFLAGS="-Cinstrument-coverage -Z coverage-options=branch" \
 
 # Build Prysm with coverage
 WORKDIR /workspace/spectec-core/testing_clients/prysm
-RUN go build -cover -o pcli-cov ./tools/pcli
+RUN CGO_CFLAGS="-O2 -D__BLST_PORTABLE__" go build -cover -o pcli-cov ./tools/pcli
 
 # Build Teku with coverage (download JaCoCo agent)
 WORKDIR /workspace/spectec-core/testing_clients/teku
@@ -367,11 +324,11 @@ RUN mkdir -p jacoco && \
 # Build Nimbus with coverage
 WORKDIR /workspace/spectec-core/testing_clients/nimbus-eth2
 RUN if [ -f "./env.sh" ]; then \
-        ./env.sh nim c -d:const_preset=mainnet \
+        ./env.sh nim c -d:const_preset=mainnet -d:disableMarchNative \
             --passC:-fprofile-arcs --passC:-ftest-coverage --passL:-fprofile-arcs \
             -o:ncli/ncli-cov ncli/ncli.nim; \
     else \
-        nim c -d:const_preset=mainnet \
+        nim c -d:const_preset=mainnet -d:disableMarchNative \
             --passC:-fprofile-arcs --passC:-ftest-coverage --passL:-fprofile-arcs \
             -o:ncli/ncli-cov ncli/ncli.nim; \
     fi

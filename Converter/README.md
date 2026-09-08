@@ -21,15 +21,15 @@ Converter/
 │   └── lighthouse_testnet/       # Lighthouse testnet config for pure Capella
 │       ├── config.yaml          # Network config with fork epochs set to 0
 │       └── deposit_contract_block.txt
-└── OfficialTestSuite/            # Official test suite
+└── OfficialTestSuite/            # Official vectors (gitignored; see below)
     ├── capella/                  # Capella fork test cases
-    │   ├── random/              # Random test cases
-    │   ├── sanity/blocks/       # Sanity block test cases
-    │   └── finality/             # Finality test cases
+    │   ├── random/random/        # Random test cases
+    │   ├── sanity/blocks/        # Sanity block test cases
+    │   └── finality/finality/    # Finality test cases
     └── deneb/                    # Deneb fork test cases
-        ├── random/               # Random test cases
+        ├── random/random/        # Random test cases
         ├── sanity/blocks/        # Sanity block test cases
-        └── finality/             # Finality test cases
+        └── finality/finality/    # Finality test cases
 ```
 
 ## Pure Capella Network Configuration
@@ -211,18 +211,29 @@ python run_test_suite.py Converter/OfficialTestSuite/deneb/sanity/blocks --spect
 
 ## Official Test Suite (OfficialTestSuite)
 
+### Getting the vectors
+
+The `OfficialTestSuite` directory is not tracked in git. Run `make
+download-fixture` from the repository root: it pulls the
+[ethereum/consensus-specs v1.6.0 release asset](https://github.com/ethereum/consensus-specs/releases/tag/v1.6.0),
+matching the pinned `consensus-specs` submodule. The version and SHA-256 digest
+are pinned in the root `Makefile`; cached archives are verified on every run.
+Extraction finishes in a temporary directory before replacing this entire
+directory, then records the version, checksum and selection in `.fixture-info`.
+Re-running repairs incomplete extractions and removes suites outside the new
+selection. The Docker image omits the vectors; run the target inside the
+container after building. Files disappear when the container is removed unless
+the `Converter` directory is stored in a persistent volume or bind mount.
+
 ### Test Case Selection Criteria
 
-The `OfficialTestSuite` directory contains test cases extracted from **Ethereum Consensus Spec Tests pinned at `v1.5.0`**.  
-(We pin a specific tag to ensure reproducibility across machines and CI.)
-
-**Why only `random/` and `sanity/blocks/`?**  
+**Why `sanity/`, `random/` and `finality/` by default?**
 We focused on suites that:
 - provide abundant **single-fork** block/state examples,
 - have **stable, self-contained vectors** with clear `meta.yaml` rules,
-- and are lightweight enough to keep this repo practical.
+- and are small enough to unpack quickly from the pinned tarball.
 
-Other suites (e.g., full transition / fork-heavy scenarios) remain valid in the upstream repo, but are **out of scope** for this converter collection to keep the tooling simple and reproducible.
+Other suites (e.g., full transition / fork-heavy scenarios) remain valid in the upstream repo, but are **out of scope** for this converter collection to keep the tooling simple and reproducible. They can still be unpacked on demand with `make download-fixture SPEC_TESTS_SUITES=<suite>`.
 
 ### meta.yaml Rules Understanding
 
