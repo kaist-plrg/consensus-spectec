@@ -54,7 +54,7 @@ jobs:
         run: bash spectec/test/package/install.sh
 
       - name: Dependency report regression
-        if: github.event_name == 'push' && matrix.os == 'ubuntu-latest'
+        if: github.event_name == 'push'
         run: make test-dep
 
       - name: Full tests

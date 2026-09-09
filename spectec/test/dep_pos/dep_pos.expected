@@ -1,120 +1,99 @@
 
 === Symbolic Mutations ===
 
-premise 28:
+premise 25:
   test default:
     BLOCK.message.body.sync_aggregate.sync_committee_signature → != 1164388569225531701361734616346876916442664512837522458354289028519538214514782664748158806621484858462865798022848304904628685033086110793583215456280885854403341232015637429162698964223698833618947249395287351563169635140362043392
 
-premise 72:
+premise 69:
   (not covered)
 
-premise 79:
+premise 76:
   (not covered)
 
-premise 118:
+premise 115:
   test default:
     STATE.slot → > 18446744073709543423
     BLOCK.message.body.attestations[0].data.target.epoch → > 18446744073709543423
 
-premise 142:
+premise 137:
   (not covered)
 
-premise 145:
+premise 140:
   test default:
     STATE.validators[198].effective_balance → > 72340172838076673
 
-premise 177:
+premise 172:
   (not covered)
 
-premise 271:
-  (not covered)
-
-premise 272:
-  (not covered)
-
-premise 283:
+premise 274:
   test default:
     STATE.current_justified_checkpoint.epoch → != 0
     BLOCK.message.body.attestations[0].data.source.epoch → != 0
 
-premise 284:
+premise 275:
   test default:
     STATE.current_justified_checkpoint.root → != bytes(0, len=32)
     BLOCK.message.body.attestations[0].data.source.root → != bytes(0, len=32)
 
-premise 300:
+premise 291:
   (not covered)
 
-premise 328:
+premise 319:
   (not covered)
 
-premise 329:
+premise 320:
   (not covered)
 
-premise 339:
+premise 330:
   (not covered)
 
-premise 414:
+premise 396:
   (not covered)
 
-premise 422:
+premise 410:
   (not covered)
 
-premise 430:
+premise 419:
   (not covered)
 
-premise 438:
+premise 426:
   (not covered)
 
-premise 447:
+premise 433:
   (not covered)
 
-premise 456:
+premise 562:
   (not covered)
 
-premise 463:
+premise 567:
   (not covered)
 
-premise 470:
+premise 573:
   (not covered)
 
-premise 607:
+premise 614:
   (not covered)
 
-premise 612:
+premise 620:
   (not covered)
 
-premise 618:
+premise 621:
   (not covered)
 
-premise 659:
+premise 622:
   (not covered)
 
-premise 665:
+premise 624:
   (not covered)
 
-premise 666:
+premise 636:
   (not covered)
 
-premise 667:
+premise 645:
   (not covered)
 
-premise 669:
-  (not covered)
-
-premise 681:
-  (not covered)
-
-premise 690:
-  (not covered)
-
-premise 704:
-  (not covered)
-
-premise 705:
-  (not covered)
-
-premise 707:
+premise 658:
   test default:
     STATE.current_epoch_participation[18] → UNKNOWN(0)
     STATE.current_epoch_participation[42] → UNKNOWN(0)
@@ -125,63 +104,39 @@ premise 707:
     STATE.current_epoch_participation[207] → UNKNOWN(0)
     STATE.current_epoch_participation[224] → UNKNOWN(0)
 
-premise 709:
+premise 660:
   (not covered)
 
-premise 711:
-  test default:
-    STATE.latest_block_header → len <= 0
-    STATE.slot → len <= 0
-    BLOCK.message.body.attestations[0].data.beacon_block_root → len <= 0
-    BLOCK.message.body.attestations[0].data.slot → len <= 0
-    BLOCK.message.body.attestations[0].data.target.root → len <= 0
-
-premise 719:
+premise 667:
   (not covered)
 
-premise 720:
+premise 669:
   (not covered)
 
-premise 721:
+premise 683:
   (not covered)
 
-premise 724:
+premise 686:
   (not covered)
 
-premise 726:
+premise 688:
   (not covered)
 
-premise 737:
+premise 693:
   (not covered)
 
-premise 747:
+premise 698:
   (not covered)
 
-premise 750:
+premise 701:
   (not covered)
 
-premise 752:
-  (not covered)
-
-premise 757:
-  (not covered)
-
-premise 766:
-  (not covered)
-
-premise 769:
-  (not covered)
-
-premise 772:
-  test default:
-    BLOCK.message.body.attester_slashings → len > 0
-
-premise 780:
+premise 708:
   test default:
     STATE.slot → < 33
     BLOCK.message.body.attestations[0].data.slot → > 33
 
-premise 787:
+premise 715:
   test default:
     STATE → UNKNOWN({
   attesting_indices [
@@ -236,22 +191,15 @@ premise 787:
   signature bytes(983655760745835780632905629608451570982699707681348276434780655031794734110610657921480242520793157641112126439613906671466588611628180702985580393955791415326182443886441942578040829466352452843982991755516752825071803781075739075, len=96)
 })
 
-premise 792:
+premise 720:
   (not covered)
 
-premise 799:
+premise 727:
   (not covered)
 
-premise 807:
+premise 735:
   (not covered)
 
-premise 809:
-  test default:
-    BLOCK.message.body.attestations → len > 0
-
-premise 818:
-  (not covered)
-
-premise 843:
+premise 759:
   (not covered)
 
