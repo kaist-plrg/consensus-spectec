@@ -15,10 +15,8 @@ exe:
 	rm -f ./$(NAME)
 	$(DUNE) build --promote-install-files=false @install --profile=release
 	@echo
-	@printf '%s\n' \
-	  '#!/bin/sh' \
-	  'exec opam exec --switch=$(SWITCH) -- dune exec --no-print-directory --root "$(abspath .)" --no-build spectec -- "$$@"' \
-	  > ./$(NAME)
+	@$(DUNE) exec --no-build -- sh spectec/scripts/make-launcher.sh \
+	  "$(SWITCH)" "$(abspath _build/default/spectec/bin/main.exe)" > ./$(NAME)
 	chmod +x ./$(NAME)
 
 lsp:
@@ -262,6 +260,11 @@ test-cli:
 	@echo "#### Running CLI snapshot tests"
 	@$(DUNE) build @spectec/test/cli/runtest --profile=release && echo OK
 
+.PHONY: test-launcher
+
+test-launcher: exe
+	@python3 spectec/test/launcher/main.py ./$(NAME)
+
 test-lsp:
 	@echo "#### Running LSP diagnostics test"
 	@$(DUNE) build @spectec/test/lsp/runtest --profile=release && echo OK
@@ -348,7 +351,7 @@ test-pl-pos-old:
 test-pl-neg-old:
 	$(call run_interp_test,p4-old,pl,neg)
 
-test-quick: test-elab test-elab-pos test-elab-neg test-interp-relation test-attempt test-interp-neg test-cli test-lsp test-struct test-annotate test-roundtrip-il test-roundtrip-el test-impty test-miniml test-parsegen test-package test-bytesv test-instrumentation test-testgen-checkpoint
+test-quick: test-elab test-elab-pos test-elab-neg test-interp-relation test-attempt test-interp-neg test-cli test-launcher test-lsp test-struct test-annotate test-roundtrip-il test-roundtrip-el test-impty test-miniml test-parsegen test-package test-bytesv test-instrumentation test-testgen-checkpoint
 	@echo "#### Quick tests passed"
 
 test-il: test-il-pos test-il-neg
