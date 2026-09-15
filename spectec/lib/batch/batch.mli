@@ -112,6 +112,7 @@ val print_summary : batch_summary -> unit
 val run_and_print_single :
   (module Spectec.Task.S with type input = 'i) ->
   ?config:Instrumentation.Config.t ->
+  ?output:string ->
   mode:Spectec.Interp_mode.t ->
   spec_il:Lang.Il.spec ->
   'i ->

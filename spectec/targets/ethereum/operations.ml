@@ -54,7 +54,7 @@ module ProposerSlashing = struct
   let format_output _values = "Proposer slashing processed"
   let parse_string = parse_string
   let unparse = unparse
-  let save_output _filename _values = ()
+  let save_output = None
 end
 
 (* AttesterSlashing task *)
@@ -92,7 +92,7 @@ module AttesterSlashing = struct
   let format_output _values = "Attester slashing processed"
   let parse_string = parse_string
   let unparse = unparse
-  let save_output _filename _values = ()
+  let save_output = None
 end
 
 (* Attestation task *)
@@ -129,7 +129,7 @@ module Attestation = struct
   let format_output _values = "Attestation processed"
   let parse_string = parse_string
   let unparse = unparse
-  let save_output _filename _values = ()
+  let save_output = None
 end
 
 (* Deposit task *)
@@ -164,7 +164,7 @@ module Deposit = struct
   let format_output _values = "Deposit processed"
   let parse_string = parse_string
   let unparse = unparse
-  let save_output _filename _values = ()
+  let save_output = None
 end
 
 (* VoluntaryExit task *)
@@ -201,7 +201,7 @@ module VoluntaryExit = struct
   let format_output _values = "Voluntary exit processed"
   let parse_string = parse_string
   let unparse = unparse
-  let save_output _filename _values = ()
+  let save_output = None
 end
 
 (* BlsToExecutionChange task *)
@@ -238,7 +238,7 @@ module BlsToExecutionChange = struct
   let format_output _values = "BLS to execution change processed"
   let parse_string = parse_string
   let unparse = unparse
-  let save_output _filename _values = ()
+  let save_output = None
 end
 
 (* === Block Processing === *)
@@ -301,7 +301,7 @@ module ExecutionPayload = struct
   let format_output _values = "Execution payload processed"
   let parse_string = parse_string
   let unparse = unparse
-  let save_output _filename _values = ()
+  let save_output = None
 end
 
 (* Withdrawals task *)
@@ -339,7 +339,7 @@ module Withdrawals = struct
   let format_output _values = "Withdrawals processed"
   let parse_string = parse_string
   let unparse = unparse
-  let save_output _filename _values = ()
+  let save_output = None
 end
 
 (* BlockHeader task *)
@@ -374,7 +374,7 @@ module BlockHeader = struct
   let format_output _values = "Block header processed"
   let parse_string = parse_string
   let unparse = unparse
-  let save_output _filename _values = ()
+  let save_output = None
 end
 
 (* SyncAggregate task *)
@@ -411,5 +411,5 @@ module SyncAggregate = struct
   let format_output _values = "Sync aggregate processed"
   let parse_string = parse_string
   let unparse = unparse
-  let save_output _filename _values = ()
+  let save_output = None
 end

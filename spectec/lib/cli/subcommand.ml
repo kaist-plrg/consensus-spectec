@@ -27,6 +27,10 @@ let make_task (module Tgt : Spectec.Target.S) ~name ~summary
     and verbose = flag "-v" no_arg ~doc:" verbose output"
     and batch_mode = Cli_args.Batch.mode_flag
     and batch_dir = Cli_args.Batch.dir_flag
+    and output =
+      match TC.Task.save_output with
+      | None -> return None
+      | Some _ -> flag "--output" (optional string) ~doc:"FILE save task output"
     and input = TC.flags
     and config = Cli_args.Interpreter.config_flags
     and color = Cli_args.Output.color_flag in
@@ -36,6 +40,14 @@ let make_task (module Tgt : Spectec.Target.S) ~name ~summary
       @@ fun () ->
       let ansi = resolve_ansi color in
       let open Spectec in
+      let* () =
+        if Option.is_some output && (batch_mode || Option.is_some batch_dir)
+        then
+          Error
+            (Error.ConfigError
+               (Common.Source.no_region, "--output requires a single input"))
+        else Ok ()
+      in
       let* () = validate_config config ~mode in
       let* cfg = Config_file.load ~target:Tgt.name () in
       let source =
@@ -48,7 +60,7 @@ let make_task (module Tgt : Spectec.Target.S) ~name ~summary
       | false, None ->
           Batch.run_and_print_single
             (module TC.Task)
-            ~config ~mode ~spec_il input
+            ~config ?output ~mode ~spec_il input
       | true, None ->
           Batch.run_and_print_batch
             (module TC.Task)

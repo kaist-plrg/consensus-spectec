@@ -184,5 +184,5 @@ module JsonParse = struct
   let expectation { expect; _ } = expect
   let collect ?dir:_ () = []
   let format_output values = unparse ~spec:[] values
-  let save_output _filename _values = ()
+  let save_output = None
 end
