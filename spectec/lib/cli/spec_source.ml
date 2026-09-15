@@ -1,5 +1,10 @@
 type t = Files of string list | Dir of string
 
+let resolve ~cli ~config ~default_dir =
+  match cli with
+  | Some source -> source
+  | None -> Option.value config ~default:(Dir default_dir)
+
 let files = function
   | Files files -> Ok files
   | Dir dir ->

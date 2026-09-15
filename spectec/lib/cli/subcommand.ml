@@ -10,11 +10,6 @@ let load_spec source =
   let henv = Spectec.henv_with_il_spec henv spec_il in
   Ok (filenames, spec_il, henv)
 
-let resolve_source ~cli ~config ~default_dir =
-  match cli with
-  | Some source -> source
-  | None -> Option.value config ~default:(Spec_source.Dir default_dir)
-
 let make_task (module Tgt : Spectec.Target.S) ~name ~summary
     (module TC : Task_cli.S) =
   let cmd =
@@ -51,7 +46,7 @@ let make_task (module Tgt : Spectec.Target.S) ~name ~summary
       let* () = validate_config config ~mode in
       let* cfg = Config_file.load ~target:Tgt.name () in
       let source =
-        resolve_source ~cli:cli_source ~config:cfg.Config_file.spec_source
+        Spec_source.resolve ~cli:cli_source ~config:cfg.Config_file.spec_source
           ~default_dir:Tgt.spec_dir
       in
       let* _files, spec_il, henv = load_spec source in
@@ -88,7 +83,7 @@ let make_parse (module Tgt : Spectec.Target.S) ~name ~summary
       let open Spectec in
       let* cfg = Config_file.load ~target:Tgt.name () in
       let source =
-        resolve_source ~cli:cli_source ~config:cfg.Config_file.spec_source
+        Spec_source.resolve ~cli:cli_source ~config:cfg.Config_file.spec_source
           ~default_dir:Tgt.spec_dir
       in
       let* _files, spec_il, _henv = load_spec source in
@@ -147,7 +142,7 @@ let make_batch ?on_no_validate ?slot_gap_filter (module Tgt : Spectec.Target.S)
       let* () = validate_config config ~mode in
       let* cfg = Config_file.load ~target:Tgt.name () in
       let source =
-        resolve_source ~cli:cli_source ~config:cfg.Config_file.spec_source
+        Spec_source.resolve ~cli:cli_source ~config:cfg.Config_file.spec_source
           ~default_dir:Tgt.spec_dir
       in
       let* spec_files, spec_il, henv = load_spec source in
@@ -218,7 +213,7 @@ let make_checkpoint (module Tgt : Spectec.Target.S) ~name =
       guard_unit ~color @@ fun () ->
       let* cfg = Config_file.load ~target:Tgt.name () in
       let source =
-        resolve_source ~cli:None ~config:cfg.Config_file.spec_source
+        Spec_source.resolve ~cli:None ~config:cfg.Config_file.spec_source
           ~default_dir:Tgt.spec_dir
       in
       let* spec_files, spec_il, _henv = load_spec source in

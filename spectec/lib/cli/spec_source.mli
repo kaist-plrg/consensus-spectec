@@ -3,6 +3,8 @@
 
 type t = Files of string list | Dir of string
 
+val resolve : cli:t option -> config:t option -> default_dir:string -> t
+
 (** [files src] is the spec files for [src]: a {!Files} list as given, or the
     [.spectec] files under a {!Dir} via {!Spectec.collect_spec_files}. Errors
     when the directory is missing or is not a directory. *)
