@@ -9,7 +9,7 @@ cd "$root" # so the default spec dir (spec/spec_capella) resolves
 gunzip -c "$dir/pre.json.gz" > "$dir/pre.json"
 trap 'rm -f "$dir/pre.json"' EXIT
 
-./spectec-core eth run state-transition \
+./spectecx ethereum run state-transition \
   --pre "$dir/pre.json" \
   --block "$dir/block.json" \
   --dep-pos.output "$dir/dep_pos.actual" \

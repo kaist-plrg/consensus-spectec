@@ -53,10 +53,10 @@ The Dockerfile provides a reproducible, isolated environment for building and te
    - Nim 1.6.20 (for Nimbus)
    - Python 3 with dependencies (including snappy for decompression)
    - Coverage tools: lcov, go-bcov, llvm-profdata, JaCoCo, c8
-   - OCaml and build tools (for spectec-core executable)
-2. Sets up the environment for building spectec-core executable:
+   - OCaml and build tools (for spectecx executable)
+2. Sets up the environment for building spectecx executable:
    - Installs OCaml compiler and opam package manager
-   - Configures build environment for spectec-core
+   - Configures build environment for spectecx
 3. Clones and builds client implementations:
    - Lighthouse (v8.0.1)
    - Prysm (v7.0.0)
@@ -93,7 +93,7 @@ or bind mount.
 
 ### 2. Building the Project
 
-**Use spectec-core executable:**
+**Use spectecx executable:**
 
 ```bash
 # Inside the container:
@@ -102,10 +102,10 @@ cd /workspace/spectec-core
 make exe
 ```
 
-This creates an executable `spectec-core` in the project root.
+This creates an executable `spectecx` in the project root.
 ```bash
 # Print IL representation
-./spectec-core elab spec/spec_capella/*.spectec
+./spectecx elab spec/spec_capella/*.spectec
 ```
 
 ### Structure
@@ -137,31 +137,31 @@ The P4, Mini-ML, and Impty examples require the corresponding target package. Et
 
 ```bash
 # print out the IL representation of a SpecTec spec
-./spectec-core elab spec/*.spectec
+./spectecx elab spec/*.spectec
 # print the SL representation of a SpecTec spec
-./spectec-core struct spec/*.spectec
+./spectecx struct spec/*.spectec
 
 ## P4-specific commands
 
 # parse a P4 program to an IL value (-r to do a roundtrip test)
-./spectec-core p4 parse spec/*.spectec -i spectec/testdata/interp/p4-tests/includes -p target/file.p4 [-r]
+./spectecx p4 parse spec/*.spectec -i spectec/testdata/interp/p4-tests/includes -p target/file.p4 [-r]
 
 # run a P4 program based on SpecTec IL/SL
-./spectec-core p4 typecheck -i spectec/testdata/interp/p4-tests/includes -p target/file.p4
-./spectec-core p4 typecheck -i spectec/testdata/interp/p4-tests/includes -p target/file.p4 --sl
+./spectecx p4 typecheck -i spectec/testdata/interp/p4-tests/includes -p target/file.p4
+./spectecx p4 typecheck -i spectec/testdata/interp/p4-tests/includes -p target/file.p4 --sl
 ```
 
 Ethereum commands are grouped under `ethereum`:
 
 ```bash
 # Run one state transition
-./spectec-core ethereum run state-transition --pre pre.json --block block.json
+./spectecx ethereum run state-transition --pre pre.json --block block.json
 
 # Collect premise coverage and save a resumable checkpoint
-./spectec-core ethereum coverage --batch-dir eth-tests --premise-coverage.level summary --checkpoint coverage.ckpt
+./spectecx ethereum coverage --batch-dir eth-tests --premise-coverage.level summary --checkpoint coverage.ckpt
 
 # Generate mutations for selected uncovered premise UIDs
-./spectec-core ethereum testgen --coverage coverage.ckpt --premises-file targets.txt --test-dir eth-tests --output testgen_output
+./spectecx ethereum testgen --coverage coverage.ckpt --premises-file targets.txt --test-dir eth-tests --output testgen_output
 ```
 
 ### Editor support
@@ -169,7 +169,7 @@ Ethereum commands are grouped under `ethereum`:
 Integrations for `.spectec` files live in `editors/`:
 
 - **Syntax highlighting** for VS Code, Emacs, and Vim/Neovim, one per subdirectory.
-- **Diagnostics**: `make lsp` builds `spectec-core-lsp`, a language server that reports parse and elaboration errors as you edit.
+- **Diagnostics**: `make lsp` builds `spectecx-lsp`, a language server that reports parse and elaboration errors as you edit.
 
 See [editors/README.md](editors/README.md) for installing a highlighter and turning on the language server.
 

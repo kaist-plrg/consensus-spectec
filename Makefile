@@ -1,4 +1,4 @@
-NAME = spectec-core
+NAME = spectecx
 
 SWITCH ?= eth-spectec
 

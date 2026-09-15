@@ -1246,7 +1246,7 @@ def main():
     parser.add_argument(
         "--spectec-bin",
         required=False,
-        help="Path to Spectec binary (e.g., ./spectec-core). Required unless --eth2spec-only is used."
+        help="Path to Spectec binary (e.g., ./spectecx). Required unless --eth2spec-only is used."
     )
     parser.add_argument(
         "--converter-dir",
@@ -1331,7 +1331,7 @@ def main():
                 print(f"Note: Found executable at {spectec_bin}")
             else:
                 print(f"Error: Spectec binary path is a directory: {spectec_bin}")
-                print(f"Please provide the path to the executable file, e.g., spectec-core/spectec-core")
+                print("Please provide the path to the executable file, e.g., ./spectecx")
                 sys.exit(1)
 
         if not spectec_bin.is_file():
