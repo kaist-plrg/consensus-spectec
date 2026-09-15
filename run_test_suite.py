@@ -48,7 +48,7 @@ class TestRunner:
         Args:
             converter_dir: Converter 디렉터리 경로
             spectec_bin: Spectec 실행 파일 경로
-            spec_dir: spec 파일들이 있는 디렉터리 (기본값: spectec-core/spec/spec_{fork})
+            spec_dir: spec 파일들이 있는 디렉터리 (기본값: Converter/../spec/spec_{fork})
             run_mode: 실행 모드 ("il", "sl", "pl", 기본값: "il")
             workflow: 테스트 워크플로우 모드 ("independent" 또는 "sequential", 기본값: "independent")
             fork: 사용할 fork 이름 (예: "deneb", "capella", 기본값: "deneb")
@@ -73,7 +73,6 @@ class TestRunner:
         self.eth2spec_result = self.converter_dir / "eth2specResult.py"
         
         # consensus-specs 경로 (eth2specResult.py에서 사용)
-        # converter_dir이 Converter/이면, parent는 spectec-core/, 그 아래에 consensus-specs가 있음
         consensus_specs = self.converter_dir.parent / "consensus-specs"
         self.consensus_specs_path = consensus_specs / "tests" / "core" / "pyspec"
     
@@ -1256,7 +1255,7 @@ def main():
     parser.add_argument(
         "--spec-dir",
         default=None,
-        help="Path to spec directory containing .spectec files (default: spectec-core/spec/spec_{fork})"
+        help="Path to spec directory containing .spectec files (default: Converter/../spec/spec_{fork})"
     )
     parser.add_argument(
         "--fork", "--fork-version",
