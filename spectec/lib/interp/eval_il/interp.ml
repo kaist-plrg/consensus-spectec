@@ -168,7 +168,7 @@ let rec upcast (ctx : Ctx.t) (typ : typ) (value : value) : value =
   | NumT `IntT -> (
       match value.it with
       | NumV (`Nat n) -> Value.int n |> VH.on_derived ~source:value
-      | NumV (`Int _) -> value
+      | NumV (`Int _) | BytesV _ -> value
       | _ -> assert false)
   | VarT { synid = tid; targs } -> (
       let tparams, deftyp = Ctx.find_typdef ctx tid in
@@ -196,7 +196,7 @@ let rec downcast (ctx : Ctx.t) (typ : typ) (value : value) : value =
   match typ.it with
   | NumT `NatT -> (
       match value.it with
-      | NumV (`Nat _) -> value
+      | NumV (`Nat _) | BytesV _ -> value
       | NumV (`Int i) when Bigint.(i >= zero) ->
           Value.nat i |> VH.on_derived ~source:value
       | _ -> assert false)
@@ -227,10 +227,11 @@ let rec subtyp (ctx : Ctx.t) (typ : typ) (value : value) : bool =
   | BoolT -> ( match value.it with BoolV _ -> true | _ -> false)
   | NumT `NatT -> (
       match value.it with
-      | NumV (`Nat _) -> true
+      | NumV (`Nat _) | BytesV _ -> true
       | NumV (`Int i) -> Bigint.(i >= zero)
       | _ -> false)
-  | NumT `IntT -> ( match value.it with NumV _ -> true | _ -> false)
+  | NumT `IntT -> (
+      match value.it with NumV _ | BytesV _ -> true | _ -> false)
   | TextT -> ( match value.it with TextV _ -> true | _ -> false)
   | VarT { synid = tid; targs } -> (
       let tparams, deftyp = Ctx.find_typdef ctx tid in
