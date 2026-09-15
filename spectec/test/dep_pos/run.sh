@@ -6,16 +6,20 @@ dir=$(cd "$(dirname "$0")" && pwd)
 root=$(cd "$dir/../../.." && pwd)
 cd "$root" # so the default spec dir (spec/spec_capella) resolves
 
+log=$(mktemp "${TMPDIR:-/tmp}/spectec-dep.XXXXXX")
+trap 'rm -f "$dir/pre.json" "$log"' EXIT
 gunzip -c "$dir/pre.json.gz" > "$dir/pre.json"
-trap 'rm -f "$dir/pre.json"' EXIT
 
-./spectecx ethereum run state-transition \
+if ! ./spectecx ethereum run state-transition \
   --pre "$dir/pre.json" \
   --block "$dir/block.json" \
   --dep-pos.output "$dir/dep_pos.actual" \
   --dep-pos.level summary \
   --dep-pos.targets-file "$dir/targets.txt" \
-  --no-validate >/dev/null 2>&1 || true
+  --no-validate >"$log" 2>&1; then
+  cat "$log" >&2
+  exit 1
+fi
 
 if diff "$dir/dep_pos.expected" "$dir/dep_pos.actual"; then
   echo OK
