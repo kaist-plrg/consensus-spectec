@@ -4,6 +4,8 @@ final_coverage_report/
 results/
 *.csv
 *.json
+!spectec/test/**/*.json
+!editors/vscode/**/*.json
 
 # Ignore documentation. Prevents documentation edits from invalidating the cache.
 *.md
@@ -19,6 +21,10 @@ __pycache__/
 .Python
 
 # Ignore build artifacts (will be built inside container)
+_build/
+spectecx
+spectecx-lsp
+editors/vscode/*.vsix
 testing_clients/
 *.o
 *.so
