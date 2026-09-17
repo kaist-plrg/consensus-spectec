@@ -37,6 +37,20 @@ from typing import List, Tuple, Optional
 
 
 class JsonTestCaseGenerator:
+    # Reference: https://github.com/ethereum/consensus-specs/tree/master/tests/formats/operations#condition
+    OPERATION_TYPE_NAMES = {
+        'attestation': 'Attestation',
+        'deposit': 'Deposit',
+        'proposer_slashing': 'ProposerSlashing',
+        'attester_slashing': 'AttesterSlashing',
+        'voluntary_exit': 'SignedVoluntaryExit',
+        'bls_to_execution_change': 'SignedBLSToExecutionChange',
+        'sync_aggregate': 'SyncAggregate',
+        'block_header': 'BeaconBlock',
+        'execution_payload': 'BeaconBlockBody',
+        'withdrawals': 'ExecutionPayload',
+    }
+
     def __init__(
         self,
         converter_dir: str,
@@ -52,27 +66,12 @@ class JsonTestCaseGenerator:
         
         # script paths
         self.snappy_decompressor = self.converter_dir / "snappyDecompressor.py"
-        self.beacon_state_to_json = self.converter_dir / "SSZToJson" / "BeaconStateSSZToJson.py"
-        self.signed_block_to_json = self.converter_dir / "SSZToJson" / "SignedBeaconBlockSSZToJson.py"
+        self.ssz_to_json_script = self.converter_dir / "SSZToJson" / "SSZToJson.py"
         self.eth2spec_result = self.converter_dir / "eth2specResult.py"
         self.eth2spec_operation_result = self.converter_dir / "eth2specOperationResult.py"
         self.eth2spec_epoch_processing_result = self.converter_dir / "eth2specEpochProcessingResult.py"
         self.eth2spec_sanity_slot_result = self.converter_dir / "eth2specSanitySlotResult.py"
-        
-        # Operation type to SSZ→JSON converter script mapping
-        self.operation_to_json_scripts = {
-            'attestation': self.converter_dir / "SSZToJson" / "AttestationSSZToJson.py",
-            'deposit': self.converter_dir / "SSZToJson" / "DepositSSZToJson.py",
-            'proposer_slashing': self.converter_dir / "SSZToJson" / "ProposerSlashingSSZToJson.py",
-            'attester_slashing': self.converter_dir / "SSZToJson" / "AttesterSlashingSSZToJson.py",
-            'voluntary_exit': self.converter_dir / "SSZToJson" / "VoluntaryExitSSZToJson.py",
-            'bls_to_execution_change': self.converter_dir / "SSZToJson" / "BLSToExecutionChangeSSZToJson.py",
-            'sync_aggregate': self.converter_dir / "SSZToJson" / "SyncAggregateSSZToJson.py",
-            'block_header': self.converter_dir / "SSZToJson" / "BeaconBlockHeaderSSZToJson.py", # Uses BeaconBlock
-            'execution_payload': self.converter_dir / "SSZToJson" / "ExecutionPayloadSSZToJson.py",  # Uses BeaconBlockBody
-            'withdrawals': self.converter_dir / "SSZToJson" / "WithdrawalSSZToJson.py",  # Uses ExecutionPayload
-        }
-        
+
         # consensus-specs path
         consensus_specs = self.converter_dir.parent / "consensus-specs"
         self.consensus_specs_path = consensus_specs / "tests" / "core" / "pyspec"
@@ -119,16 +118,11 @@ class JsonTestCaseGenerator:
     def ssz_to_json(self, ssz_file: Path, json_file: Path, is_beacon_state: bool = True) -> bool:
         """Convert SSZ file to JSON."""
         try:
-            if is_beacon_state:
-                script = self.beacon_state_to_json
-            else:
-                script = self.signed_block_to_json
-            
             type_module = f"eth2spec.{self.fork}.mainnet"
-            
             result = subprocess.run(
-                [sys.executable, str(script), 
+                [sys.executable, str(self.ssz_to_json_script),
                  "--type-module", type_module,
+                 "--type",  "BeaconState" if is_beacon_state else "SignedBeaconBlock",
                  "--in", str(ssz_file), "--out", str(json_file)],
                 capture_output=True,
                 text=True,
@@ -220,32 +214,16 @@ class JsonTestCaseGenerator:
     def ssz_to_json_operation(self, ssz_file: Path, json_file: Path, operation_type: str) -> bool:
         """Convert operation SSZ file to JSON."""
         try:
-            if operation_type not in self.operation_to_json_scripts:
+            if operation_type not in self.OPERATION_TYPE_NAMES:
                 print(f"  ✗ Unknown operation type: {operation_type}")
                 return False
-            
-            script = self.operation_to_json_scripts[operation_type]
-            
+
             type_module = f"eth2spec.{self.fork}.mainnet"
-            
-            type_name_map = {
-                'attestation': 'Attestation',
-                'deposit': 'Deposit',
-                'proposer_slashing': 'ProposerSlashing',
-                'attester_slashing': 'AttesterSlashing',
-                'voluntary_exit': 'SignedVoluntaryExit',
-                'bls_to_execution_change': 'SignedBLSToExecutionChange',
-                'sync_aggregate': 'SyncAggregate',
-                'block_header': 'BeaconBlock', # block_header tests provide block.ssz_snappy (BeaconBlock)
-                'execution_payload': 'BeaconBlockBody',  # execution_payload tests provide body.ssz_snappy (BeaconBlockBody)
-                'withdrawals': 'ExecutionPayload',  # withdrawals tests provide execution_payload.ssz_snappy (ExecutionPayload)
-            }
-            type_name = type_name_map.get(operation_type, operation_type.capitalize())
-            
+
             result = subprocess.run(
-                [sys.executable, str(script), 
+                [sys.executable, str(self.ssz_to_json_script),
                  "--type-module", type_module,
-                 "--type", type_name,
+                 "--type", self.OPERATION_TYPE_NAMES[operation_type],
                  "--in", str(ssz_file), "--out", str(json_file)],
                 capture_output=True,
                 text=True,
@@ -269,7 +247,7 @@ class JsonTestCaseGenerator:
             'bls_to_execution_change': 'address_change.ssz_snappy',  # bls_to_execution_change tests use address_change.ssz_snappy
         }
         
-        operation_types = list(self.operation_to_json_scripts.keys())
+        operation_types = list(self.OPERATION_TYPE_NAMES)
         for op_type in operation_types:
             # Check for special file names first
             if op_type in operation_file_names:
@@ -303,7 +281,7 @@ class JsonTestCaseGenerator:
     def find_operation_files(self, test_case_dir: Path) -> List[Tuple[str, Path]]:
         """Find operation files."""
         operation_files = []
-        operation_types = list(self.operation_to_json_scripts.keys())
+        operation_types = list(self.OPERATION_TYPE_NAMES)
         
         # Special file name mappings for certain operation types
         operation_file_names = {

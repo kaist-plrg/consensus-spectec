@@ -67,8 +67,7 @@ class TestRunner:
         
         # 스크립트 경로들
         self.snappy_decompressor = self.converter_dir / "snappyDecompressor.py"
-        self.beacon_state_to_json = self.converter_dir / "SSZToJson" / "BeaconStateSSZToJson.py"
-        self.signed_block_to_json = self.converter_dir / "SSZToJson" / "SignedBeaconBlockSSZToJson.py"
+        self.ssz_to_json_script = self.converter_dir / "SSZToJson" / "SSZToJson.py"
         self.json_to_ssz_script = self.converter_dir / "JsonToSSZ" / "BeaconStateJsonToSSZ.py"
         self.eth2spec_result = self.converter_dir / "eth2specResult.py"
         self.compare_result = self.converter_dir / "CompareResult.py"
@@ -218,17 +217,15 @@ class TestRunner:
     def ssz_to_json(self, ssz_file: Path, json_file: Path, is_beacon_state: bool = True) -> bool:
         """SSZ 파일을 JSON으로 변환합니다."""
         try:
-            if is_beacon_state:
-                script = self.beacon_state_to_json
-            else:
-                script = self.signed_block_to_json
-            
+            type_name = "BeaconState" if is_beacon_state else "SignedBeaconBlock"
+
             # Fork에 맞는 type-module 지정
             type_module = f"eth2spec.{self.fork}.mainnet"
-            
+
             result = subprocess.run(
-                [sys.executable, str(script), 
+                [sys.executable, str(self.ssz_to_json_script),
                  "--type-module", type_module,
+                 "--type", type_name,
                  "--in", str(ssz_file), "--out", str(json_file)],
                 capture_output=True,
                 text=True,
