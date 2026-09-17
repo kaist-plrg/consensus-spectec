@@ -35,6 +35,8 @@ import shutil
 from pathlib import Path
 from typing import List, Tuple, Optional
 
+from snappy_decompressor import decompress as decompress_snappy
+
 
 class JsonTestCaseGenerator:
     # Reference: https://github.com/ethereum/consensus-specs/tree/master/tests/formats/operations#condition
@@ -65,7 +67,6 @@ class JsonTestCaseGenerator:
         self.fork = fork
         
         # script paths
-        self.snappy_decompressor = self.converter_dir / "snappyDecompressor.py"
         self.ssz_to_json_script = self.converter_dir / "SSZToJson" / "SSZToJson.py"
         self.eth2spec_result = self.converter_dir / "eth2specResult.py"
         self.eth2spec_operation_result = self.converter_dir / "eth2specOperationResult.py"
@@ -100,20 +101,6 @@ class JsonTestCaseGenerator:
             test_cases.append(pre_file.parent)
         
         return sorted(test_cases)
-    
-    def decompress_snappy(self, input_file: Path, output_file: Path) -> bool:
-        """Decompress snappy file."""
-        try:
-            result = subprocess.run(
-                [sys.executable, str(self.snappy_decompressor), str(input_file), str(output_file)],
-                capture_output=True,
-                text=True,
-                check=True
-            )
-            return True
-        except subprocess.CalledProcessError as e:
-            print(f"  ✗ Snappy decompression failed: {e.stderr}")
-            return False
     
     def ssz_to_json(self, ssz_file: Path, json_file: Path, is_beacon_state: bool = True) -> bool:
         """Convert SSZ file to JSON."""
@@ -457,14 +444,14 @@ class JsonTestCaseGenerator:
                 print("  Decompressing snappy files...")
             
             pre_ssz = work_dir / "pre.ssz"
-            if not self.decompress_snappy(pre_snappy, pre_ssz):
+            if not decompress_snappy(pre_snappy, pre_ssz):
                 return 0, 1
             
             block_ssz_files = []
             for block_snappy in block_snappy_files:
                 block_num = int(block_snappy.stem.replace("blocks_", ""))
                 block_ssz = work_dir / f"blocks_{block_num}.ssz"
-                if not self.decompress_snappy(block_snappy, block_ssz):
+                if not decompress_snappy(block_snappy, block_ssz):
                     errors += 1
                     continue
                 block_ssz_files.append((block_num, block_ssz))
@@ -477,7 +464,7 @@ class JsonTestCaseGenerator:
             post_ssz = None
             if has_existing_post:
                 post_ssz = work_dir / "post.ssz"
-                if not self.decompress_snappy(post_snappy, post_ssz):
+                if not decompress_snappy(post_snappy, post_ssz):
                     post_ssz = None
             
             # 3. SSZ -> JSON conversion and test case generation
@@ -631,13 +618,13 @@ class JsonTestCaseGenerator:
                 print("  Decompressing snappy files...")
             
             pre_ssz = work_dir / "pre.ssz"
-            if not self.decompress_snappy(pre_snappy, pre_ssz):
+            if not decompress_snappy(pre_snappy, pre_ssz):
                 return 0, 1
             
             operation_ssz_files = []
             for op_type, op_snappy in operation_files:
                 op_ssz = work_dir / f"{op_type}.ssz"
-                if not self.decompress_snappy(op_snappy, op_ssz):
+                if not decompress_snappy(op_snappy, op_ssz):
                     errors += 1
                     continue
                 operation_ssz_files.append((op_type, op_ssz))
@@ -650,7 +637,7 @@ class JsonTestCaseGenerator:
             post_ssz = None
             if has_existing_post:
                 post_ssz = work_dir / "post.ssz"
-                if not self.decompress_snappy(post_snappy, post_ssz):
+                if not decompress_snappy(post_snappy, post_ssz):
                     post_ssz = None
             
             # 3. SSZ -> JSON conversion and test case generation
@@ -838,14 +825,14 @@ class JsonTestCaseGenerator:
                 print("  Decompressing snappy files...")
             
             pre_ssz = work_dir / "pre.ssz"
-            if not self.decompress_snappy(pre_snappy, pre_ssz):
+            if not decompress_snappy(pre_snappy, pre_ssz):
                 return 0, 1
             
             # Decompress existing post.ssz if available
             post_ssz = None
             if has_existing_post:
                 post_ssz = work_dir / "post.ssz"
-                if not self.decompress_snappy(post_snappy, post_ssz):
+                if not decompress_snappy(post_snappy, post_ssz):
                     post_ssz = None
             
             # 3. SSZ -> JSON conversion and test case generation
@@ -960,7 +947,7 @@ class JsonTestCaseGenerator:
                 print("  Decompressing snappy files...")
             
             pre_ssz = work_dir / "pre.ssz"
-            if not self.decompress_snappy(pre_snappy, pre_ssz):
+            if not decompress_snappy(pre_snappy, pre_ssz):
                 return 0, 1
             
             # Copy slots.yaml to work_dir
@@ -971,7 +958,7 @@ class JsonTestCaseGenerator:
             post_ssz = None
             if has_existing_post:
                 post_ssz = work_dir / "post.ssz"
-                if not self.decompress_snappy(post_snappy, post_ssz):
+                if not decompress_snappy(post_snappy, post_ssz):
                     post_ssz = None
             
             # 3. SSZ -> JSON conversion and test case generation

@@ -6,7 +6,7 @@ This directory contains tools for converting between SSZ (Simple Serialization) 
 
 ```
 Converter/
-├── snappyDecompressor.py         # Snappy decompression tool
+├── snappy_decompressor.py        # Snappy decompression tool
 ├── eth2specResult.py             # eth2spec state transition execution tool
 ├── run_test_suite.py             # Complete test suite runner (independent / sequential modes)
 ├── JsonToSSZ/                    # JSON → SSZ conversion tool
@@ -72,15 +72,15 @@ Exit codes: `0` identical, `1` different, `2` unreadable. Drop `-s` to have it r
 
 Python callers use `filecmp.cmp(a, b, shallow=False)`.
 
-### 2. Snappy Decompression (snappyDecompressor.py)
+### 2. Snappy Decompression (snappy_decompressor.py)
 
-Decompresses .ssz_snappy files (supports both Snappy framed and raw; if already uncompressed, bytes are passed through).
+Decompresses `.ssz_snappy` files. Input that does not decompress is passed through unchanged. Pipeline scripts import `decompress` directly. The CLI supports manual use.
 
 ```bash
-python snappyDecompressor.py <input_file> <output_file>
+python snappy_decompressor.py <input_file> <output_file>
 
 # Example
-python snappyDecompressor.py compressed.ssz_snappy decompressed.ssz
+python snappy_decompressor.py compressed.ssz_snappy decompressed.ssz
 ```
 
 ### 3. SSZ → JSON Conversion
@@ -300,8 +300,8 @@ This ensures **single-fork consistency** throughout each test case, avoiding the
 ```bash
 # 1. Extract SSZ files from official tests
 # 2. Decompress Snappy files
-python snappyDecompressor.py pre.ssz_snappy pre.ssz
-python snappyDecompressor.py post.ssz_snappy post.ssz
+python snappy_decompressor.py pre.ssz_snappy pre.ssz
+python snappy_decompressor.py post.ssz_snappy post.ssz
 
 # 3. SSZ → JSON conversion
 python SSZToJson/SSZToJson.py --type BeaconState --in pre.ssz --out pre.json
