@@ -6,7 +6,6 @@ This directory contains tools for converting between SSZ (Simple Serialization) 
 
 ```
 Converter/
-├── CompareResult.py              # SSZ file comparison tool
 ├── snappyDecompressor.py         # Snappy decompression tool
 ├── eth2specResult.py             # eth2spec state transition execution tool
 ├── run_test_suite.py             # Complete test suite runner (independent / sequential modes)
@@ -58,21 +57,20 @@ See `CLIENT_CODE_MODIFICATIONS.md` for details on how each client is configured.
 
 ## Tool Usage
 
-### 1. SSZ-byte Equivalence Checker (CompareResult.py)
+### 1. SSZ-byte Equivalence Checker
 
-Exact-byte comparison of SSZ files. Performs a simple byte-by-byte comparison without deserialization.
+Exact-byte comparison needs no fork or type information, so `cmp` covers it:
 
 ```bash
-python CompareResult.py <file1> <file2>
+cmp -s <file1> <file2>
 
 # Example
-python CompareResult.py state1.ssz state2.ssz
+cmp -s state1.ssz state2.ssz && echo identical || echo different
 ```
 
-**Parameters:**
-- `file1`, `file2`: SSZ file paths to compare
+Exit codes: `0` identical, `1` different, `2` unreadable. Drop `-s` to have it report the first differing byte and line.
 
-**Note:** This tool performs a direct byte-by-byte comparison of the SSZ files. No fork information or type information is required since it only compares the raw bytes.
+Python callers use `filecmp.cmp(a, b, shallow=False)`.
 
 ### 2. Snappy Decompression (snappyDecompressor.py)
 
@@ -313,7 +311,7 @@ python SSZToJson/SSZToJson.py --type BeaconState --in post.ssz --out post.json
 python JsonToSSZ/JsonToSSZ.py --type BeaconState --in pre.json --out pre_converted.ssz
 
 # 5. Compare results
-python CompareResult.py pre.ssz pre_converted.ssz
+cmp -s pre.ssz pre_converted.ssz && echo identical || echo different
 ```
 
 ### Complete Test Suite Workflow

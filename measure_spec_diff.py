@@ -4,6 +4,7 @@ Measure LOC differences between Capella and Deneb spec versions.
 Reports files whose contents differ, with non-empty, non-comment LOC as context.
 """
 
+import filecmp
 from pathlib import Path
 
 def count_lines(filepath):
@@ -19,7 +20,7 @@ def count_lines(filepath):
 def files_differ(first, second):
     """Return whether two files differ byte-for-byte."""
     try:
-        return first.read_bytes() != second.read_bytes()
+        return not filecmp.cmp(first, second, shallow=False)
     except OSError as error:
         print(f"Error comparing {first} and {second}: {error}")
         return True

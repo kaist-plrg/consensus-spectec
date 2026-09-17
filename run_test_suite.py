@@ -19,6 +19,7 @@ OfficialTestSuite 테스트 케이스에 대해 전체 워크플로우를 자동
 import os
 import sys
 import csv
+import filecmp
 import hashlib
 import subprocess
 import argparse
@@ -70,7 +71,6 @@ class TestRunner:
         self.ssz_to_json_script = self.converter_dir / "SSZToJson" / "SSZToJson.py"
         self.json_to_ssz_script = self.converter_dir / "JsonToSSZ" / "JsonToSSZ.py"
         self.eth2spec_result = self.converter_dir / "eth2specResult.py"
-        self.compare_result = self.converter_dir / "CompareResult.py"
         
         # consensus-specs 경로 (eth2specResult.py에서 사용)
         # converter_dir이 Converter/이면, parent는 spectec-core/, 그 아래에 consensus-specs가 있음
@@ -680,16 +680,10 @@ class TestRunner:
         }
     
     def compare_results(self, file1: Path, file2: Path) -> bool:
-        """두 SSZ 파일을 비교합니다."""
+        """두 SSZ 파일을 바이트 단위로 비교합니다."""
         try:
-            result = subprocess.run(
-                [sys.executable, str(self.compare_result), str(file1), str(file2)],
-                capture_output=True,
-                text=True,
-                check=True
-            )
-            return True
-        except subprocess.CalledProcessError:
+            return filecmp.cmp(file1, file2, shallow=False)
+        except OSError:
             return False
     
     def process_test_case(self, test_case_dir: Path, work_dir: Path, verbose: bool = False) -> Tuple[bool, str]:
