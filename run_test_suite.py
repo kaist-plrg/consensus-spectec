@@ -68,7 +68,7 @@ class TestRunner:
         # 스크립트 경로들
         self.snappy_decompressor = self.converter_dir / "snappyDecompressor.py"
         self.ssz_to_json_script = self.converter_dir / "SSZToJson" / "SSZToJson.py"
-        self.json_to_ssz_script = self.converter_dir / "JsonToSSZ" / "BeaconStateJsonToSSZ.py"
+        self.json_to_ssz_script = self.converter_dir / "JsonToSSZ" / "JsonToSSZ.py"
         self.eth2spec_result = self.converter_dir / "eth2specResult.py"
         self.compare_result = self.converter_dir / "CompareResult.py"
         
@@ -243,8 +243,9 @@ class TestRunner:
             type_module = f"eth2spec.{self.fork}.mainnet"
             
             result = subprocess.run(
-                [sys.executable, str(self.json_to_ssz_script), 
+                [sys.executable, str(self.json_to_ssz_script),
                  "--type-module", type_module,
+                 "--type", "BeaconState",
                  "--in", str(json_file), "--out", str(ssz_file)],
                 capture_output=True,
                 text=True,
