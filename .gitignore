@@ -20,3 +20,10 @@ testing_clients/
 # consensus-spec-tests vectors - fetched by `make download-fixture`, not git
 Converter/OfficialTestSuite/
 Converter/.fixture-cache/
+
+# Python artifacts
+__pycache__/
+.venv/
+
+# forkdiff output (tools/forkdiff)
+build/
