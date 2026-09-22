@@ -807,63 +807,16 @@ def _client_context(spectec_core_dir, enable_coverage, fork_version):
         ],
     )
 
-def process_clients(state, block, paths, spectec_core_dir=None, enable_coverage=False, fork_version="capella"):
-    """Run a full block state transition on every client for one (pre-state, block) pair."""
-    c = _client_context(spectec_core_dir, enable_coverage, fork_version)
 
-    # Coverage data directory setup (from paths)
+def _run_clients(c, clients, state, block, paths):
+    """Run the clients for one case one after another; returns them with output, status_code and timestamp filled."""
     coverage_dirs = {}
-    if enable_coverage:
-        for client_name in STATE_TRANSITION_TOOLS:
-            if client_name in paths and "cov_output" in paths[client_name]:
-                coverage_dirs[client_name] = Path(paths[client_name]["cov_output"])
-                coverage_dirs[client_name].mkdir(parents=True, exist_ok=True)
-
-    clients = [
-        Clients("Lodestar", c.node, c.lodestar + [
-            "state-transition",
-            state,
-            block,
-            paths["lodestar"]["output"],
-            "--verifyProposer=false",  # validate_result = false: skip block signature verification
-            "--verifyStateRoot=false",  # validate_result = false: skip state root verification
-            f"--fork-version={fork_version}",
-        ]),
-        # Lighthouse, Prysm and Teku skip block signature and state root checks via modified_code/patches;
-        # RANDAO and attestation signatures are still verified.
-        Clients("Lighthouse", c.binaries["Lighthouse"], [
-            "transition-blocks",
-            "--pre-state-path", state,
-            "--block-path", block,
-            "--post-state-output-path", paths["lighthouse"]["output"],
-        ] + c.lighthouse_testnet),
-        Clients("Prysm", c.binaries["Prysm"], [
-            "state-transition",
-            f"--block-path={block}",
-            f"--pre-state-path={state}",
-            f"--expected-post-state-path={paths['prysm']['output']}",
-        ]),
-        Clients("Nimbus", c.binaries["Nimbus"], [
-            "transition",
-            state,
-            block,
-            paths["nimbus"]["output"],
-            "false",  # validate_result = false: skip state root (and thus block signature) verification
-        ], env={"FORK_VERSION": fork_version}),
-        Clients("Teku", c.binaries["Teku"], [
-            "transition", "blocks",
-            "--pre", state,
-            "--post", paths["teku"]["output"],
-            block,
-        ] + c.teku_network),
-        Clients("Eth2spec", sys.executable, [
-            str(c.eth2spec_result),
-            "--pre", state,
-            "--block", block,
-            "--out", paths["eth2spec"]["output"],
-            "--fork", fork_version,
-        ], env={"PYTHONPATH": c.pythonpath}),
-    ]
+    if c.enable_coverage:
+        for client in clients:
+            key = client.name.lower()
+            if key in paths and "cov_output" in paths[key]:
+                coverage_dirs[key] = Path(paths[key]["cov_output"])
+                coverage_dirs[key].mkdir(parents=True, exist_ok=True)
 
     for client in clients:
         cmd = [str(client.cmd_path)] + [str(arg) for arg in client.cmd_args]
@@ -882,7 +835,7 @@ def process_clients(state, block, paths, spectec_core_dir=None, enable_coverage=
             env = os.environ.copy()
             env.update(client.env)
 
-            if enable_coverage:
+            if c.enable_coverage:
                 if client.name == "Prysm":
                     env["GOCOVERDIR"] = str(coverage_dirs["prysm"])
                     print(f"[+] Coverage enabled: GOCOVERDIR={env['GOCOVERDIR']}")
@@ -1031,7 +984,7 @@ def process_clients(state, block, paths, spectec_core_dir=None, enable_coverage=
 
             client.log()
 
-            if client.name == "Nimbus" and enable_coverage:
+            if client.name == "Nimbus" and c.enable_coverage:
                 nimbus_src = c.testing_clients_dir / "nimbus-eth2"
                 nimbus_gcda_dir = nimbus_src / "nimcache" / "debug" / "ncli"
                 nimbus_coverage_dir = coverage_dirs.get("nimbus")
@@ -1077,17 +1030,62 @@ def process_clients(state, block, paths, spectec_core_dir=None, enable_coverage=
             print(f"[+] {client.name} failed: {client.output.stderr}")
     return clients
 
+
+def process_clients(state, block, paths, spectec_core_dir=None, enable_coverage=False, fork_version="capella"):
+    """Run a full block state transition on every client for one (pre-state, block) pair."""
+    c = _client_context(spectec_core_dir, enable_coverage, fork_version)
+
+    clients = [
+        Clients("Lodestar", c.node, c.lodestar + [
+            "state-transition",
+            state,
+            block,
+            paths["lodestar"]["output"],
+            "--verifyProposer=false",  # validate_result = false: skip block signature verification
+            "--verifyStateRoot=false",  # validate_result = false: skip state root verification
+            f"--fork-version={fork_version}",
+        ]),
+        # Lighthouse, Prysm and Teku skip block signature and state root checks via modified_code/patches;
+        # RANDAO and attestation signatures are still verified.
+        Clients("Lighthouse", c.binaries["Lighthouse"], [
+            "transition-blocks",
+            "--pre-state-path", state,
+            "--block-path", block,
+            "--post-state-output-path", paths["lighthouse"]["output"],
+        ] + c.lighthouse_testnet),
+        Clients("Prysm", c.binaries["Prysm"], [
+            "state-transition",
+            f"--block-path={block}",
+            f"--pre-state-path={state}",
+            f"--expected-post-state-path={paths['prysm']['output']}",
+        ]),
+        Clients("Nimbus", c.binaries["Nimbus"], [
+            "transition",
+            state,
+            block,
+            paths["nimbus"]["output"],
+            "false",  # validate_result = false: skip state root (and thus block signature) verification
+        ], env={"FORK_VERSION": fork_version}),
+        Clients("Teku", c.binaries["Teku"], [
+            "transition", "blocks",
+            "--pre", state,
+            "--post", paths["teku"]["output"],
+            block,
+        ] + c.teku_network),
+        Clients("Eth2spec", sys.executable, [
+            str(c.eth2spec_result),
+            "--pre", state,
+            "--block", block,
+            "--out", paths["eth2spec"]["output"],
+            "--fork", fork_version,
+        ], env={"PYTHONPATH": c.pythonpath}),
+    ]
+    return _run_clients(c, clients, state, block, paths)
+
+
 def process_clients_sanity_slots(state, slot_value, paths, spectec_core_dir=None, enable_coverage=False, fork_version="capella"):
     """Advance the pre-state by slot_value empty slots on every client."""
     c = _client_context(spectec_core_dir, enable_coverage, fork_version)
-
-    # Coverage data directory setup (from paths)
-    coverage_dirs = {}
-    if enable_coverage:
-        for client_name in ["prysm", "lighthouse", "teku", "nimbus", "lodestar"]:
-            if client_name in paths and "cov_output" in paths[client_name]:
-                coverage_dirs[client_name] = Path(paths[client_name]["cov_output"])
-                coverage_dirs[client_name].mkdir(parents=True, exist_ok=True)
 
     clients = [
         Clients("Lodestar", c.node, c.lodestar + [
@@ -1122,215 +1120,8 @@ def process_clients_sanity_slots(state, slot_value, paths, spectec_core_dir=None
             "--delta", str(slot_value),  # slot_value is a delta from the pre-state slot
         ] + c.teku_network),
     ]
+    return _run_clients(c, clients, state, None, paths)
 
-    for client in clients:
-        cmd = [str(client.cmd_path)] + [str(arg) for arg in client.cmd_args]
-        try:
-            start_time = perf_counter()
-            
-            print(f"\n[+] Running: {client.name}")
-
-            if not client.available:
-                raise FileNotFoundError(f"[X] Not available: {client.cmd_path}")
-
-            client.state = state
-            client.block = None  # No block for sanity-slots
-
-            print(f"[+] Command: {client.cmd_path} {' '.join(str(arg) for arg in client.cmd_args)}")
-
-            # Setup coverage environment variables (same as process_clients)
-            env = os.environ.copy()
-            env.update(client.env)
-
-            if enable_coverage:
-                client_name_lower = client.name.lower()
-                
-                if client.name == "Prysm":
-                    env["GOCOVERDIR"] = str(coverage_dirs["prysm"])
-                    print(f"[+] Coverage enabled: GOCOVERDIR={env['GOCOVERDIR']}")
-                
-                elif client.name == "Lighthouse":
-                    profile_file = coverage_dirs["lighthouse"] / f"lighthouse-cov-%p-%m.profraw"
-                    env["LLVM_PROFILE_FILE"] = str(profile_file)
-                    print(f"[+] Coverage enabled: LLVM_PROFILE_FILE={env['LLVM_PROFILE_FILE']}")
-                
-                elif client.name == "Teku":
-                    jacoco_agent_path = c.testing_clients_dir / "jacoco" / "jacocoagent.jar"
-                    jacoco_exec = coverage_dirs["teku"] / "teku-coverage.exec"
-                    
-                    if jacoco_agent_path.exists():
-                        env["JAVA_OPTS"] = f"-javaagent:{jacoco_agent_path}=destfile={jacoco_exec}"
-                        print(f"[+] Coverage enabled: JAVA_OPTS={env['JAVA_OPTS']}")
-                    else:
-                        print(f"[!] Warning: JaCoCo agent not found at {jacoco_agent_path}")
-                
-                elif client.name == "Nimbus":
-                    # Nim/C: gcov automatically generates .gcda files, no special env var needed
-                    # For independent coverage per test case, initialize .gcda files before execution
-                    # and copy them after execution
-                    nimbus_src = c.testing_clients_dir / "nimbus-eth2"
-                    nimbus_gcda_dir = nimbus_src / "nimcache" / "debug" / "ncli"
-                    
-                    # Delete existing .gcda files before execution (for independent measurement)
-                    if nimbus_gcda_dir.exists():
-                        for gcda_file in nimbus_gcda_dir.rglob("*.gcda"):
-                            try:
-                                gcda_file.unlink()
-                            except:
-                                pass
-                    print(f"[+] Coverage enabled: gcov will auto-generate .gcda files in build directory")
-                
-                elif client.name == "Lodestar":
-                    # Node.js: Use c8 for coverage measurement
-                    # c8 collects coverage at runtime, so wrap the command with c8
-                    client.cwd = str(c.testing_clients_dir / "lodestar")
-                    coverage_report_dir = coverage_dirs["lodestar"] / "report"
-                    coverage_temp_dir = coverage_dirs["lodestar"]  # JSON file storage location
-                    coverage_report_dir.mkdir(parents=True, exist_ok=True)
-                    coverage_temp_dir.mkdir(parents=True, exist_ok=True)
-                    
-                    # Wrap original node command with c8
-                    original_cmd_path = str(client.cmd_path)
-                    original_cmd_args = [str(arg) for arg in client.cmd_args]
-                    
-                    # c8 options:
-                    # --exclude-node-modules=false: include node_modules (excluded by default)
-                    # --temp-directory: specify coverage JSON file storage location
-                    # --include: only include Lodestar code (exclude transition.js wrapper)
-                    c8_args = [
-                        "c8",
-                        "--all",
-                        "--reporter=text",
-                        "--reporter=html",
-                        f"--report-dir={coverage_report_dir}",
-                        f"--temp-directory={coverage_temp_dir}",
-                        "--exclude-node-modules=false",
-                        "--extension=.js",
-                        "--include=node_modules/@lodestar/**/*.js",
-                        "--include=node_modules/@chainsafe/**/*.js",
-                        "--exclude=**/transition.js",
-                        "--exclude=**/generateCachedStateCapella.js",
-                        original_cmd_path,  # node path
-                    ] + original_cmd_args  # original arguments (all converted to strings)
-                    
-                    # Execute c8 using npx
-                    client.cmd_path = "npx"
-                    client.cmd_args = c8_args
-                    cmd = ["npx"] + c8_args
-                    
-                    print(f"[+] Coverage enabled: c8 with report-dir={coverage_report_dir}")
-                    print(f"[+] Coverage temp-directory: {coverage_temp_dir}")
-                    print(f"[+] Coverage command: npx {' '.join(c8_args)}")
-
-            process = subprocess.run(
-                cmd,
-                stdout=subprocess.PIPE,
-                stderr=subprocess.PIPE,
-                text=True,
-                env=env,
-                cwd=client.cwd,
-            )
-            end_time = perf_counter()
-
-            client.status_code = process.returncode
-            client.output = process 
-            client.timestamp = end_time - start_time
-            
-            print(f"[+] Execution time: {client.timestamp}")
-            
-            # Apply correct classification criteria
-            if process.returncode == 0:
-                client.status_code = 0  # SUCCESS
-            elif process.returncode < 0:
-                client.status_code = 2  # UNHANDLED_EXCEPTION
-            else:
-                client.status_code = 1  # FAIL
-            
-            # Lodestar special handling
-            if client.name == "Lodestar":
-                try:
-                    if client.output.stderr != '':
-                        try:
-                            import json
-                            json_start = client.output.stderr.find('{')
-                            if json_start != -1:
-                                json_end = client.output.stderr.rfind('}') + 1
-                                if json_end > json_start:
-                                    json_str = client.output.stderr[json_start:json_end]
-                                    error_obj = json.loads(json_str)
-                                    status_code = error_obj.get('statusCode', 1)
-                                    output_string = error_obj.get('output', '')
-                                    if status_code == 0:
-                                        client.status_code = 0
-                                    elif status_code < 0:
-                                        client.status_code = 2
-                                    else:
-                                        client.status_code = 1
-                                    client.output.stderr = output_string
-                                    continue
-                        except:
-                            pass
-                        
-                        status_code_match = re.search(r"statusCode: \s*(\d+)", client.output.stderr)
-                        if status_code_match:
-                            status_code = int(status_code_match.group(1))
-                            output_match = re.search(r"output: \s*'(.*?)'", client.output.stderr, re.DOTALL)
-                            if output_match:
-                                output_string = output_match.group(1)
-                                if status_code == 0:
-                                    client.status_code = 0
-                                elif status_code < 0:
-                                    client.status_code = 2
-                                else:
-                                    client.status_code = 1
-                                client.output.stderr = output_string
-                except Exception as e:
-                    client.status_code = 2
-
-            client.log()
-            
-            # Nimbus: Copy .gcda files for independent coverage per test case
-            if client.name == "Nimbus" and enable_coverage:
-                nimbus_src = c.testing_clients_dir / "nimbus-eth2"
-                nimbus_gcda_dir = nimbus_src / "nimcache" / "debug" / "ncli"
-                nimbus_coverage_dir = coverage_dirs.get("nimbus")
-                
-                if nimbus_coverage_dir and nimbus_gcda_dir.exists():
-                    target_gcda_dir = nimbus_coverage_dir / "nimcache" / "debug" / "ncli"
-                    target_gcda_dir.mkdir(parents=True, exist_ok=True)
-                    
-                    import shutil
-                    for gcda_file in nimbus_gcda_dir.rglob("*.gcda"):
-                        relative_path = gcda_file.relative_to(nimbus_gcda_dir)
-                        target_file = target_gcda_dir / relative_path
-                        target_file.parent.mkdir(parents=True, exist_ok=True)
-                        try:
-                            shutil.copy2(gcda_file, target_file)
-                        except Exception as e:
-                            print(f"[!] Failed to copy .gcda file {gcda_file}: {e}")
-                    print(f"[+] Copied .gcda files to {target_gcda_dir}")
-            
-            # Teku: Delete empty output files
-            if client.name == "Teku" and client.status_code != 0:
-                output_path = paths.get("teku", {}).get("output")
-                if output_path and os.path.exists(output_path):
-                    file_size = os.path.getsize(output_path)
-                    if file_size == 0:
-                        os.remove(output_path)
-                        print(f"[+] Removed empty Teku output file: {output_path}")
-
-        except Exception as e:
-            end_time = perf_counter()
-            client.timestamp = end_time - start_time
-            client.status_code = 2
-            
-            if client.output is None:
-                client.output = subprocess.CompletedProcess(args=cmd, returncode=2, stdout='', stderr=str(e))
-
-            print(f"[+] Execution time: {client.timestamp}")
-            print(f"[+] Exited with status code: {client.status_code} (Failure)")
-            print(f"[+] {client.name} failed: {client.output.stderr}")
-    return clients
 
 def process_clients_operation(state, operation, operation_type, paths, spectec_core_dir=None, enable_coverage=False, fork_version="capella", execution_valid=None):
     """Apply a single block operation on every client.
@@ -1339,14 +1130,6 @@ def process_clients_operation(state, operation, operation_type, paths, spectec_c
     None means the file gave no answer, so the CLI flag is omitted and Nimbus defaults to valid.
     """
     c = _client_context(spectec_core_dir, enable_coverage, fork_version)
-
-    # Coverage data directory setup (from paths)
-    coverage_dirs = {}
-    if enable_coverage:
-        for client_name in ["prysm", "lighthouse", "teku", "nimbus", "lodestar"]:
-            if client_name in paths and "cov_output" in paths[client_name]:
-                coverage_dirs[client_name] = Path(paths[client_name]["cov_output"])
-                coverage_dirs[client_name].mkdir(parents=True, exist_ok=True)
 
     lighthouse_type = {"sync_aggregate": "sync_committee", "withdrawal": "withdrawals"}.get(operation_type, operation_type)
     prysm_type = {"withdrawal": "withdrawals"}.get(operation_type, operation_type)
@@ -1397,213 +1180,12 @@ def process_clients_operation(state, operation, operation_type, paths, spectec_c
             "--post", paths["teku"]["output"],
         ] + c.teku_network + exec_valid_sep),
     ]
+    return _run_clients(c, clients, state, operation, paths)
 
-    for client in clients:
-        cmd = [str(client.cmd_path)] + [str(arg) for arg in client.cmd_args]
-        try:
-            start_time = perf_counter()
-            
-            print(f"\n[+] Running: {client.name}")
-
-            if not client.available:
-                raise FileNotFoundError(f"[X] Not available: {client.cmd_path}")
-
-            client.state = state
-            client.block = operation  # Store operation path in block field for compatibility
-
-            print(f"[+] Command: {client.cmd_path} {' '.join(str(arg) for arg in client.cmd_args)}")
-
-            # Setup coverage environment variables (same as process_clients)
-            env = os.environ.copy()
-            env.update(client.env)
-
-            if enable_coverage:
-                client_name_lower = client.name.lower()
-                
-                if client.name == "Prysm":
-                    env["GOCOVERDIR"] = str(coverage_dirs["prysm"])
-                    print(f"[+] Coverage enabled: GOCOVERDIR={env['GOCOVERDIR']}")
-                
-                elif client.name == "Lighthouse":
-                    profile_file = coverage_dirs["lighthouse"] / f"lighthouse-cov-%p-%m.profraw"
-                    env["LLVM_PROFILE_FILE"] = str(profile_file)
-                    print(f"[+] Coverage enabled: LLVM_PROFILE_FILE={env['LLVM_PROFILE_FILE']}")
-                
-                elif client.name == "Teku":
-                    jacoco_agent_path = c.testing_clients_dir / "jacoco" / "jacocoagent.jar"
-                    jacoco_exec = coverage_dirs["teku"] / "teku-coverage.exec"
-                    
-                    if jacoco_agent_path.exists():
-                        env["JAVA_OPTS"] = f"-javaagent:{jacoco_agent_path}=destfile={jacoco_exec}"
-                        print(f"[+] Coverage enabled: JAVA_OPTS={env['JAVA_OPTS']}")
-                    else:
-                        print(f"[!] Warning: JaCoCo agent not found at {jacoco_agent_path}")
-                
-                elif client.name == "Nimbus":
-                    nimbus_src = c.testing_clients_dir / "nimbus-eth2"
-                    nimbus_gcda_dir = nimbus_src / "nimcache" / "debug" / "ncli"
-                    
-                    if nimbus_gcda_dir.exists():
-                        for gcda_file in nimbus_gcda_dir.rglob("*.gcda"):
-                            try:
-                                gcda_file.unlink()
-                            except:
-                                pass
-                    print(f"[+] Coverage enabled: gcov will auto-generate .gcda files in build directory")
-                
-                elif client.name == "Lodestar":
-                    client.cwd = str(c.testing_clients_dir / "lodestar")
-                    coverage_report_dir = coverage_dirs["lodestar"] / "report"
-                    coverage_temp_dir = coverage_dirs["lodestar"]
-                    coverage_report_dir.mkdir(parents=True, exist_ok=True)
-                    coverage_temp_dir.mkdir(parents=True, exist_ok=True)
-                    
-                    original_cmd_path = str(client.cmd_path)
-                    original_cmd_args = [str(arg) for arg in client.cmd_args]
-                    
-                    c8_args = [
-                        "c8",
-                        "--all",
-                        "--reporter=text",
-                        "--reporter=html",
-                        f"--report-dir={coverage_report_dir}",
-                        f"--temp-directory={coverage_temp_dir}",
-                        "--exclude-node-modules=false",
-                        "--extension=.js",
-                        "--include=node_modules/@lodestar/**/*.js",
-                        "--include=node_modules/@chainsafe/**/*.js",
-                        "--exclude=**/transition.js",
-                        "--exclude=**/generateCachedStateCapella.js",
-                        original_cmd_path,
-                    ] + original_cmd_args
-                    
-                    client.cmd_path = "npx"
-                    client.cmd_args = c8_args
-                    cmd = ["npx"] + c8_args
-                    
-                    print(f"[+] Coverage enabled: c8 with report-dir={coverage_report_dir}")
-
-            process = subprocess.run(
-                cmd,
-                stdout=subprocess.PIPE,
-                stderr=subprocess.PIPE,
-                text=True,
-                env=env,
-                cwd=client.cwd,
-            )
-            end_time = perf_counter()
-
-            client.status_code = process.returncode
-            client.output = process 
-            client.timestamp = end_time - start_time
-            
-            print(f"[+] Execution time: {client.timestamp}")
-            
-            # Apply correct classification criteria
-            if process.returncode == 0:
-                client.status_code = 0  # SUCCESS
-            elif process.returncode < 0:
-                client.status_code = 2  # UNHANDLED_EXCEPTION
-            else:
-                client.status_code = 1  # FAIL
-            
-            # Lodestar special handling
-            if client.name == "Lodestar":
-                try:
-                    if client.output.stderr != '':
-                        try:
-                            import json
-                            json_start = client.output.stderr.find('{')
-                            if json_start != -1:
-                                json_end = client.output.stderr.rfind('}') + 1
-                                if json_end > json_start:
-                                    json_str = client.output.stderr[json_start:json_end]
-                                    error_obj = json.loads(json_str)
-                                    status_code = error_obj.get('statusCode', 1)
-                                    output_string = error_obj.get('output', '')
-                                    if status_code == 0:
-                                        client.status_code = 0
-                                    elif status_code < 0:
-                                        client.status_code = 2
-                                    else:
-                                        client.status_code = 1
-                                    client.output.stderr = output_string
-                                    continue
-                        except:
-                            pass
-                        
-                        status_code_match = re.search(r"statusCode: \s*(\d+)", client.output.stderr)
-                        if status_code_match:
-                            status_code = int(status_code_match.group(1))
-                            output_match = re.search(r"output: \s*'(.*?)'", client.output.stderr, re.DOTALL)
-                            if output_match:
-                                output_string = output_match.group(1)
-                                if status_code == 0:
-                                    client.status_code = 0
-                                elif status_code < 0:
-                                    client.status_code = 2
-                                else:
-                                    client.status_code = 1
-                                client.output.stderr = output_string
-                except Exception as e:
-                    client.status_code = 2
-
-            client.log()
-            
-            # Nimbus: Copy .gcda files for independent coverage per test case
-            if client.name == "Nimbus" and enable_coverage:
-                nimbus_src = c.testing_clients_dir / "nimbus-eth2"
-                nimbus_gcda_dir = nimbus_src / "nimcache" / "debug" / "ncli"
-                nimbus_coverage_dir = coverage_dirs.get("nimbus")
-                
-                if nimbus_coverage_dir and nimbus_gcda_dir.exists():
-                    target_gcda_dir = nimbus_coverage_dir / "nimcache" / "debug" / "ncli"
-                    target_gcda_dir.mkdir(parents=True, exist_ok=True)
-                    
-                    import shutil
-                    for gcda_file in nimbus_gcda_dir.rglob("*.gcda"):
-                        relative_path = gcda_file.relative_to(nimbus_gcda_dir)
-                        target_file = target_gcda_dir / relative_path
-                        target_file.parent.mkdir(parents=True, exist_ok=True)
-                        try:
-                            shutil.copy2(gcda_file, target_file)
-                        except Exception as e:
-                            print(f"[!] Failed to copy .gcda file {gcda_file}: {e}")
-                    print(f"[+] Copied .gcda files to {target_gcda_dir}")
-            
-            # Teku: Delete empty output files
-            if client.name == "Teku" and client.status_code != 0:
-                output_path = paths.get("teku", {}).get("output")
-                if output_path and os.path.exists(output_path):
-                    file_size = os.path.getsize(output_path)
-                    if file_size == 0:
-                        os.remove(output_path)
-                        print(f"[+] Removed empty Teku output file: {output_path}")
-
-        except Exception as e:
-            end_time = perf_counter()
-            client.timestamp = end_time - start_time
-            client.status_code = 2
-            
-            if client.output is None:
-                client.output = subprocess.CompletedProcess(args=cmd, returncode=2, stdout='', stderr=str(e))
-
-            print(f"[+] Execution time: {client.timestamp}")
-            print(f"[+] Exited with status code: {client.status_code} (Failure)")
-            print(f"[+] {client.name} failed: {client.output.stderr}")
-    return clients
 
 def process_clients_epoch_processing(state, epoch_processing_type, paths, spectec_core_dir=None, enable_coverage=False, fork_version="capella"):
     """Run a single epoch-processing step on every client."""
     c = _client_context(spectec_core_dir, enable_coverage, fork_version)
-
-    # Coverage data directory setup (from paths)
-    coverage_dirs = {}
-    if enable_coverage:
-        for client_name in ["prysm", "lighthouse", "teku", "nimbus", "lodestar"]:
-            if client_name in paths and "cov_output" in paths[client_name]:
-                coverage_dirs[client_name] = Path(paths[client_name]["cov_output"])
-                coverage_dirs[client_name].mkdir(parents=True, exist_ok=True)
 
     clients = [
         Clients("Lodestar", c.node, c.lodestar + [
@@ -1637,201 +1219,8 @@ def process_clients_epoch_processing(state, epoch_processing_type, paths, specte
             "--post", paths["teku"]["output"],
         ] + c.teku_network),
     ]
+    return _run_clients(c, clients, state, None, paths)
 
-    for client in clients:
-        cmd = [str(client.cmd_path)] + [str(arg) for arg in client.cmd_args]
-        try:
-            start_time = perf_counter()
-            
-            print(f"\n[+] Running: {client.name}")
-
-            if not client.available:
-                raise FileNotFoundError(f"[X] Not available: {client.cmd_path}")
-
-            client.state = state
-            client.block = None  # No block for epoch-processing
-
-            print(f"[+] Command: {client.cmd_path} {' '.join(str(arg) for arg in client.cmd_args)}")
-
-            # Setup coverage environment variables (same as process_clients)
-            env = os.environ.copy()
-            env.update(client.env)
-
-            if enable_coverage:
-                client_name_lower = client.name.lower()
-                
-                if client.name == "Prysm":
-                    env["GOCOVERDIR"] = str(coverage_dirs["prysm"])
-                    print(f"[+] Coverage enabled: GOCOVERDIR={env['GOCOVERDIR']}")
-                
-                elif client.name == "Lighthouse":
-                    profile_file = coverage_dirs["lighthouse"] / f"lighthouse-cov-%p-%m.profraw"
-                    env["LLVM_PROFILE_FILE"] = str(profile_file)
-                    print(f"[+] Coverage enabled: LLVM_PROFILE_FILE={env['LLVM_PROFILE_FILE']}")
-                
-                elif client.name == "Teku":
-                    jacoco_agent_path = c.testing_clients_dir / "jacoco" / "jacocoagent.jar"
-                    jacoco_exec = coverage_dirs["teku"] / "teku-coverage.exec"
-                    
-                    if jacoco_agent_path.exists():
-                        env["JAVA_OPTS"] = f"-javaagent:{jacoco_agent_path}=destfile={jacoco_exec}"
-                        print(f"[+] Coverage enabled: JAVA_OPTS={env['JAVA_OPTS']}")
-                    else:
-                        print(f"[!] Warning: JaCoCo agent not found at {jacoco_agent_path}")
-                
-                elif client.name == "Nimbus":
-                    nimbus_src = c.testing_clients_dir / "nimbus-eth2"
-                    nimbus_gcda_dir = nimbus_src / "nimcache" / "debug" / "ncli"
-                    
-                    if nimbus_gcda_dir.exists():
-                        for gcda_file in nimbus_gcda_dir.rglob("*.gcda"):
-                            try:
-                                gcda_file.unlink()
-                            except:
-                                pass
-                    print(f"[+] Coverage enabled: gcov will auto-generate .gcda files in build directory")
-                
-                elif client.name == "Lodestar":
-                    client.cwd = str(c.testing_clients_dir / "lodestar")
-                    coverage_report_dir = coverage_dirs["lodestar"] / "report"
-                    coverage_temp_dir = coverage_dirs["lodestar"]
-                    coverage_report_dir.mkdir(parents=True, exist_ok=True)
-                    coverage_temp_dir.mkdir(parents=True, exist_ok=True)
-                    
-                    original_cmd_path = str(client.cmd_path)
-                    original_cmd_args = [str(arg) for arg in client.cmd_args]
-                    
-                    c8_args = [
-                        "c8",
-                        "--all",
-                        "--reporter=text",
-                        "--reporter=html",
-                        f"--report-dir={coverage_report_dir}",
-                        f"--temp-directory={coverage_temp_dir}",
-                        "--exclude-node-modules=false",
-                        "--extension=.js",
-                        "--include=node_modules/@lodestar/**/*.js",
-                        "--include=node_modules/@chainsafe/**/*.js",
-                        "--exclude=**/transition.js",
-                        "--exclude=**/generateCachedStateCapella.js",
-                        original_cmd_path,
-                    ] + original_cmd_args
-                    
-                    client.cmd_path = "npx"
-                    client.cmd_args = c8_args
-                    cmd = ["npx"] + c8_args
-                    
-                    print(f"[+] Coverage enabled: c8 with report-dir={coverage_report_dir}")
-
-            process = subprocess.run(
-                cmd,
-                stdout=subprocess.PIPE,
-                stderr=subprocess.PIPE,
-                text=True,
-                env=env,
-                cwd=client.cwd,
-            )
-            end_time = perf_counter()
-
-            client.status_code = process.returncode
-            client.output = process 
-            client.timestamp = end_time - start_time
-            
-            print(f"[+] Execution time: {client.timestamp}")
-            
-            # Apply correct classification criteria
-            if process.returncode == 0:
-                client.status_code = 0  # SUCCESS
-            elif process.returncode < 0:
-                client.status_code = 2  # UNHANDLED_EXCEPTION
-            else:
-                client.status_code = 1  # FAIL
-            
-            # Lodestar special handling
-            if client.name == "Lodestar":
-                try:
-                    if client.output.stderr != '':
-                        try:
-                            import json
-                            json_start = client.output.stderr.find('{')
-                            if json_start != -1:
-                                json_end = client.output.stderr.rfind('}') + 1
-                                if json_end > json_start:
-                                    json_str = client.output.stderr[json_start:json_end]
-                                    error_obj = json.loads(json_str)
-                                    status_code = error_obj.get('statusCode', 1)
-                                    output_string = error_obj.get('output', '')
-                                    if status_code == 0:
-                                        client.status_code = 0
-                                    elif status_code < 0:
-                                        client.status_code = 2
-                                    else:
-                                        client.status_code = 1
-                                    client.output.stderr = output_string
-                                    continue
-                        except:
-                            pass
-                        
-                        status_code_match = re.search(r"statusCode: \s*(\d+)", client.output.stderr)
-                        if status_code_match:
-                            status_code = int(status_code_match.group(1))
-                            output_match = re.search(r"output: \s*'(.*?)'", client.output.stderr, re.DOTALL)
-                            if output_match:
-                                output_string = output_match.group(1)
-                                if status_code == 0:
-                                    client.status_code = 0
-                                elif status_code < 0:
-                                    client.status_code = 2
-                                else:
-                                    client.status_code = 1
-                                client.output.stderr = output_string
-                except Exception as e:
-                    client.status_code = 2
-
-            client.log()
-            
-            # Nimbus: Copy .gcda files for independent coverage per test case
-            if client.name == "Nimbus" and enable_coverage:
-                nimbus_src = c.testing_clients_dir / "nimbus-eth2"
-                nimbus_gcda_dir = nimbus_src / "nimcache" / "debug" / "ncli"
-                nimbus_coverage_dir = coverage_dirs.get("nimbus")
-                
-                if nimbus_coverage_dir and nimbus_gcda_dir.exists():
-                    target_gcda_dir = nimbus_coverage_dir / "nimcache" / "debug" / "ncli"
-                    target_gcda_dir.mkdir(parents=True, exist_ok=True)
-                    
-                    import shutil
-                    for gcda_file in nimbus_gcda_dir.rglob("*.gcda"):
-                        relative_path = gcda_file.relative_to(nimbus_gcda_dir)
-                        target_file = target_gcda_dir / relative_path
-                        target_file.parent.mkdir(parents=True, exist_ok=True)
-                        try:
-                            shutil.copy2(gcda_file, target_file)
-                        except Exception as e:
-                            print(f"[!] Failed to copy .gcda file {gcda_file}: {e}")
-                    print(f"[+] Copied .gcda files to {target_gcda_dir}")
-            
-            # Teku: Delete empty output files
-            if client.name == "Teku" and client.status_code != 0:
-                output_path = paths.get("teku", {}).get("output")
-                if output_path and os.path.exists(output_path):
-                    file_size = os.path.getsize(output_path)
-                    if file_size == 0:
-                        os.remove(output_path)
-                        print(f"[+] Removed empty Teku output file: {output_path}")
-
-        except Exception as e:
-            end_time = perf_counter()
-            client.timestamp = end_time - start_time
-            client.status_code = 2
-            
-            if client.output is None:
-                client.output = subprocess.CompletedProcess(args=cmd, returncode=2, stdout='', stderr=str(e))
-
-            print(f"[+] Execution time: {client.timestamp}")
-            print(f"[+] Exited with status code: {client.status_code} (Failure)")
-            print(f"[+] {client.name} failed: {client.output.stderr}")
-    return clients
 
 def create_report(clients, output_dir):
     
