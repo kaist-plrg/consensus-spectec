@@ -1234,6 +1234,7 @@ def process_clients_sanity_slots(state, slot_value, paths, spectec_core_dir=None
 
     # Use the same client processing logic as process_clients
     for client in clients:
+        cmd = [str(client.cmd_path)] + [str(arg) for arg in client.cmd_args]
         try:
             start_time = perf_counter()
             
@@ -1246,7 +1247,6 @@ def process_clients_sanity_slots(state, slot_value, paths, spectec_core_dir=None
             client.block = None  # No block for sanity-slots
 
             print(f"[+] Command: {client.cmd_path} {' '.join(str(arg) for arg in client.cmd_args)}")
-            cmd = [str(client.cmd_path)] + [str(arg) for arg in client.cmd_args]
 
             # Setup coverage environment variables (same as process_clients)
             env = os.environ.copy()
@@ -1564,6 +1564,7 @@ def process_clients_operation(state, operation, operation_type, paths, spectec_c
 
     # Use the same client processing logic as process_clients
     for client in clients:
+        cmd = [str(client.cmd_path)] + [str(arg) for arg in client.cmd_args]
         try:
             start_time = perf_counter()
             
@@ -1576,7 +1577,6 @@ def process_clients_operation(state, operation, operation_type, paths, spectec_c
             client.block = operation  # Store operation path in block field for compatibility
 
             print(f"[+] Command: {client.cmd_path} {' '.join(str(arg) for arg in client.cmd_args)}")
-            cmd = [str(client.cmd_path)] + [str(arg) for arg in client.cmd_args]
 
             # Setup coverage environment variables (same as process_clients)
             env = os.environ.copy()
@@ -1886,6 +1886,7 @@ def process_clients_epoch_processing(state, epoch_processing_type, paths, specte
 
     # Use the same client processing logic as process_clients
     for client in clients:
+        cmd = [str(client.cmd_path)] + [str(arg) for arg in client.cmd_args]
         try:
             start_time = perf_counter()
             
@@ -1898,7 +1899,6 @@ def process_clients_epoch_processing(state, epoch_processing_type, paths, specte
             client.block = None  # No block for epoch-processing
 
             print(f"[+] Command: {client.cmd_path} {' '.join(str(arg) for arg in client.cmd_args)}")
-            cmd = [str(client.cmd_path)] + [str(arg) for arg in client.cmd_args]
 
             # Setup coverage environment variables (same as process_clients)
             env = os.environ.copy()
