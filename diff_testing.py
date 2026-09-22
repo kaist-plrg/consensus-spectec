@@ -190,6 +190,15 @@ PRYSM_CORE_INCLUDE_PREFIXES = (
     "github.com/OffchainLabs/prysm/v7/tools/pcli",
 )
 
+def _normalize_status(returncode):
+    """0 SUCCESS, 1 FAIL (handled exception), 2 UNHANDLED_EXCEPTION (killed by signal)."""
+    if returncode == 0:
+        return 0
+    if returncode < 0:
+        return 2
+    return 1
+
+
 class Clients:
     def __init__(self, name, cmd_path, cmd_args, env=None, cwd=None):
         self.name = name
@@ -929,18 +938,11 @@ def _run_clients(c, clients, state, block, paths):
             )
             end_time = perf_counter()
 
-            client.status_code = process.returncode
+            client.status_code = _normalize_status(process.returncode)
             client.output = process
             client.timestamp = end_time - start_time
 
             print(f"[+] Execution time: {client.timestamp}")
-
-            if process.returncode == 0:
-                client.status_code = 0
-            elif process.returncode < 0:
-                client.status_code = 2
-            else:
-                client.status_code = 1
 
             if client.name == "Lodestar":
                 try:
@@ -955,12 +957,7 @@ def _run_clients(c, clients, state, block, paths):
                                     error_obj = json.loads(json_str)
                                     status_code = error_obj.get('statusCode', 1)
                                     output_string = error_obj.get('output', '')
-                                    if status_code == 0:
-                                        client.status_code = 0
-                                    elif status_code < 0:
-                                        client.status_code = 2
-                                    else:
-                                        client.status_code = 1
+                                    client.status_code = _normalize_status(status_code)
                                     client.output.stderr = output_string
                                     continue
                         except Exception:
@@ -972,12 +969,7 @@ def _run_clients(c, clients, state, block, paths):
                             output_match = re.search(r"output: \s*'(.*?)'", client.output.stderr, re.DOTALL)
                             if output_match:
                                 output_string = output_match.group(1)
-                                if status_code == 0:
-                                    client.status_code = 0
-                                elif status_code < 0:
-                                    client.status_code = 2
-                                else:
-                                    client.status_code = 1
+                                client.status_code = _normalize_status(status_code)
                                 client.output.stderr = output_string
                 except Exception:
                     client.status_code = 2
