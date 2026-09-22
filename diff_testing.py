@@ -1339,24 +1339,71 @@ def process_clients_sanity_slots(state, slot_value, paths, spectec_core_dir=None
             else:
                 cwd = None
 
-            client.output = subprocess.run(
+            process = subprocess.run(
                 cmd,
-                capture_output=True,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
                 text=True,
                 env=env,
                 cwd=cwd,
             )
-            client.status_code = client.output.returncode
             end_time = perf_counter()
-            client.timestamp = end_time - start_time
 
-            if client.status_code == 0:
-                print(f"[+] Execution time: {client.timestamp}")
-                print(f"[+] Exited with status code: {client.status_code} (Success)")
-            else:
-                print(f"[+] Execution time: {client.timestamp}")
-                print(f"[+] Exited with status code: {client.status_code} (Failure)")
+            client.status_code = process.returncode
+            client.output = process 
+            client.timestamp = end_time - start_time
             
+            print(f"[+] Execution time: {client.timestamp}")
+            
+            # Apply correct classification criteria
+            if process.returncode == 0:
+                client.status_code = 0  # SUCCESS
+            elif process.returncode < 0:
+                client.status_code = 2  # UNHANDLED_EXCEPTION
+            else:
+                client.status_code = 1  # FAIL
+            
+            # Lodestar special handling
+            if client.name == "Lodestar":
+                try:
+                    if client.output.stderr != '':
+                        try:
+                            import json
+                            json_start = client.output.stderr.find('{')
+                            if json_start != -1:
+                                json_end = client.output.stderr.rfind('}') + 1
+                                if json_end > json_start:
+                                    json_str = client.output.stderr[json_start:json_end]
+                                    error_obj = json.loads(json_str)
+                                    status_code = error_obj.get('statusCode', 1)
+                                    output_string = error_obj.get('output', '')
+                                    if status_code == 0:
+                                        client.status_code = 0
+                                    elif status_code < 0:
+                                        client.status_code = 2
+                                    else:
+                                        client.status_code = 1
+                                    client.output.stderr = output_string
+                                    continue
+                        except:
+                            pass
+                        
+                        status_code_match = re.search(r"statusCode: \s*(\d+)", client.output.stderr)
+                        if status_code_match:
+                            status_code = int(status_code_match.group(1))
+                            output_match = re.search(r"output: \s*'(.*?)'", client.output.stderr, re.DOTALL)
+                            if output_match:
+                                output_string = output_match.group(1)
+                                if status_code == 0:
+                                    client.status_code = 0
+                                elif status_code < 0:
+                                    client.status_code = 2
+                                else:
+                                    client.status_code = 1
+                                client.output.stderr = output_string
+                except Exception as e:
+                    client.status_code = 2
+
             client.log()
             
             # Nimbus: Copy .gcda files for independent coverage per test case
