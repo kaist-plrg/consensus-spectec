@@ -1392,6 +1392,7 @@ def process_clients_sanity_slots(state, slot_value, paths, spectec_core_dir=None
         except Exception as e:
             end_time = perf_counter()
             client.timestamp = end_time - start_time
+            client.status_code = 2
             
             if client.output is None:
                 client.output = subprocess.CompletedProcess(args=cmd, returncode=2, stdout='', stderr=str(e))
@@ -1763,6 +1764,7 @@ def process_clients_operation(state, operation, operation_type, paths, spectec_c
         except Exception as e:
             end_time = perf_counter()
             client.timestamp = end_time - start_time
+            client.status_code = 2
             
             if client.output is None:
                 client.output = subprocess.CompletedProcess(args=cmd, returncode=2, stdout='', stderr=str(e))
@@ -2077,6 +2079,7 @@ def process_clients_epoch_processing(state, epoch_processing_type, paths, specte
         except Exception as e:
             end_time = perf_counter()
             client.timestamp = end_time - start_time
+            client.status_code = 2
             
             if client.output is None:
                 client.output = subprocess.CompletedProcess(args=cmd, returncode=2, stdout='', stderr=str(e))
