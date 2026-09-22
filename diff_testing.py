@@ -11,6 +11,7 @@ import shutil
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from time import perf_counter
 from pathlib import Path
+from types import SimpleNamespace
 from datetime import datetime
 from collections import defaultdict
 
@@ -753,41 +754,60 @@ def parse_sanity_slots(test_case_dir, output_parent_dir):
     yield pre_ssz, slot_value, paths_per_test
 
 
-def process_clients(state, block, paths, spectec_core_dir=None, enable_coverage=False, fork_version="capella"):
-    """
-    Process clients with proper testing_clients path setup.
-    
-    Args:
-        state: Pre-state SSZ file path
-        block: Block SSZ file path
-        paths: Output path dictionary (includes output and cov_output paths for each client)
-        spectec_core_dir: spectec-core directory path
-        enable_coverage: Enable coverage measurement
-    """
+def _client_context(spectec_core_dir, enable_coverage, fork_version):
+    """Resolve the paths and flag groups every client invocation shares."""
     if spectec_core_dir is None:
-        script_dir = Path(__file__).parent.resolve()
-        spectec_core_dir = script_dir
-
-    testing_clients_dir = Path(spectec_core_dir) / "testing_clients"
-    eth2spec_result = Path(spectec_core_dir) / "Converter" / "eth2specResult.py"
-    consensus_specs_path = Path(spectec_core_dir) / "consensus-specs" / "tests" / "core" / "pyspec"
-    eth2spec_mainnet = consensus_specs_path / "eth2spec" / fork_version / "mainnet.py"
+        spectec_core_dir = Path(__file__).parent.resolve()
+    spectec_core_dir = Path(spectec_core_dir)
+    testing_clients_dir = spectec_core_dir / "testing_clients"
 
     # Check Lodestar transition.js file path
     lodestar_transition = testing_clients_dir / "lodestar" / "transition.js"
     if not lodestar_transition.exists():
         lodestar_transition = testing_clients_dir / "lodestar" / "transition"
 
-    # Pure config path setup (version-specific)
-    if fork_version == "deneb":
-        pure_configs_dir = spectec_core_dir / "Converter" / "pure_deneb_configs"
-        if not pure_configs_dir.exists():
-            # Fallback to capella configs if deneb configs don't exist
-            pure_configs_dir = spectec_core_dir / "Converter" / "pure_capella_configs"
-    else:  # capella
+    # Pure configs pin every fork epoch to 0; fall back to capella when the fork has none of its own.
+    pure_configs_dir = spectec_core_dir / "Converter" / f"pure_{fork_version}_configs"
+    if not pure_configs_dir.exists():
+        # Fallback to capella configs if given fork configs don't exist
         pure_configs_dir = spectec_core_dir / "Converter" / "pure_capella_configs"
-    lighthouse_testnet_dir = pure_configs_dir / "lighthouse_testnet"
-    # Note: teku_config and nimbus_config are not used (Teku uses CLI args, Nimbus uses code override)
+
+    # Coverage builds are separate binaries; each supports both capella and deneb.
+    suffix = "-cov" if enable_coverage else ""
+    consensus_specs_path = spectec_core_dir / "consensus-specs" / "tests" / "core" / "pyspec"
+
+    # Return a namespace as a context without defining a full class.
+    return SimpleNamespace(
+        enable_coverage=enable_coverage,
+        testing_clients_dir=testing_clients_dir,
+        eth2spec_mainnet=consensus_specs_path / "eth2spec" / fork_version / "mainnet.py",
+        eth2spec_result=spectec_core_dir / "Converter" / "eth2specResult.py",
+        pythonpath=os.pathsep.join(filter(None, [str(consensus_specs_path), os.environ.get("PYTHONPATH")])),
+        node="/usr/bin/node",
+        binaries={
+            "Lighthouse": testing_clients_dir / "lighthouse" / "target" / "release" / f"lcli{suffix}",
+            "Prysm": testing_clients_dir / "prysm" / f"pcli{suffix}",
+            "Nimbus": testing_clients_dir / "nimbus-eth2" / "ncli" / f"ncli{suffix}",
+            "Teku": testing_clients_dir / "teku" / "build" / "install" / f"teku{suffix}" / "bin" / "teku",
+        },
+        
+        # From below, these are client-specific configurations and paths.
+        nimbus_gcda_dir=testing_clients_dir / "nimbus-eth2" / "nimcache" / "debug" / "ncli",
+        lodestar=["--max-old-space-size=16384", str(lodestar_transition)],
+        lighthouse_testnet=["--testnet-dir", str(pure_configs_dir / "lighthouse_testnet")],
+        teku_network=[
+            "--Xnetwork-altair-fork-epoch=0",
+            "--Xnetwork-bellatrix-fork-epoch=0",
+            "--Xnetwork-capella-fork-epoch=0",
+            f"--Xnetwork-deneb-fork-epoch={'0' if fork_version == 'deneb' else '75520'}",
+            # Teku derives this from CPU count and rejects >255.
+            "--Xnetwork-async-beaconchain-max-threads=5",
+        ],
+    )
+
+def process_clients(state, block, paths, spectec_core_dir=None, enable_coverage=False, fork_version="capella"):
+    """Run a full block state transition on every client for one (pre-state, block) pair."""
+    c = _client_context(spectec_core_dir, enable_coverage, fork_version)
 
     # Coverage data directory setup (from paths)
     coverage_dirs = {}
@@ -797,102 +817,50 @@ def process_clients(state, block, paths, spectec_core_dir=None, enable_coverage=
                 coverage_dirs[client_name] = Path(paths[client_name]["cov_output"])
                 coverage_dirs[client_name].mkdir(parents=True, exist_ok=True)
 
-    # Client binary paths: use separate binaries in coverage mode (single binary supports both capella and deneb)
-    if enable_coverage:
-        prysm_binary = testing_clients_dir / "prysm" / "pcli-cov"
-        lighthouse_binary = testing_clients_dir / "lighthouse" / "target" / "release" / "lcli-cov"
-        teku_binary = testing_clients_dir / "teku" / "build" / "install" / "teku-cov" / "bin" / "teku"
-        nimbus_binary = testing_clients_dir / "nimbus-eth2" / "ncli" / "ncli-cov"
-    else:
-        prysm_binary = testing_clients_dir / "prysm" / "pcli"
-        lighthouse_binary = testing_clients_dir / "lighthouse" / "target" / "release" / "lcli"
-        teku_binary = testing_clients_dir / "teku" / "build" / "install" / "teku" / "bin" / "teku"
-        nimbus_binary = testing_clients_dir / "nimbus-eth2" / "ncli" / "ncli"
-
     clients = [
-        Clients(
-            "Lodestar",
-            "/usr/bin/node",
-            [
-                "--max-old-space-size=16384",
-                str(lodestar_transition),
-                "state-transition",  # Command name
-                state,
-                block,
-                paths["lodestar"]["output"],
-                "--verifyProposer=false",  # validate_result = false: Skip block signature verification
-                "--verifyStateRoot=false",  # validate_result = false: Skip state root verification
-                f"--fork-version={fork_version}",
-            ]),
-        Clients(
-            "Lighthouse",
-            str(lighthouse_binary),
-            [
-                "transition-blocks",
-                "--pre-state-path", state,
-                "--block-path", block,
-                "--post-state-output-path", paths["lighthouse"]["output"],
-                # Pure config: fork epochs set to 0
-                "--testnet-dir", str(lighthouse_testnet_dir),
-                # validate_result = false (via modified_code): Skip block signature and state root verification
-                # Block signature: skipped in transition_blocks.rs (SkipBlockSignatureOnly)
-                # State root: skipped in transition_blocks.rs (commented out)
-                # RANDAO and attestation signatures: still verified
-            ]),
-        Clients(
-            "Prysm",
-            str(prysm_binary),
-            [
-                "state-transition",
-                f"--block-path={block}",
-                f"--pre-state-path={state}",
-                f"--expected-post-state-path={paths['prysm']['output']}"
-                # validate_result = false (via modified_code): Skip block signature and state root verification
-                # Block signature: skipped in main.go debugStateTransition (filtered out from verify set)
-                # State root: skipped in main.go (commented out)
-                # RANDAO and attestation signatures: still verified
-            ]),
-        Clients(
-            "Nimbus",
-            str(nimbus_binary),
-            [
-                "transition",
-                state,
-                block,
-                paths["nimbus"]["output"],
-                "false"  # validate_result = false: Skip state root verification (also skips block signature verification)
-            ]),
-        Clients(
-            "Teku",
-            str(teku_binary),
-            [
-                "transition",
-                "blocks",
-                "--pre", state,
-                "--post", paths["teku"]["output"],
-                block,
-                # Pure config: fork epochs set to 0
-                "--Xnetwork-altair-fork-epoch=0",
-                "--Xnetwork-bellatrix-fork-epoch=0",
-                "--Xnetwork-capella-fork-epoch=0",
-                f"--Xnetwork-deneb-fork-epoch={'0' if fork_version == 'deneb' else '75520'}",
-                # Teku derives this from CPU count and rejects >255.
-                "--Xnetwork-async-beaconchain-max-threads=5",
-                # validate_result = false (via modified_code): Skip block signature and state root verification
-                # Block signature: skipped in AbstractBlockProcessor.java (verifyBlockSignature commented out)
-                # State root: skipped in AbstractBlockProcessor.java (validatePostState commented out)
-                # RANDAO and attestation signatures: still verified via BLSSignatureVerifier.SIMPLE
-            ]),
-        Clients(
-            "Eth2spec",
-            sys.executable,
-            [
-                str(eth2spec_result),
-                "--pre", state,
-                "--block", block,
-                "--out", paths["eth2spec"]["output"],
-                "--fork", fork_version,
-            ]),
+        Clients("Lodestar", c.node, c.lodestar + [
+            "state-transition",
+            state,
+            block,
+            paths["lodestar"]["output"],
+            "--verifyProposer=false",  # validate_result = false: skip block signature verification
+            "--verifyStateRoot=false",  # validate_result = false: skip state root verification
+            f"--fork-version={fork_version}",
+        ]),
+        # Lighthouse, Prysm and Teku skip block signature and state root checks via modified_code/patches;
+        # RANDAO and attestation signatures are still verified.
+        Clients("Lighthouse", c.binaries["Lighthouse"], [
+            "transition-blocks",
+            "--pre-state-path", state,
+            "--block-path", block,
+            "--post-state-output-path", paths["lighthouse"]["output"],
+        ] + c.lighthouse_testnet),
+        Clients("Prysm", c.binaries["Prysm"], [
+            "state-transition",
+            f"--block-path={block}",
+            f"--pre-state-path={state}",
+            f"--expected-post-state-path={paths['prysm']['output']}",
+        ]),
+        Clients("Nimbus", c.binaries["Nimbus"], [
+            "transition",
+            state,
+            block,
+            paths["nimbus"]["output"],
+            "false",  # validate_result = false: skip state root (and thus block signature) verification
+        ]),
+        Clients("Teku", c.binaries["Teku"], [
+            "transition", "blocks",
+            "--pre", state,
+            "--post", paths["teku"]["output"],
+            block,
+        ] + c.teku_network),
+        Clients("Eth2spec", sys.executable, [
+            str(c.eth2spec_result),
+            "--pre", state,
+            "--block", block,
+            "--out", paths["eth2spec"]["output"],
+            "--fork", fork_version,
+        ]),
     ]
 
     for client in clients:
@@ -913,12 +881,7 @@ def process_clients(state, block, paths, spectec_core_dir=None, enable_coverage=
             if client.name == "Nimbus":
                 env["FORK_VERSION"] = fork_version
             elif client.name == "Eth2spec":
-                existing_pythonpath = env.get("PYTHONPATH")
-                env["PYTHONPATH"] = (
-                    str(consensus_specs_path)
-                    if not existing_pythonpath
-                    else str(consensus_specs_path) + os.pathsep + existing_pythonpath
-                )
+                env["PYTHONPATH"] = c.pythonpath
 
             if enable_coverage:
                 if client.name == "Prysm":
@@ -931,7 +894,7 @@ def process_clients(state, block, paths, spectec_core_dir=None, enable_coverage=
                     print(f"[+] Coverage enabled: LLVM_PROFILE_FILE={env['LLVM_PROFILE_FILE']}")
 
                 elif client.name == "Teku":
-                    jacoco_agent_path = testing_clients_dir / "jacoco" / "jacocoagent.jar"
+                    jacoco_agent_path = c.testing_clients_dir / "jacoco" / "jacocoagent.jar"
                     jacoco_exec = coverage_dirs["teku"] / "teku-coverage.exec"
 
                     if jacoco_agent_path.exists():
@@ -941,7 +904,7 @@ def process_clients(state, block, paths, spectec_core_dir=None, enable_coverage=
                         print(f"[!] Warning: JaCoCo agent not found at {jacoco_agent_path}")
 
                 elif client.name == "Nimbus":
-                    nimbus_src = testing_clients_dir / "nimbus-eth2"
+                    nimbus_src = c.testing_clients_dir / "nimbus-eth2"
                     nimbus_gcda_dir = nimbus_src / "nimcache" / "debug" / "ncli"
 
                     if nimbus_gcda_dir.exists():
@@ -953,7 +916,7 @@ def process_clients(state, block, paths, spectec_core_dir=None, enable_coverage=
                     print(f"[+] Coverage enabled: gcov will auto-generate .gcda files in build directory")
 
                 elif client.name == "Lodestar":
-                    lodestar_dir = testing_clients_dir / "lodestar"
+                    lodestar_dir = c.testing_clients_dir / "lodestar"
                     coverage_report_dir = coverage_dirs["lodestar"] / "report"
                     coverage_temp_dir = coverage_dirs["lodestar"]
                     coverage_report_dir.mkdir(parents=True, exist_ok=True)
@@ -995,17 +958,17 @@ def process_clients(state, block, paths, spectec_core_dir=None, enable_coverage=
                         "--data-file",
                         str(coverage_data),
                         "--include",
-                        str(eth2spec_mainnet),
+                        str(c.eth2spec_mainnet),
                     ] + [str(arg) for arg in client.cmd_args]
                     client.cmd_args = coverage_args
                     cmd = [str(client.cmd_path)] + coverage_args
                     print(f"[+] Coverage enabled: coverage.py data-file={coverage_data}")
-                    print(f"[+] Coverage include target: {eth2spec_mainnet}")
+                    print(f"[+] Coverage include target: {c.eth2spec_mainnet}")
 
             print(f"[+] Command: {client.cmd_path} {' '.join(str(arg) for arg in client.cmd_args)}")
 
             if client.name == "Lodestar" and enable_coverage:
-                cwd = str(testing_clients_dir / "lodestar")
+                cwd = str(c.testing_clients_dir / "lodestar")
             else:
                 cwd = None
 
@@ -1075,7 +1038,7 @@ def process_clients(state, block, paths, spectec_core_dir=None, enable_coverage=
             client.log()
 
             if client.name == "Nimbus" and enable_coverage:
-                nimbus_src = testing_clients_dir / "nimbus-eth2"
+                nimbus_src = c.testing_clients_dir / "nimbus-eth2"
                 nimbus_gcda_dir = nimbus_src / "nimcache" / "debug" / "ncli"
                 nimbus_coverage_dir = coverage_dirs.get("nimbus")
 
@@ -1121,36 +1084,8 @@ def process_clients(state, block, paths, spectec_core_dir=None, enable_coverage=
     return clients
 
 def process_clients_sanity_slots(state, slot_value, paths, spectec_core_dir=None, enable_coverage=False, fork_version="capella"):
-    """
-    Process clients with sanity-slots command.
-    
-    Args:
-        state: Pre-state SSZ file path
-        slot_value: Target slot value (integer)
-        paths: Output path dictionary (includes output and cov_output paths for each client)
-        spectec_core_dir: spectec-core directory path
-        enable_coverage: Enable coverage measurement
-    """
-    if spectec_core_dir is None:
-        script_dir = Path(__file__).parent.resolve()
-        spectec_core_dir = script_dir
-    
-    testing_clients_dir = Path(spectec_core_dir) / "testing_clients"
-    
-    # Check Lodestar transition.js file path
-    lodestar_transition = testing_clients_dir / "lodestar" / "transition.js"
-    if not lodestar_transition.exists():
-        lodestar_transition = testing_clients_dir / "lodestar" / "transition"
-
-    # Pure config path setup (version-specific)
-    if fork_version == "deneb":
-        pure_configs_dir = spectec_core_dir / "Converter" / "pure_deneb_configs"
-        if not pure_configs_dir.exists():
-            # Fallback to capella configs if deneb configs don't exist
-            pure_configs_dir = spectec_core_dir / "Converter" / "pure_capella_configs"
-    else:  # capella
-        pure_configs_dir = spectec_core_dir / "Converter" / "pure_capella_configs"
-    lighthouse_testnet_dir = pure_configs_dir / "lighthouse_testnet"
+    """Advance the pre-state by slot_value empty slots on every client."""
+    c = _client_context(spectec_core_dir, enable_coverage, fork_version)
 
     # Coverage data directory setup (from paths)
     coverage_dirs = {}
@@ -1159,80 +1094,41 @@ def process_clients_sanity_slots(state, slot_value, paths, spectec_core_dir=None
             if client_name in paths and "cov_output" in paths[client_name]:
                 coverage_dirs[client_name] = Path(paths[client_name]["cov_output"])
                 coverage_dirs[client_name].mkdir(parents=True, exist_ok=True)
-    
-    # Client binary paths: use separate binaries in coverage mode (single binary supports both capella and deneb)
-    if enable_coverage:
-        prysm_binary = testing_clients_dir / "prysm" / "pcli-cov"
-        lighthouse_binary = testing_clients_dir / "lighthouse" / "target" / "release" / "lcli-cov"
-        teku_binary = testing_clients_dir / "teku" / "build" / "install" / "teku-cov" / "bin" / "teku"
-        nimbus_binary = testing_clients_dir / "nimbus-eth2" / "ncli" / "ncli-cov"
-    else:
-        prysm_binary = testing_clients_dir / "prysm" / "pcli"
-        lighthouse_binary = testing_clients_dir / "lighthouse" / "target" / "release" / "lcli"
-        teku_binary = testing_clients_dir / "teku" / "build" / "install" / "teku" / "bin" / "teku"
-        nimbus_binary = testing_clients_dir / "nimbus-eth2" / "ncli" / "ncli"
 
     clients = [
-        Clients(
-            "Lodestar",
-            "/usr/bin/node",
-            [
-                "--max-old-space-size=16384",
-                str(lodestar_transition),
-                "sanity-slots",
-                f"--pre-state-path={state}",
-                f"--slot={slot_value}",
-                f"--post-state-output-path={paths['lodestar']['output']}",
-                f"--fork-version={fork_version}",
-            ]),
-        Clients(
-            "Lighthouse",
-            str(lighthouse_binary),
-            [
-                "sanity-slots",
-                "--pre-state-path", state,
-                "--slots", str(slot_value),
-                "--post-state-output-path", paths["lighthouse"]["output"],
-                "--testnet-dir", str(lighthouse_testnet_dir),
-            ]),
-        Clients(
-            "Prysm",
-            str(prysm_binary),
-            [
-                "sanity-slots",
-                f"--pre-state-path={state}",
-                f"--slot={slot_value}",
-                f"--post-state-output-path={paths['prysm']['output']}",
-            ]),
-        Clients(
-            "Nimbus",
-            str(nimbus_binary),
-            [
-                "sanity_slots",
-                state,
-                str(slot_value),
-                paths["nimbus"]["output"],
-            ]),
-        Clients(
-            "Teku",
-            str(teku_binary),
-            [
-                "transition",
-                "slots",
-                "--pre", state,
-                "--post", paths["teku"]["output"],
-                "--delta",  # Interpret slot_value as delta from pre-state (default=true, but explicit for clarity)
-                str(slot_value),  # Positional parameter: number of slots (delta from pre-state)
-                "--Xnetwork-altair-fork-epoch=0",
-                "--Xnetwork-bellatrix-fork-epoch=0",
-                "--Xnetwork-capella-fork-epoch=0",
-                f"--Xnetwork-deneb-fork-epoch={'0' if fork_version == 'deneb' else '75520'}",
-                # Teku derives this from CPU count and rejects >255.
-                "--Xnetwork-async-beaconchain-max-threads=5",
-            ]),
+        Clients("Lodestar", c.node, c.lodestar + [
+            "sanity-slots",
+            f"--pre-state-path={state}",
+            f"--slot={slot_value}",
+            f"--post-state-output-path={paths['lodestar']['output']}",
+            f"--fork-version={fork_version}",
+        ]),
+        Clients("Lighthouse", c.binaries["Lighthouse"], [
+            "sanity-slots",
+            "--pre-state-path", state,
+            "--slots", str(slot_value),
+            "--post-state-output-path", paths["lighthouse"]["output"],
+        ] + c.lighthouse_testnet),
+        Clients("Prysm", c.binaries["Prysm"], [
+            "sanity-slots",
+            f"--pre-state-path={state}",
+            f"--slot={slot_value}",
+            f"--post-state-output-path={paths['prysm']['output']}",
+        ]),
+        Clients("Nimbus", c.binaries["Nimbus"], [
+            "sanity_slots",
+            state,
+            str(slot_value),
+            paths["nimbus"]["output"],
+        ]),
+        Clients("Teku", c.binaries["Teku"], [
+            "transition", "slots",
+            "--pre", state,
+            "--post", paths["teku"]["output"],
+            "--delta", str(slot_value),  # slot_value is a delta from the pre-state slot
+        ] + c.teku_network),
     ]
 
-    # Use the same client processing logic as process_clients
     for client in clients:
         cmd = [str(client.cmd_path)] + [str(arg) for arg in client.cmd_args]
         try:
@@ -1266,7 +1162,7 @@ def process_clients_sanity_slots(state, slot_value, paths, spectec_core_dir=None
                     print(f"[+] Coverage enabled: LLVM_PROFILE_FILE={env['LLVM_PROFILE_FILE']}")
                 
                 elif client.name == "Teku":
-                    jacoco_agent_path = testing_clients_dir / "jacoco" / "jacocoagent.jar"
+                    jacoco_agent_path = c.testing_clients_dir / "jacoco" / "jacocoagent.jar"
                     jacoco_exec = coverage_dirs["teku"] / "teku-coverage.exec"
                     
                     if jacoco_agent_path.exists():
@@ -1279,7 +1175,7 @@ def process_clients_sanity_slots(state, slot_value, paths, spectec_core_dir=None
                     # Nim/C: gcov automatically generates .gcda files, no special env var needed
                     # For independent coverage per test case, initialize .gcda files before execution
                     # and copy them after execution
-                    nimbus_src = testing_clients_dir / "nimbus-eth2"
+                    nimbus_src = c.testing_clients_dir / "nimbus-eth2"
                     nimbus_gcda_dir = nimbus_src / "nimcache" / "debug" / "ncli"
                     
                     # Delete existing .gcda files before execution (for independent measurement)
@@ -1294,7 +1190,7 @@ def process_clients_sanity_slots(state, slot_value, paths, spectec_core_dir=None
                 elif client.name == "Lodestar":
                     # Node.js: Use c8 for coverage measurement
                     # c8 collects coverage at runtime, so wrap the command with c8
-                    lodestar_dir = testing_clients_dir / "lodestar"
+                    lodestar_dir = c.testing_clients_dir / "lodestar"
                     coverage_report_dir = coverage_dirs["lodestar"] / "report"
                     coverage_temp_dir = coverage_dirs["lodestar"]  # JSON file storage location
                     coverage_report_dir.mkdir(parents=True, exist_ok=True)
@@ -1335,7 +1231,7 @@ def process_clients_sanity_slots(state, slot_value, paths, spectec_core_dir=None
 
             # Set cwd (only for Lodestar coverage mode)
             if client.name == "Lodestar" and enable_coverage:
-                cwd = str(testing_clients_dir / "lodestar")
+                cwd = str(c.testing_clients_dir / "lodestar")
             else:
                 cwd = None
 
@@ -1408,7 +1304,7 @@ def process_clients_sanity_slots(state, slot_value, paths, spectec_core_dir=None
             
             # Nimbus: Copy .gcda files for independent coverage per test case
             if client.name == "Nimbus" and enable_coverage:
-                nimbus_src = testing_clients_dir / "nimbus-eth2"
+                nimbus_src = c.testing_clients_dir / "nimbus-eth2"
                 nimbus_gcda_dir = nimbus_src / "nimcache" / "debug" / "ncli"
                 nimbus_coverage_dir = coverage_dirs.get("nimbus")
                 
@@ -1449,41 +1345,13 @@ def process_clients_sanity_slots(state, slot_value, paths, spectec_core_dir=None
             print(f"[+] {client.name} failed: {client.output.stderr}")
     return clients
 
-
 def process_clients_operation(state, operation, operation_type, paths, spectec_core_dir=None, enable_coverage=False, fork_version="capella", execution_valid=None):
-    """
-    Process clients with operation command.
-    
-    Args:
-        state: Pre-state SSZ file path
-        operation: Operation SSZ file path
-        operation_type: Operation type (attestation, block_header, etc.)
-        paths: Output path dictionary (includes output and cov_output paths for each client)
-        spectec_core_dir: spectec-core directory path
-        enable_coverage: Enable coverage measurement
-        fork_version: Fork version (capella or deneb)
-        execution_valid: For execution_payload operation: whether execution payload is valid (True/False/None)
-    """
-    if spectec_core_dir is None:
-        script_dir = Path(__file__).parent.resolve()
-        spectec_core_dir = script_dir
-    
-    testing_clients_dir = Path(spectec_core_dir) / "testing_clients"
-    
-    # Check Lodestar transition.js file path
-    lodestar_transition = testing_clients_dir / "lodestar" / "transition.js"
-    if not lodestar_transition.exists():
-        lodestar_transition = testing_clients_dir / "lodestar" / "transition"
+    """Apply a single block operation on every client.
 
-    # Pure config path setup (version-specific)
-    if fork_version == "deneb":
-        pure_configs_dir = spectec_core_dir / "Converter" / "pure_deneb_configs"
-        if not pure_configs_dir.exists():
-            # Fallback to capella configs if deneb configs don't exist
-            pure_configs_dir = spectec_core_dir / "Converter" / "pure_capella_configs"
-    else:  # capella
-        pure_configs_dir = spectec_core_dir / "Converter" / "pure_capella_configs"
-    lighthouse_testnet_dir = pure_configs_dir / "lighthouse_testnet"
+    execution_valid only applies to execution_payload and comes from the case's execution.yaml;
+    None means the file gave no answer, so the CLI flag is omitted and Nimbus defaults to valid.
+    """
+    c = _client_context(spectec_core_dir, enable_coverage, fork_version)
 
     # Coverage data directory setup (from paths)
     coverage_dirs = {}
@@ -1492,125 +1360,54 @@ def process_clients_operation(state, operation, operation_type, paths, spectec_c
             if client_name in paths and "cov_output" in paths[client_name]:
                 coverage_dirs[client_name] = Path(paths[client_name]["cov_output"])
                 coverage_dirs[client_name].mkdir(parents=True, exist_ok=True)
-    
-    # Client binary paths: use separate binaries in coverage mode
-    if enable_coverage:
-        prysm_binary = testing_clients_dir / "prysm" / "pcli-cov"
-        lighthouse_binary = testing_clients_dir / "lighthouse" / "target" / "release" / "lcli-cov"
-        teku_binary = testing_clients_dir / "teku" / "build" / "install" / "teku-cov" / "bin" / "teku"
-        nimbus_binary = testing_clients_dir / "nimbus-eth2" / "ncli" / "ncli-cov"
-    else:
-        prysm_binary = testing_clients_dir / "prysm" / "pcli"
-        lighthouse_binary = testing_clients_dir / "lighthouse" / "target" / "release" / "lcli"
-        teku_binary = testing_clients_dir / "teku" / "build" / "install" / "teku" / "bin" / "teku"
-        nimbus_binary = testing_clients_dir / "nimbus-eth2" / "ncli" / "ncli"
 
-    # Map operation type names for specific clients
-    # Lighthouse uses "sync_committee" instead of "sync_aggregate", and "withdrawals" instead of "withdrawal"
-    # Prysm uses "withdrawals" instead of "withdrawal"
-    lighthouse_operation_type = operation_type
-    if operation_type == "sync_aggregate":
-        lighthouse_operation_type = "sync_committee"
-    elif operation_type == "withdrawal":
-        lighthouse_operation_type = "withdrawals"
-    
-    prysm_operation_type = operation_type
-    if operation_type == "withdrawal":
-        prysm_operation_type = "withdrawals"
+    lighthouse_type = {"sync_aggregate": "sync_committee", "withdrawal": "withdrawals"}.get(operation_type, operation_type)
+    prysm_type = {"withdrawal": "withdrawals"}.get(operation_type, operation_type)
 
-    # Build Lodestar command arguments
-    lodestar_args = [
-        "--max-old-space-size=16384",
-        str(lodestar_transition),
-        "operation",
-        f"--pre-state-path={state}",
-        f"--operation-path={operation}",
-        f"--operation-type={operation_type}",
-        f"--post-state-output-path={paths['lodestar']['output']}",
-        f"--fork-version={fork_version}",
-    ]
-    # Add execution_valid flag for execution_payload operation
+    exec_valid_eq, exec_valid_sep = [], []
     if operation_type == "execution_payload" and execution_valid is not None:
-        lodestar_args.append(f"--execution-valid={'true' if execution_valid else 'false'}")
-    
-    # Build Lighthouse command arguments
-    lighthouse_args = [
-        "operation",
-        "--operation-type", lighthouse_operation_type,
-        "--pre-state-path", state,
-        "--operation-path", operation,
-        "--post-state-output-path", paths["lighthouse"]["output"],
-        "--testnet-dir", str(lighthouse_testnet_dir),
-    ]
-    # Add execution_valid flag for execution_payload operation
-    if operation_type == "execution_payload" and execution_valid is not None:
-        lighthouse_args.extend(["--execution-valid", "true" if execution_valid else "false"])
-    
-    # Build Prysm command arguments
-    prysm_args = [
-        "operation",
-        f"--operation-type={prysm_operation_type}",
-        f"--pre-state-path={state}",
-        f"--operation-path={operation}",
-        f"--post-state-output-path={paths['prysm']['output']}",
-    ]
-    # Add execution_valid flag for execution_payload operation
-    if operation_type == "execution_payload" and execution_valid is not None:
-        prysm_args.append(f"--execution-valid={'true' if execution_valid else 'false'}")
-    
-    # Build Nimbus command arguments
-    # Note: confutils has issues with options in operation command, so we use environment variable
-    nimbus_args = [
-        "operation",
-        state,
-        operation_type,
-        operation,
-        paths["nimbus"]["output"],
-    ]
-    
-    # Build Teku command arguments
-    teku_args = [
-        "transition",
-        "operation",
-        operation_type,
-        "--pre", state,
-        "--operation-data", operation,
-        "--post", paths["teku"]["output"],
-        "--Xnetwork-altair-fork-epoch=0",
-        "--Xnetwork-bellatrix-fork-epoch=0",
-        "--Xnetwork-capella-fork-epoch=0",
-        f"--Xnetwork-deneb-fork-epoch={'0' if fork_version == 'deneb' else '75520'}",
-        # Teku derives this from CPU count and rejects >255.
-        "--Xnetwork-async-beaconchain-max-threads=5",
-    ]
-    # Add execution_valid flag for execution_payload operation
-    if operation_type == "execution_payload" and execution_valid is not None:
-        teku_args.extend(["--execution-valid", "true" if execution_valid else "false"])
-    
+        value = "true" if execution_valid else "false"
+        exec_valid_eq = [f"--execution-valid={value}"]
+        exec_valid_sep = ["--execution-valid", value]
+
     clients = [
-        Clients(
-            "Lodestar",
-            "/usr/bin/node",
-            lodestar_args),
-        Clients(
-            "Lighthouse",
-            str(lighthouse_binary),
-            lighthouse_args),
-        Clients(
-            "Prysm",
-            str(prysm_binary),
-            prysm_args),
-        Clients(
-            "Nimbus",
-            str(nimbus_binary),
-            nimbus_args),
-        Clients(
-            "Teku",
-            str(teku_binary),
-            teku_args),
+        Clients("Lodestar", c.node, c.lodestar + [
+            "operation",
+            f"--pre-state-path={state}",
+            f"--operation-path={operation}",
+            f"--operation-type={operation_type}",
+            f"--post-state-output-path={paths['lodestar']['output']}",
+            f"--fork-version={fork_version}",
+        ] + exec_valid_eq),
+        Clients("Lighthouse", c.binaries["Lighthouse"], [
+            "operation",
+            "--operation-type", lighthouse_type,
+            "--pre-state-path", state,
+            "--operation-path", operation,
+            "--post-state-output-path", paths["lighthouse"]["output"],
+        ] + c.lighthouse_testnet + exec_valid_sep),
+        Clients("Prysm", c.binaries["Prysm"], [
+            "operation",
+            f"--operation-type={prysm_type}",
+            f"--pre-state-path={state}",
+            f"--operation-path={operation}",
+            f"--post-state-output-path={paths['prysm']['output']}",
+        ] + exec_valid_eq),
+        Clients("Nimbus", c.binaries["Nimbus"], [
+            "operation",
+            state,
+            operation_type,
+            operation,
+            paths["nimbus"]["output"],
+        ]),
+        Clients("Teku", c.binaries["Teku"], [
+            "transition", "operation", operation_type,
+            "--pre", state,
+            "--operation-data", operation,
+            "--post", paths["teku"]["output"],
+        ] + c.teku_network + exec_valid_sep),
     ]
 
-    # Use the same client processing logic as process_clients
     for client in clients:
         cmd = [str(client.cmd_path)] + [str(arg) for arg in client.cmd_args]
         try:
@@ -1652,7 +1449,7 @@ def process_clients_operation(state, operation, operation_type, paths, spectec_c
                     print(f"[+] Coverage enabled: LLVM_PROFILE_FILE={env['LLVM_PROFILE_FILE']}")
                 
                 elif client.name == "Teku":
-                    jacoco_agent_path = testing_clients_dir / "jacoco" / "jacocoagent.jar"
+                    jacoco_agent_path = c.testing_clients_dir / "jacoco" / "jacocoagent.jar"
                     jacoco_exec = coverage_dirs["teku"] / "teku-coverage.exec"
                     
                     if jacoco_agent_path.exists():
@@ -1662,7 +1459,7 @@ def process_clients_operation(state, operation, operation_type, paths, spectec_c
                         print(f"[!] Warning: JaCoCo agent not found at {jacoco_agent_path}")
                 
                 elif client.name == "Nimbus":
-                    nimbus_src = testing_clients_dir / "nimbus-eth2"
+                    nimbus_src = c.testing_clients_dir / "nimbus-eth2"
                     nimbus_gcda_dir = nimbus_src / "nimcache" / "debug" / "ncli"
                     
                     if nimbus_gcda_dir.exists():
@@ -1674,7 +1471,7 @@ def process_clients_operation(state, operation, operation_type, paths, spectec_c
                     print(f"[+] Coverage enabled: gcov will auto-generate .gcda files in build directory")
                 
                 elif client.name == "Lodestar":
-                    lodestar_dir = testing_clients_dir / "lodestar"
+                    lodestar_dir = c.testing_clients_dir / "lodestar"
                     coverage_report_dir = coverage_dirs["lodestar"] / "report"
                     coverage_temp_dir = coverage_dirs["lodestar"]
                     coverage_report_dir.mkdir(parents=True, exist_ok=True)
@@ -1707,7 +1504,7 @@ def process_clients_operation(state, operation, operation_type, paths, spectec_c
 
             # Set cwd (only for Lodestar coverage mode)
             if client.name == "Lodestar" and enable_coverage:
-                cwd = str(testing_clients_dir / "lodestar")
+                cwd = str(c.testing_clients_dir / "lodestar")
             else:
                 cwd = None
 
@@ -1780,7 +1577,7 @@ def process_clients_operation(state, operation, operation_type, paths, spectec_c
             
             # Nimbus: Copy .gcda files for independent coverage per test case
             if client.name == "Nimbus" and enable_coverage:
-                nimbus_src = testing_clients_dir / "nimbus-eth2"
+                nimbus_src = c.testing_clients_dir / "nimbus-eth2"
                 nimbus_gcda_dir = nimbus_src / "nimcache" / "debug" / "ncli"
                 nimbus_coverage_dir = coverage_dirs.get("nimbus")
                 
@@ -1821,38 +1618,9 @@ def process_clients_operation(state, operation, operation_type, paths, spectec_c
             print(f"[+] {client.name} failed: {client.output.stderr}")
     return clients
 
-
 def process_clients_epoch_processing(state, epoch_processing_type, paths, spectec_core_dir=None, enable_coverage=False, fork_version="capella"):
-    """
-    Process clients with epoch-processing command.
-    
-    Args:
-        state: Pre-state SSZ file path
-        epoch_processing_type: Epoch processing type (justification_and_finalization, etc.)
-        paths: Output path dictionary (includes output and cov_output paths for each client)
-        spectec_core_dir: spectec-core directory path
-        enable_coverage: Enable coverage measurement
-    """
-    if spectec_core_dir is None:
-        script_dir = Path(__file__).parent.resolve()
-        spectec_core_dir = script_dir
-    
-    testing_clients_dir = Path(spectec_core_dir) / "testing_clients"
-    
-    # Check Lodestar transition.js file path
-    lodestar_transition = testing_clients_dir / "lodestar" / "transition.js"
-    if not lodestar_transition.exists():
-        lodestar_transition = testing_clients_dir / "lodestar" / "transition"
-
-    # Pure config path setup (version-specific)
-    if fork_version == "deneb":
-        pure_configs_dir = spectec_core_dir / "Converter" / "pure_deneb_configs"
-        if not pure_configs_dir.exists():
-            # Fallback to capella configs if deneb configs don't exist
-            pure_configs_dir = spectec_core_dir / "Converter" / "pure_capella_configs"
-    else:  # capella
-        pure_configs_dir = spectec_core_dir / "Converter" / "pure_capella_configs"
-    lighthouse_testnet_dir = pure_configs_dir / "lighthouse_testnet"
+    """Run a single epoch-processing step on every client."""
+    c = _client_context(spectec_core_dir, enable_coverage, fork_version)
 
     # Coverage data directory setup (from paths)
     coverage_dirs = {}
@@ -1861,79 +1629,40 @@ def process_clients_epoch_processing(state, epoch_processing_type, paths, specte
             if client_name in paths and "cov_output" in paths[client_name]:
                 coverage_dirs[client_name] = Path(paths[client_name]["cov_output"])
                 coverage_dirs[client_name].mkdir(parents=True, exist_ok=True)
-    
-    # Client binary paths: use separate binaries in coverage mode (single binary supports both capella and deneb)
-    if enable_coverage:
-        prysm_binary = testing_clients_dir / "prysm" / "pcli-cov"
-        lighthouse_binary = testing_clients_dir / "lighthouse" / "target" / "release" / "lcli-cov"
-        teku_binary = testing_clients_dir / "teku" / "build" / "install" / "teku-cov" / "bin" / "teku"
-        nimbus_binary = testing_clients_dir / "nimbus-eth2" / "ncli" / "ncli-cov"
-    else:
-        prysm_binary = testing_clients_dir / "prysm" / "pcli"
-        lighthouse_binary = testing_clients_dir / "lighthouse" / "target" / "release" / "lcli"
-        teku_binary = testing_clients_dir / "teku" / "build" / "install" / "teku" / "bin" / "teku"
-        nimbus_binary = testing_clients_dir / "nimbus-eth2" / "ncli" / "ncli"
 
     clients = [
-        Clients(
-            "Lodestar",
-            "/usr/bin/node",
-            [
-                "--max-old-space-size=16384",
-                str(lodestar_transition),
-                "epoch-processing",
-                f"--pre-state-path={state}",
-                f"--epoch-processing-type={epoch_processing_type}",
-                f"--post-state-output-path={paths['lodestar']['output']}",
-                f"--fork-version={fork_version}",
-            ]),
-        Clients(
-            "Lighthouse",
-            str(lighthouse_binary),
-            [
-                "epoch-processing",
-                "--epoch-processing-type", epoch_processing_type,
-                "--pre-state-path", state,
-                "--post-state-output-path", paths["lighthouse"]["output"],
-                "--testnet-dir", str(lighthouse_testnet_dir),
-            ]),
-        Clients(
-            "Prysm",
-            str(prysm_binary),
-            [
-                "epoch-processing",
-                f"--epoch-processing-type={epoch_processing_type}",
-                f"--pre-state-path={state}",
-                f"--post-state-output-path={paths['prysm']['output']}",
-            ]),
-        Clients(
-            "Nimbus",
-            str(nimbus_binary),
-            [
-                "epoch_processing",  # Nimbus uses underscore, not hyphen
-                state,
-                epoch_processing_type,
-                paths["nimbus"]["output"],
-            ]),
-        Clients(
-            "Teku",
-            str(teku_binary),
-            [
-                "transition",
-                "epoch-processing",
-                epoch_processing_type,
-                "--pre", state,
-                "--post", paths["teku"]["output"],
-                "--Xnetwork-altair-fork-epoch=0",
-                "--Xnetwork-bellatrix-fork-epoch=0",
-                "--Xnetwork-capella-fork-epoch=0",
-                f"--Xnetwork-deneb-fork-epoch={'0' if fork_version == 'deneb' else '75520'}",
-                # Teku derives this from CPU count and rejects >255.
-                "--Xnetwork-async-beaconchain-max-threads=5",
-            ]),
+        Clients("Lodestar", c.node, c.lodestar + [
+            "epoch-processing",
+            f"--pre-state-path={state}",
+            f"--epoch-processing-type={epoch_processing_type}",
+            f"--post-state-output-path={paths['lodestar']['output']}",
+            f"--fork-version={fork_version}",
+        ]),
+        Clients("Lighthouse", c.binaries["Lighthouse"], [
+            "epoch-processing",
+            "--epoch-processing-type", epoch_processing_type,
+            "--pre-state-path", state,
+            "--post-state-output-path", paths["lighthouse"]["output"],
+        ] + c.lighthouse_testnet),
+        Clients("Prysm", c.binaries["Prysm"], [
+            "epoch-processing",
+            f"--epoch-processing-type={epoch_processing_type}",
+            f"--pre-state-path={state}",
+            f"--post-state-output-path={paths['prysm']['output']}",
+        ]),
+        Clients("Nimbus", c.binaries["Nimbus"], [
+            "epoch_processing",  # Nimbus uses underscore, not hyphen
+            state,
+            epoch_processing_type,
+            paths["nimbus"]["output"],
+        ]),
+        Clients("Teku", c.binaries["Teku"], [
+            "transition", "epoch-processing", epoch_processing_type,
+            "--pre", state,
+            "--post", paths["teku"]["output"],
+        ] + c.teku_network),
     ]
 
-    # Use the same client processing logic as process_clients
     for client in clients:
         cmd = [str(client.cmd_path)] + [str(arg) for arg in client.cmd_args]
         try:
@@ -1967,7 +1696,7 @@ def process_clients_epoch_processing(state, epoch_processing_type, paths, specte
                     print(f"[+] Coverage enabled: LLVM_PROFILE_FILE={env['LLVM_PROFILE_FILE']}")
                 
                 elif client.name == "Teku":
-                    jacoco_agent_path = testing_clients_dir / "jacoco" / "jacocoagent.jar"
+                    jacoco_agent_path = c.testing_clients_dir / "jacoco" / "jacocoagent.jar"
                     jacoco_exec = coverage_dirs["teku"] / "teku-coverage.exec"
                     
                     if jacoco_agent_path.exists():
@@ -1977,7 +1706,7 @@ def process_clients_epoch_processing(state, epoch_processing_type, paths, specte
                         print(f"[!] Warning: JaCoCo agent not found at {jacoco_agent_path}")
                 
                 elif client.name == "Nimbus":
-                    nimbus_src = testing_clients_dir / "nimbus-eth2"
+                    nimbus_src = c.testing_clients_dir / "nimbus-eth2"
                     nimbus_gcda_dir = nimbus_src / "nimcache" / "debug" / "ncli"
                     
                     if nimbus_gcda_dir.exists():
@@ -1989,7 +1718,7 @@ def process_clients_epoch_processing(state, epoch_processing_type, paths, specte
                     print(f"[+] Coverage enabled: gcov will auto-generate .gcda files in build directory")
                 
                 elif client.name == "Lodestar":
-                    lodestar_dir = testing_clients_dir / "lodestar"
+                    lodestar_dir = c.testing_clients_dir / "lodestar"
                     coverage_report_dir = coverage_dirs["lodestar"] / "report"
                     coverage_temp_dir = coverage_dirs["lodestar"]
                     coverage_report_dir.mkdir(parents=True, exist_ok=True)
@@ -2022,7 +1751,7 @@ def process_clients_epoch_processing(state, epoch_processing_type, paths, specte
 
             # Set cwd (only for Lodestar coverage mode)
             if client.name == "Lodestar" and enable_coverage:
-                cwd = str(testing_clients_dir / "lodestar")
+                cwd = str(c.testing_clients_dir / "lodestar")
             else:
                 cwd = None
 
@@ -2095,7 +1824,7 @@ def process_clients_epoch_processing(state, epoch_processing_type, paths, specte
             
             # Nimbus: Copy .gcda files for independent coverage per test case
             if client.name == "Nimbus" and enable_coverage:
-                nimbus_src = testing_clients_dir / "nimbus-eth2"
+                nimbus_src = c.testing_clients_dir / "nimbus-eth2"
                 nimbus_gcda_dir = nimbus_src / "nimcache" / "debug" / "ncli"
                 nimbus_coverage_dir = coverage_dirs.get("nimbus")
                 
