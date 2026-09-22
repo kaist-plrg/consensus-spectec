@@ -191,10 +191,12 @@ PRYSM_CORE_INCLUDE_PREFIXES = (
 )
 
 class Clients:
-    def __init__(self, name, cmd_path, cmd_args):
+    def __init__(self, name, cmd_path, cmd_args, env=None, cwd=None):
         self.name = name
         self.cmd_path = Path(cmd_path)
         self.cmd_args = cmd_args
+        self.env = env or {}  # laid over os.environ when the client runs
+        self.cwd = cwd
         self.state = None
         self.block = None
         self.output = None
@@ -847,7 +849,7 @@ def process_clients(state, block, paths, spectec_core_dir=None, enable_coverage=
             block,
             paths["nimbus"]["output"],
             "false",  # validate_result = false: skip state root (and thus block signature) verification
-        ]),
+        ], env={"FORK_VERSION": fork_version}),
         Clients("Teku", c.binaries["Teku"], [
             "transition", "blocks",
             "--pre", state,
@@ -860,7 +862,7 @@ def process_clients(state, block, paths, spectec_core_dir=None, enable_coverage=
             "--block", block,
             "--out", paths["eth2spec"]["output"],
             "--fork", fork_version,
-        ]),
+        ], env={"PYTHONPATH": c.pythonpath}),
     ]
 
     for client in clients:
@@ -878,10 +880,7 @@ def process_clients(state, block, paths, spectec_core_dir=None, enable_coverage=
 
             # Setup coverage environment variables
             env = os.environ.copy()
-            if client.name == "Nimbus":
-                env["FORK_VERSION"] = fork_version
-            elif client.name == "Eth2spec":
-                env["PYTHONPATH"] = c.pythonpath
+            env.update(client.env)
 
             if enable_coverage:
                 if client.name == "Prysm":
@@ -916,7 +915,7 @@ def process_clients(state, block, paths, spectec_core_dir=None, enable_coverage=
                     print(f"[+] Coverage enabled: gcov will auto-generate .gcda files in build directory")
 
                 elif client.name == "Lodestar":
-                    lodestar_dir = c.testing_clients_dir / "lodestar"
+                    client.cwd = str(c.testing_clients_dir / "lodestar")
                     coverage_report_dir = coverage_dirs["lodestar"] / "report"
                     coverage_temp_dir = coverage_dirs["lodestar"]
                     coverage_report_dir.mkdir(parents=True, exist_ok=True)
@@ -967,18 +966,13 @@ def process_clients(state, block, paths, spectec_core_dir=None, enable_coverage=
 
             print(f"[+] Command: {client.cmd_path} {' '.join(str(arg) for arg in client.cmd_args)}")
 
-            if client.name == "Lodestar" and enable_coverage:
-                cwd = str(c.testing_clients_dir / "lodestar")
-            else:
-                cwd = None
-
             process = subprocess.run(
                 cmd,
                 stdout=subprocess.PIPE,
                 stderr=subprocess.PIPE,
                 text=True,
                 env=env,
-                cwd=cwd,
+                cwd=client.cwd,
             )
             end_time = perf_counter()
 
@@ -1120,7 +1114,7 @@ def process_clients_sanity_slots(state, slot_value, paths, spectec_core_dir=None
             state,
             str(slot_value),
             paths["nimbus"]["output"],
-        ]),
+        ], env={"FORK_VERSION": fork_version}),
         Clients("Teku", c.binaries["Teku"], [
             "transition", "slots",
             "--pre", state,
@@ -1146,9 +1140,8 @@ def process_clients_sanity_slots(state, slot_value, paths, spectec_core_dir=None
 
             # Setup coverage environment variables (same as process_clients)
             env = os.environ.copy()
-            # Set FORK_VERSION environment variable for Nimbus
-            if client.name == "Nimbus":
-                env["FORK_VERSION"] = fork_version
+            env.update(client.env)
+
             if enable_coverage:
                 client_name_lower = client.name.lower()
                 
@@ -1190,7 +1183,7 @@ def process_clients_sanity_slots(state, slot_value, paths, spectec_core_dir=None
                 elif client.name == "Lodestar":
                     # Node.js: Use c8 for coverage measurement
                     # c8 collects coverage at runtime, so wrap the command with c8
-                    lodestar_dir = c.testing_clients_dir / "lodestar"
+                    client.cwd = str(c.testing_clients_dir / "lodestar")
                     coverage_report_dir = coverage_dirs["lodestar"] / "report"
                     coverage_temp_dir = coverage_dirs["lodestar"]  # JSON file storage location
                     coverage_report_dir.mkdir(parents=True, exist_ok=True)
@@ -1229,19 +1222,13 @@ def process_clients_sanity_slots(state, slot_value, paths, spectec_core_dir=None
                     print(f"[+] Coverage temp-directory: {coverage_temp_dir}")
                     print(f"[+] Coverage command: npx {' '.join(c8_args)}")
 
-            # Set cwd (only for Lodestar coverage mode)
-            if client.name == "Lodestar" and enable_coverage:
-                cwd = str(c.testing_clients_dir / "lodestar")
-            else:
-                cwd = None
-
             process = subprocess.run(
                 cmd,
                 stdout=subprocess.PIPE,
                 stderr=subprocess.PIPE,
                 text=True,
                 env=env,
-                cwd=cwd,
+                cwd=client.cwd,
             )
             end_time = perf_counter()
 
@@ -1364,11 +1351,14 @@ def process_clients_operation(state, operation, operation_type, paths, spectec_c
     lighthouse_type = {"sync_aggregate": "sync_committee", "withdrawal": "withdrawals"}.get(operation_type, operation_type)
     prysm_type = {"withdrawal": "withdrawals"}.get(operation_type, operation_type)
 
-    exec_valid_eq, exec_valid_sep = [], []
-    if operation_type == "execution_payload" and execution_valid is not None:
-        value = "true" if execution_valid else "false"
-        exec_valid_eq = [f"--execution-valid={value}"]
-        exec_valid_sep = ["--execution-valid", value]
+    exec_valid_eq, exec_valid_sep, nimbus_env = [], [], {"FORK_VERSION": fork_version}
+    if operation_type == "execution_payload":
+        # Nimbus' confutils mishandles options on this subcommand, so it reads the env instead.
+        nimbus_env["EXECUTION_VALID"] = "true" if execution_valid is None or execution_valid else "false"
+        if execution_valid is not None:
+            value = "true" if execution_valid else "false"
+            exec_valid_eq = [f"--execution-valid={value}"]
+            exec_valid_sep = ["--execution-valid", value]
 
     clients = [
         Clients("Lodestar", c.node, c.lodestar + [
@@ -1399,7 +1389,7 @@ def process_clients_operation(state, operation, operation_type, paths, spectec_c
             operation_type,
             operation,
             paths["nimbus"]["output"],
-        ]),
+        ], env=nimbus_env),
         Clients("Teku", c.binaries["Teku"], [
             "transition", "operation", operation_type,
             "--pre", state,
@@ -1425,17 +1415,8 @@ def process_clients_operation(state, operation, operation_type, paths, spectec_c
 
             # Setup coverage environment variables (same as process_clients)
             env = os.environ.copy()
-            
-            # Set FORK_VERSION environment variable for Nimbus
-            if client.name == "Nimbus":
-                env["FORK_VERSION"] = fork_version
-            
-            # Set EXECUTION_VALID environment variable for Nimbus execution_payload operation
-            if client.name == "Nimbus" and operation_type == "execution_payload" and execution_valid is not None:
-                env["EXECUTION_VALID"] = "true" if execution_valid else "false"
-            elif client.name == "Nimbus" and operation_type == "execution_payload":
-                env["EXECUTION_VALID"] = "true"  # default
-            
+            env.update(client.env)
+
             if enable_coverage:
                 client_name_lower = client.name.lower()
                 
@@ -1471,7 +1452,7 @@ def process_clients_operation(state, operation, operation_type, paths, spectec_c
                     print(f"[+] Coverage enabled: gcov will auto-generate .gcda files in build directory")
                 
                 elif client.name == "Lodestar":
-                    lodestar_dir = c.testing_clients_dir / "lodestar"
+                    client.cwd = str(c.testing_clients_dir / "lodestar")
                     coverage_report_dir = coverage_dirs["lodestar"] / "report"
                     coverage_temp_dir = coverage_dirs["lodestar"]
                     coverage_report_dir.mkdir(parents=True, exist_ok=True)
@@ -1502,19 +1483,13 @@ def process_clients_operation(state, operation, operation_type, paths, spectec_c
                     
                     print(f"[+] Coverage enabled: c8 with report-dir={coverage_report_dir}")
 
-            # Set cwd (only for Lodestar coverage mode)
-            if client.name == "Lodestar" and enable_coverage:
-                cwd = str(c.testing_clients_dir / "lodestar")
-            else:
-                cwd = None
-
             process = subprocess.run(
                 cmd,
                 stdout=subprocess.PIPE,
                 stderr=subprocess.PIPE,
                 text=True,
                 env=env,
-                cwd=cwd,
+                cwd=client.cwd,
             )
             end_time = perf_counter()
 
@@ -1655,7 +1630,7 @@ def process_clients_epoch_processing(state, epoch_processing_type, paths, specte
             state,
             epoch_processing_type,
             paths["nimbus"]["output"],
-        ]),
+        ], env={"FORK_VERSION": fork_version}),
         Clients("Teku", c.binaries["Teku"], [
             "transition", "epoch-processing", epoch_processing_type,
             "--pre", state,
@@ -1680,9 +1655,8 @@ def process_clients_epoch_processing(state, epoch_processing_type, paths, specte
 
             # Setup coverage environment variables (same as process_clients)
             env = os.environ.copy()
-            # Set FORK_VERSION environment variable for Nimbus
-            if client.name == "Nimbus":
-                env["FORK_VERSION"] = fork_version
+            env.update(client.env)
+
             if enable_coverage:
                 client_name_lower = client.name.lower()
                 
@@ -1718,7 +1692,7 @@ def process_clients_epoch_processing(state, epoch_processing_type, paths, specte
                     print(f"[+] Coverage enabled: gcov will auto-generate .gcda files in build directory")
                 
                 elif client.name == "Lodestar":
-                    lodestar_dir = c.testing_clients_dir / "lodestar"
+                    client.cwd = str(c.testing_clients_dir / "lodestar")
                     coverage_report_dir = coverage_dirs["lodestar"] / "report"
                     coverage_temp_dir = coverage_dirs["lodestar"]
                     coverage_report_dir.mkdir(parents=True, exist_ok=True)
@@ -1749,19 +1723,13 @@ def process_clients_epoch_processing(state, epoch_processing_type, paths, specte
                     
                     print(f"[+] Coverage enabled: c8 with report-dir={coverage_report_dir}")
 
-            # Set cwd (only for Lodestar coverage mode)
-            if client.name == "Lodestar" and enable_coverage:
-                cwd = str(c.testing_clients_dir / "lodestar")
-            else:
-                cwd = None
-
             process = subprocess.run(
                 cmd,
                 stdout=subprocess.PIPE,
                 stderr=subprocess.PIPE,
                 text=True,
                 env=env,
-                cwd=cwd,
+                cwd=client.cwd,
             )
             end_time = perf_counter()
 
