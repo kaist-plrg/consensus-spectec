@@ -6,6 +6,7 @@ import subprocess
 import argparse
 import csv
 import html
+import json
 import re
 import shutil
 from concurrent.futures import ThreadPoolExecutor, as_completed
@@ -213,30 +214,83 @@ class Clients:
         self.timestamp = None
         self.available = self.cmd_path.exists()
 
-    def log_stderr(self):
-        if self.output:
-            if self.output.stderr.strip() != "":
-                print(f"[+] {self.output.stderr.strip()}")
+    @property
+    def cmd(self):
+        return [str(self.cmd_path)] + [str(arg) for arg in self.cmd_args]
 
-    def log_stdout(self):
-        if self.output:
-            if self.output.stdout.strip() != "":
-                print(f"[+] {self.output.stdout.strip()}")
+    def run(self):
+        """Execute the client, fill output, status_code and timestamp, and return the log lines."""
+        lines = [f"[+] Command: {' '.join(self.cmd)}"]
+        start_time = perf_counter()
+        try:
+            if not self.available:
+                raise FileNotFoundError(f"[X] Not available: {self.cmd_path}")
+            self.output = subprocess.run(
+                self.cmd,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
+                text=True,
+                env={**os.environ, **self.env},
+                cwd=self.cwd,
+            )
+            self.timestamp = perf_counter() - start_time
+            self.status_code = _normalize_status(self.output.returncode)
+            lines.append(f"[+] Execution time: {self.timestamp}")
 
-    def log_status(self):
-        if self.status_code is not None:
-            status_message = f"[+] Exited with status code: {self.status_code}"
-            if self.status_code == 0:
-                print(f"{status_message} (Success)")
-            else:
-                print(f"{status_message} (Failure)")
+            # Special handling for Lodestar
+            if self.name == "Lodestar":
+                try:
+                    if self.output.stderr != '':
+                        parsed = False
+                        try:
+                            json_start = self.output.stderr.find('{')
+                            if json_start != -1:
+                                json_end = self.output.stderr.rfind('}') + 1
+                                if json_end > json_start:
+                                    json_str = self.output.stderr[json_start:json_end]
+                                    error_obj = json.loads(json_str)
+                                    status_code = error_obj.get('statusCode', 1)
+                                    output_string = error_obj.get('output', '')
+                                    self.status_code = _normalize_status(status_code)
+                                    self.output.stderr = output_string
+                                    parsed = True
+                        except Exception:
+                            pass
+
+                        if not parsed:
+                            status_code_match = re.search(r"statusCode: \s*(\d+)", self.output.stderr)
+                            if status_code_match:
+                                status_code = int(status_code_match.group(1))
+                                output_match = re.search(r"output: \s*'(.*?)'", self.output.stderr, re.DOTALL)
+                                if output_match:
+                                    output_string = output_match.group(1)
+                                    self.status_code = _normalize_status(status_code)
+                                    self.output.stderr = output_string
+                except Exception:
+                    self.status_code = 2
+
+            lines.extend(self.log_lines())
+        except Exception as e:
+            self.timestamp = perf_counter() - start_time
+            self.status_code = 2
+            if self.output is None:
+                self.output = subprocess.CompletedProcess(args=self.cmd, returncode=2, stdout="", stderr=str(e))
+            lines.append(f"[+] Execution time: {self.timestamp}")
+            lines.append(f"[+] Exited with status code: {self.status_code} (Failure)")
+            lines.append(f"[+] {self.name} failed: {self.output.stderr}")
+        return lines
+
+    def log_lines(self):
+        if self.status_code is None:
+            lines = ["[+] Process terminated by signal"]
         else:
-            print("[+] Process terminated by signal")
-
-    def log(self):
-        self.log_status()
-        self.log_stdout()
-        self.log_stderr()
+            outcome = "Success" if self.status_code == 0 else "Failure"
+            lines = [f"[+] Exited with status code: {self.status_code} ({outcome})"]
+        if self.output:
+            for stream in (self.output.stdout, self.output.stderr):
+                if stream.strip():
+                    lines.append(f"[+] {stream.strip()}")
+        return lines
 
 
 def parse_state_block(state_dir, block_dir, output_parent_dir):
@@ -817,216 +871,114 @@ def _client_context(spectec_core_dir, enable_coverage, fork_version):
     )
 
 
-def _run_clients(c, clients, state, block, paths):
-    """Run the clients for one case one after another; returns them with output, status_code and timestamp filled."""
+def _apply_coverage(ctx, client, cov_dir):
+    """Point the client's coverage tooling at cov_dir; c8 and coverage.py need the command wrapped."""
+    lines = []
+    if client.name == "Prysm":
+        client.env["GOCOVERDIR"] = str(cov_dir)
+        lines.append(f"[+] Coverage enabled: GOCOVERDIR={cov_dir}")
+    elif client.name == "Lighthouse":
+        client.env["LLVM_PROFILE_FILE"] = str(cov_dir / "lighthouse-cov-%p-%m.profraw")
+        lines.append(f"[+] Coverage enabled: LLVM_PROFILE_FILE={client.env['LLVM_PROFILE_FILE']}")
+    elif client.name == "Teku":
+        jacoco_agent = ctx.testing_clients_dir / "jacoco" / "jacocoagent.jar"
+        if jacoco_agent.exists():
+            client.env["JAVA_OPTS"] = f"-javaagent:{jacoco_agent}=destfile={cov_dir / 'teku-coverage.exec'}"
+            lines.append(f"[+] Coverage enabled: JAVA_OPTS={client.env['JAVA_OPTS']}")
+        else:
+            lines.append(f"[!] Warning: JaCoCo agent not found at {jacoco_agent}")
+    elif client.name == "Nimbus":
+        # gcov accumulates into the build tree; clear it so this case is measured alone.
+        if ctx.nimbus_gcda_dir.exists():
+            for gcda_file in ctx.nimbus_gcda_dir.rglob("*.gcda"):
+                try:
+                    gcda_file.unlink()
+                except OSError:
+                    pass
+        lines.append("[+] Coverage enabled: gcov will auto-generate .gcda files in build directory")
+    elif client.name == "Lodestar":
+        report_dir = cov_dir / "report"
+        report_dir.mkdir(parents=True, exist_ok=True)
+        client.cmd_args = [
+            "c8",
+            "--all",
+            "--reporter=text",
+            "--reporter=html",
+            f"--report-dir={report_dir}",
+            f"--temp-directory={cov_dir}",
+            "--exclude-node-modules=false",
+            "--extension=.js",
+            "--include=node_modules/@lodestar/**/*.js",
+            "--include=node_modules/@chainsafe/**/*.js",
+            "--exclude=**/transition.js",
+            "--exclude=**/generateCachedStateCapella.js",
+        ] + client.cmd
+        client.cmd_path = "npx"
+        client.cwd = str(ctx.testing_clients_dir / "lodestar")
+        lines.append(f"[+] Coverage enabled: c8 with report-dir={report_dir}")
+        lines.append(f"[+] Coverage temp-directory: {cov_dir}")
+    elif client.name == "Eth2spec":
+        coverage_data = cov_dir / ".coverage"
+        client.cmd_args = [
+            "-m", "coverage", "run", "--branch",
+            "--data-file", str(coverage_data),
+            "--include", str(ctx.eth2spec_mainnet),
+        ] + client.cmd[1:]
+        lines.append(f"[+] Coverage enabled: coverage.py data-file={coverage_data}")
+        lines.append(f"[+] Coverage include target: {ctx.eth2spec_mainnet}")
+    return lines
+
+
+def _after_run(ctx, client, cov_dir, output_path):
+    """Collect Nimbus gcov data and drop the empty post-state a failed Teku or eth2spec run leaves behind."""
+    lines = []
+    if client.name == "Nimbus" and cov_dir and ctx.nimbus_gcda_dir.exists():
+        target_dir = cov_dir / "nimcache" / "debug" / "ncli"
+        target_dir.mkdir(parents=True, exist_ok=True)
+        for gcda_file in ctx.nimbus_gcda_dir.rglob("*.gcda"):
+            target = target_dir / gcda_file.relative_to(ctx.nimbus_gcda_dir)
+            target.parent.mkdir(parents=True, exist_ok=True)
+            try:
+                shutil.copy2(gcda_file, target)
+            except Exception as e:
+                lines.append(f"[!] Failed to copy .gcda file {gcda_file}: {e}")
+        lines.append(f"[+] Copied .gcda files to {target_dir}")
+    if client.name in ("Teku", "Eth2spec") and client.status_code != 0:
+        if output_path and os.path.exists(output_path) and os.path.getsize(output_path) == 0:
+            os.remove(output_path)
+            lines.append(f"[+] Removed empty {client.name} output file: {output_path}")
+    return lines
+
+
+def _run_one(ctx, client, coverage_dirs, paths):
+    key = client.name.lower()
+    lines = [f"\n[+] Running: {client.name}"]
+    if ctx.enable_coverage:
+        lines += _apply_coverage(ctx, client, coverage_dirs[key])
+    lines += client.run()
+    lines += _after_run(ctx, client, coverage_dirs.get(key), paths.get(key, {}).get("output"))
+    return lines
+
+
+def _run_clients(ctx, clients, state, block, paths):
+    """Run the clients for one case and return them with output, status_code and timestamp filled."""
     coverage_dirs = {}
-    if c.enable_coverage:
+    if ctx.enable_coverage:
         for client in clients:
             key = client.name.lower()
             if key in paths and "cov_output" in paths[key]:
                 coverage_dirs[key] = Path(paths[key]["cov_output"])
                 coverage_dirs[key].mkdir(parents=True, exist_ok=True)
-
     for client in clients:
-        cmd = [str(client.cmd_path)] + [str(arg) for arg in client.cmd_args]
-        try:
-            start_time = perf_counter()
-
-            print(f"\n[+] Running: {client.name}")
-
-            if not client.available:
-                raise FileNotFoundError(f"[X] Not available: {client.cmd_path}")
-
-            client.state = state
-            client.block = block
-
-            # Setup coverage environment variables
-            env = os.environ.copy()
-            env.update(client.env)
-
-            if c.enable_coverage:
-                if client.name == "Prysm":
-                    env["GOCOVERDIR"] = str(coverage_dirs["prysm"])
-                    print(f"[+] Coverage enabled: GOCOVERDIR={env['GOCOVERDIR']}")
-
-                elif client.name == "Lighthouse":
-                    profile_file = coverage_dirs["lighthouse"] / f"lighthouse-cov-%p-%m.profraw"
-                    env["LLVM_PROFILE_FILE"] = str(profile_file)
-                    print(f"[+] Coverage enabled: LLVM_PROFILE_FILE={env['LLVM_PROFILE_FILE']}")
-
-                elif client.name == "Teku":
-                    jacoco_agent_path = c.testing_clients_dir / "jacoco" / "jacocoagent.jar"
-                    jacoco_exec = coverage_dirs["teku"] / "teku-coverage.exec"
-
-                    if jacoco_agent_path.exists():
-                        env["JAVA_OPTS"] = f"-javaagent:{jacoco_agent_path}=destfile={jacoco_exec}"
-                        print(f"[+] Coverage enabled: JAVA_OPTS={env['JAVA_OPTS']}")
-                    else:
-                        print(f"[!] Warning: JaCoCo agent not found at {jacoco_agent_path}")
-
-                elif client.name == "Nimbus":
-                    nimbus_src = c.testing_clients_dir / "nimbus-eth2"
-                    nimbus_gcda_dir = nimbus_src / "nimcache" / "debug" / "ncli"
-
-                    if nimbus_gcda_dir.exists():
-                        for gcda_file in nimbus_gcda_dir.rglob("*.gcda"):
-                            try:
-                                gcda_file.unlink()
-                            except OSError:
-                                pass
-                    print(f"[+] Coverage enabled: gcov will auto-generate .gcda files in build directory")
-
-                elif client.name == "Lodestar":
-                    client.cwd = str(c.testing_clients_dir / "lodestar")
-                    coverage_report_dir = coverage_dirs["lodestar"] / "report"
-                    coverage_temp_dir = coverage_dirs["lodestar"]
-                    coverage_report_dir.mkdir(parents=True, exist_ok=True)
-                    coverage_temp_dir.mkdir(parents=True, exist_ok=True)
-
-                    original_cmd_path = str(client.cmd_path)
-                    original_cmd_args = [str(arg) for arg in client.cmd_args]
-                    c8_args = [
-                        "c8",
-                        "--all",
-                        "--reporter=text",
-                        "--reporter=html",
-                        f"--report-dir={coverage_report_dir}",
-                        f"--temp-directory={coverage_temp_dir}",
-                        "--exclude-node-modules=false",
-                        "--extension=.js",
-                        "--include=node_modules/@lodestar/**/*.js",
-                        "--include=node_modules/@chainsafe/**/*.js",
-                        "--exclude=**/transition.js",
-                        "--exclude=**/generateCachedStateCapella.js",
-                        original_cmd_path,
-                    ] + original_cmd_args
-
-                    client.cmd_path = "npx"
-                    client.cmd_args = c8_args
-                    cmd = ["npx"] + c8_args
-
-                    print(f"[+] Coverage enabled: c8 with report-dir={coverage_report_dir}")
-                    print(f"[+] Coverage temp-directory: {coverage_temp_dir}")
-                    print(f"[+] Coverage command: npx {' '.join(c8_args)}")
-
-                elif client.name == "Eth2spec":
-                    coverage_data = coverage_dirs["eth2spec"] / ".coverage"
-                    coverage_args = [
-                        "-m",
-                        "coverage",
-                        "run",
-                        "--branch",
-                        "--data-file",
-                        str(coverage_data),
-                        "--include",
-                        str(c.eth2spec_mainnet),
-                    ] + [str(arg) for arg in client.cmd_args]
-                    client.cmd_args = coverage_args
-                    cmd = [str(client.cmd_path)] + coverage_args
-                    print(f"[+] Coverage enabled: coverage.py data-file={coverage_data}")
-                    print(f"[+] Coverage include target: {c.eth2spec_mainnet}")
-
-            print(f"[+] Command: {client.cmd_path} {' '.join(str(arg) for arg in client.cmd_args)}")
-
-            process = subprocess.run(
-                cmd,
-                stdout=subprocess.PIPE,
-                stderr=subprocess.PIPE,
-                text=True,
-                env=env,
-                cwd=client.cwd,
-            )
-            end_time = perf_counter()
-
-            client.status_code = _normalize_status(process.returncode)
-            client.output = process
-            client.timestamp = end_time - start_time
-
-            print(f"[+] Execution time: {client.timestamp}")
-
-            if client.name == "Lodestar":
-                try:
-                    if client.output.stderr != '':
-                        try:
-                            import json
-                            json_start = client.output.stderr.find('{')
-                            if json_start != -1:
-                                json_end = client.output.stderr.rfind('}') + 1
-                                if json_end > json_start:
-                                    json_str = client.output.stderr[json_start:json_end]
-                                    error_obj = json.loads(json_str)
-                                    status_code = error_obj.get('statusCode', 1)
-                                    output_string = error_obj.get('output', '')
-                                    client.status_code = _normalize_status(status_code)
-                                    client.output.stderr = output_string
-                                    continue
-                        except Exception:
-                            pass
-
-                        status_code_match = re.search(r"statusCode: \s*(\d+)", client.output.stderr)
-                        if status_code_match:
-                            status_code = int(status_code_match.group(1))
-                            output_match = re.search(r"output: \s*'(.*?)'", client.output.stderr, re.DOTALL)
-                            if output_match:
-                                output_string = output_match.group(1)
-                                client.status_code = _normalize_status(status_code)
-                                client.output.stderr = output_string
-                except Exception:
-                    client.status_code = 2
-
-            client.log()
-
-            if client.name == "Nimbus" and c.enable_coverage:
-                nimbus_src = c.testing_clients_dir / "nimbus-eth2"
-                nimbus_gcda_dir = nimbus_src / "nimcache" / "debug" / "ncli"
-                nimbus_coverage_dir = coverage_dirs.get("nimbus")
-
-                if nimbus_coverage_dir and nimbus_gcda_dir.exists():
-                    target_gcda_dir = nimbus_coverage_dir / "nimcache" / "debug" / "ncli"
-                    target_gcda_dir.mkdir(parents=True, exist_ok=True)
-
-                    import shutil
-                    for gcda_file in nimbus_gcda_dir.rglob("*.gcda"):
-                        relative_path = gcda_file.relative_to(nimbus_gcda_dir)
-                        target_file = target_gcda_dir / relative_path
-                        target_file.parent.mkdir(parents=True, exist_ok=True)
-                        try:
-                            shutil.copy2(gcda_file, target_file)
-                        except Exception as e:
-                            print(f"[!] Failed to copy .gcda file {gcda_file}: {e}")
-                    print(f"[+] Copied .gcda files to {target_gcda_dir} (will use original .gcno files for consistent measurement scope)")
-
-            if client.name == "Teku" and client.status_code != 0:
-                output_path = paths.get("teku", {}).get("output")
-                if output_path and os.path.exists(output_path):
-                    file_size = os.path.getsize(output_path)
-                    if file_size == 0:
-                        os.remove(output_path)
-                        print(f"[+] Removed empty Teku output file: {output_path}")
-
-            if client.name == "Eth2spec" and client.status_code != 0:
-                output_path = paths.get("eth2spec", {}).get("output")
-                if output_path and os.path.exists(output_path) and os.path.getsize(output_path) == 0:
-                    os.remove(output_path)
-                    print(f"[+] Removed empty Eth2spec output file: {output_path}")
-
-        except Exception as e:
-            end_time = perf_counter()
-            client.timestamp = end_time - start_time
-            client.status_code = 2
-            if client.output is None:
-                client.output = subprocess.CompletedProcess(args=cmd, returncode=2, stdout='', stderr=str(e))
-
-            print(f"[+] Execution time: {client.timestamp}")
-            print(f"[+] Exited with status code: {client.status_code} (Failure)")
-            print(f"[+] {client.name} failed: {client.output.stderr}")
+        client.state = state
+        client.block = block
+        print("\n".join(_run_one(ctx, client, coverage_dirs, paths)))
     return clients
 
 
 def process_clients(state, block, paths, spectec_core_dir=None, enable_coverage=False, fork_version="capella"):
     """Run a full block state transition on every client for one (pre-state, block) pair."""
     c = _client_context(spectec_core_dir, enable_coverage, fork_version)
-
     clients = [
         Clients("Lodestar", c.node, c.lodestar + [
             "state-transition",
@@ -1078,7 +1030,6 @@ def process_clients(state, block, paths, spectec_core_dir=None, enable_coverage=
 def process_clients_sanity_slots(state, slot_value, paths, spectec_core_dir=None, enable_coverage=False, fork_version="capella"):
     """Advance the pre-state by slot_value empty slots on every client."""
     c = _client_context(spectec_core_dir, enable_coverage, fork_version)
-
     clients = [
         Clients("Lodestar", c.node, c.lodestar + [
             "sanity-slots",
@@ -1122,7 +1073,6 @@ def process_clients_operation(state, operation, operation_type, paths, spectec_c
     None means the file gave no answer, so the CLI flag is omitted and Nimbus defaults to valid.
     """
     c = _client_context(spectec_core_dir, enable_coverage, fork_version)
-
     lighthouse_type = {"sync_aggregate": "sync_committee", "withdrawal": "withdrawals"}.get(operation_type, operation_type)
     prysm_type = {"withdrawal": "withdrawals"}.get(operation_type, operation_type)
 
@@ -1178,7 +1128,6 @@ def process_clients_operation(state, operation, operation_type, paths, spectec_c
 def process_clients_epoch_processing(state, epoch_processing_type, paths, spectec_core_dir=None, enable_coverage=False, fork_version="capella"):
     """Run a single epoch-processing step on every client."""
     c = _client_context(spectec_core_dir, enable_coverage, fork_version)
-
     clients = [
         Clients("Lodestar", c.node, c.lodestar + [
             "epoch-processing",
