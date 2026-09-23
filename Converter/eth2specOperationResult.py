@@ -10,6 +10,7 @@ instead of full state_transition.
 import sys
 import os
 import argparse
+import importlib
 import yaml
 from pathlib import Path
 
@@ -105,12 +106,10 @@ def main(pre_ssz_path, operation_ssz_path, output_ssz_path, operation_type, fork
     """Execute operation processing function and save result"""
     
     # Import the appropriate fork module
-    if fork == "deneb":
-        from eth2spec.deneb import mainnet as spec
-    elif fork == "capella":
-        from eth2spec.capella import mainnet as spec
-    else:
-        raise ValueError(f"Unsupported fork: {fork}. Supported forks: 'capella', 'deneb'")
+    try:
+        spec = importlib.import_module(f"eth2spec.{fork}.mainnet")
+    except ModuleNotFoundError as e:
+        raise ValueError(f"Unsupported fork: {fork} ({e})") from e
     
     # Read pre.ssz (BeaconState)
     print(f"Reading pre.ssz (BeaconState) using {fork} fork...")
@@ -184,7 +183,6 @@ if __name__ == '__main__':
                        choices=list(OPERATION_FUNCTIONS.keys()),
                        help='Type of operation to process (attestation, deposit, etc.)')
     parser.add_argument('--fork', dest='fork', default='capella',
-                       choices=['capella', 'deneb'],
                        help='Fork name to use (default: capella)')
     args = parser.parse_args()
     
