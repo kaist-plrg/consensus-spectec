@@ -24,3 +24,6 @@ __pycache__/
 
 # SSZ test vectors - fetched by ssz/scripts/fetch-vectors.sh, not git
 ssz/_vectors/
+
+# Python bytecode
+__pycache__/
