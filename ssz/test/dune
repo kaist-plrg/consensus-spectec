@@ -2,3 +2,15 @@
  (name test_ssz)
  (modules test_ssz)
  (libraries ssz digestif.ocaml))
+
+; The spec vectors are the oracle; fetch them with scripts/fetch-vectors.sh.
+; Set SSZ_REQUIRE_VECTORS=1 to fail instead of skipping when they are absent.
+
+(test
+ (name run_vectors)
+ (modules run_vectors)
+ (libraries ssz ssz.schema yojson digestif.ocaml)
+ (deps
+  (env_var SSZ_VECTORS)
+  (env_var SSZ_REQUIRE_VECTORS)
+  (universe)))
