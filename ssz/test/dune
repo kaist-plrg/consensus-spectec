@@ -1,0 +1,4 @@
+(test
+ (name test_ssz)
+ (modules test_ssz)
+ (libraries ssz digestif.ocaml))
