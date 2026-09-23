@@ -1,5 +1,8 @@
 (* Checks every case of a JSONL vector file against
-   the named-type schema it refers to. *)
+   the named-type schema it refers to.
+
+   run_vectors.exe                      the library's own suites, under _vectors
+   run_vectors.exe SCHEMA CASES ...     the given schema/cases pairs *)
 
 let hex s =
   "0x"
@@ -45,20 +48,36 @@ let run schema cases_path =
     !passed !failed;
   !failed = 0
 
+let rec pairs = function
+  | schema :: cases :: rest -> (schema, cases) :: pairs rest
+  | [] -> []
+  | [ _ ] -> invalid_arg "expected SCHEMA CASES pairs"
+
 let () =
-  let dir =
-    match (Sys.getenv_opt "SSZ_VECTORS", Sys.getenv_opt "DUNE_SOURCEROOT") with
-    | Some d, _ -> d
-    | None, Some root ->
-        List.find_opt Sys.file_exists
-          [
-            Filename.concat root "_vectors"; Filename.concat root "ssz/_vectors";
-          ]
-        |> Option.value ~default:(Filename.concat root "_vectors")
-    | None, None -> "_vectors"
-  in
-  let cases = Filename.concat dir "ssz_specs.jsonl" in
-  if not (Sys.file_exists cases) then (
-    Printf.printf "SKIP: no vectors in %s (run scripts/fetch-vectors.sh)\n" dir;
-    if Sys.getenv_opt "SSZ_REQUIRE_VECTORS" = Some "1" then exit 1)
-  else if not (run (Filename.concat dir "ssz_specs.json") cases) then exit 1
+  match List.tl (Array.to_list Sys.argv) with
+  | _ :: _ as args ->
+      if
+        not
+          (List.for_all Fun.id (List.map (fun (s, c) -> run s c) (pairs args)))
+      then exit 1
+  | [] ->
+      let dir =
+        match
+          (Sys.getenv_opt "SSZ_VECTORS", Sys.getenv_opt "DUNE_SOURCEROOT")
+        with
+        | Some d, _ -> d
+        | None, Some root ->
+            List.find_opt Sys.file_exists
+              [
+                Filename.concat root "_vectors";
+                Filename.concat root "ssz/_vectors";
+              ]
+            |> Option.value ~default:(Filename.concat root "_vectors")
+        | None, None -> "_vectors"
+      in
+      let cases = Filename.concat dir "ssz_specs.jsonl" in
+      if not (Sys.file_exists cases) then (
+        Printf.printf "SKIP: no vectors in %s (run scripts/fetch-vectors.sh)\n"
+          dir;
+        if Sys.getenv_opt "SSZ_REQUIRE_VECTORS" = Some "1" then exit 1)
+      else if not (run (Filename.concat dir "ssz_specs.json") cases) then exit 1
