@@ -12,7 +12,7 @@ import sys
 import textwrap
 from collections import defaultdict
 from pathlib import Path
-from typing import Literal, TypedDict
+from typing import Literal, TypedDict, cast, get_args
 
 CATEGORIES = (
     "functions",
@@ -70,6 +70,55 @@ class Change(TypedDict):
 
 
 SymbolTable = dict[tuple[str, str], Symbol]  # (category, name) -> effective definition
+
+Diff = TypedDict(
+    "Diff",
+    {
+        "specs": str,
+        "rev": str,  # consensus-specs commit
+        "preset": str,
+        "from": str,
+        "to": str,
+        "changes": list[Change],
+    },
+)
+
+
+def load_diff(path: Path) -> Diff:
+    """Read a `diff` JSON; raise ValueError on anything not shaped like Diff."""
+    d = json.loads(path.read_text())
+    if not isinstance(d, dict):
+        raise ValueError("top level is not an object")
+    for k in ("specs", "rev", "preset", "from", "to"):
+        if not isinstance(d.get(k), str):
+            raise ValueError(f"`{k}` is not a string")
+    if not isinstance(d.get("changes"), list):
+        raise ValueError("`changes` is not a list")
+    for i, c in enumerate(d["changes"]):
+        where = f"changes[{i}]"
+        if not isinstance(c, dict):
+            raise ValueError(f"{where} is not an object")
+        for k in ("category", "name", "doc"):
+            if not isinstance(c.get(k), str):
+                raise ValueError(f"{where}.{k} is not a string")
+        if c["category"] not in CATEGORIES:
+            raise ValueError(f"{where}.category {c['category']!r} is unknown")
+        if c.get("kind") not in get_args(Kind):
+            raise ValueError(f"{where}.kind {c.get('kind')!r} is unknown")
+        # added has no old, removed has no new, the rest have both
+        for k, absent in (("old", "added"), ("new", "removed")):
+            if c["kind"] == absent:
+                if c.get(k) is not None:
+                    raise ValueError(f"{where}.{k} must be null for {absent}")
+                continue
+            v = c.get(k)
+            if not isinstance(v, str) and not (
+                isinstance(v, dict)
+                and isinstance(v.get("type"), str | None)
+                and isinstance(v.get("value"), str)
+            ):
+                raise ValueError(f"{where}.{k} is not source text or {{type, value}}")
+    return cast(Diff, d)  # shape checked above
 
 
 def normalize(cat: str, src: Source) -> str:
@@ -246,7 +295,7 @@ def cmd_diff(a: argparse.Namespace) -> None:
     rev = subprocess.check_output(["git", "rev-parse", "HEAD"], text=True).strip()
 
     # Construct the result dictionary.
-    result = {
+    result: Diff = {
         "specs": str(specs),
         "rev": rev,
         "preset": a.preset,
