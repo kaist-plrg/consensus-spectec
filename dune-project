@@ -27,6 +27,7 @@
     (core_unix (>= 0.17.0))
     digestif
     dune-site
+    ssz
     ppx_let
     pprint
     linol-eio
