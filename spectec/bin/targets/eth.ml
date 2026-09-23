@@ -244,7 +244,22 @@ module Json_parse_cli : Cli.Task_cli.S = struct
 end
 
 let target = (module Target : Spectec.Target.S)
-let task ~name ~summary cli = Cli.Subcommand.make_task target ~name ~summary cli
+
+(* The SSZ schema hash_tree_root merkleizes with: one per fork, mainnet preset. *)
+let ssz_flags =
+  let open Core.Command.Let_syntax in
+  let open Core.Command.Param in
+  let%map fork =
+    flag "--fork" (required string) ~doc:"FORK consensus fork (capella, deneb)"
+  in
+  match Builtin_eth.SszImpl.configure ~fork ~preset:"mainnet" with
+  | Ok () -> ()
+  | Error msg ->
+      prerr_endline msg;
+      exit 2
+
+let task ~name ~summary cli =
+  Cli.Subcommand.make_task ~setup:ssz_flags target ~name ~summary cli
 
 let operations =
   Core.Command.group ~summary:"Operation and block processing tasks"
@@ -344,7 +359,7 @@ let command =
   Core.Command.group ~summary:"Ethereum commands"
     [
       ("run", run);
-      Cli.Subcommand.make_batch
+      Cli.Subcommand.make_batch ~setup:ssz_flags
         ~on_no_validate:(fun () -> set_default_validate_result false)
         ~slot_gap_filter:Runner.Testgen.slot_gap_within_limit_for_source target
         ~name:"coverage" task_clis;
