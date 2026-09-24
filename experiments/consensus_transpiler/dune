@@ -1,0 +1,10 @@
+(executable
+ (name runner)
+ (libraries
+  spectec
+  spectec.interp
+  spectec.lang
+  spectec.envs
+  spectec.interface.json
+  yojson
+  bignum))
