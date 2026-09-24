@@ -25,6 +25,16 @@ def $filter_list_2_<X, Y>(X_h :: X_t*, Y, def $cond)
   -- if $cond(X_h, Y) = false
 
 ;; =========================
+;; take_prefix (X* -> X*)
+;; =========================
+;; Python slice xs[:n], which returns all of xs when n exceeds its length
+dec $take_prefix_<X>(X*, nat) : X*
+def $take_prefix_<X>(X*, n) = X*[0:n]
+  -- if $(n <= |X*|)
+def $take_prefix_<X>(X*, n) = X*
+  -- otherwise
+
+;; =========================
 ;; flag helpers
 ;; =========================
 ;; [Custom : ProcessAttestations / AddFlag ] has_flag: flags[i] = 1
