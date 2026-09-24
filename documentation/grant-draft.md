@@ -8,9 +8,9 @@ Consensus SpecTec Transpiler: Automating SpecTec Authoring and Maintenance for E
 
 ## Objective
 
-This project is a follow-up to the recent work on **SpecTrum: Specification-Guided Differential Testing for Ethereum Consensus Clients**, which demonstrated that mechanizing the Ethereum consensus specification in SpecTec can expose semantic coverage gaps and uncover cross-client divergences that conventional testing may miss.
+This project is a follow-up to the recent work on **SpecTrum: Specification-Guided Differential Testing for Ethereum Consensus Clients** [1], which demonstrated that mechanizing the Ethereum consensus specification in SpecTec can expose semantic coverage gaps and uncover cross-client divergences that conventional testing may miss.
 
-The underlying SpecTec approach itself predates SpecTrum and has already been applied to other real-world specifications, including WebAssembly through Wasm-SpecTec, P4 through P4-SpecTec, and related mechanized specification work for JavaScript/ECMAScript. Together with the results of SpecTrum, these works provide evidence that executable and mechanized specifications can be practically useful for specification validation, testing, and bug discovery.
+The underlying SpecTec approach itself predates SpecTrum and has already been applied to other real-world specifications, including WebAssembly through Wasm-SpecTec [2, 3], P4 through P4-SpecTec [4, 5], and related mechanized specification work for JavaScript/ECMAScript [6, 7]. Together with the results of SpecTrum, these works provide evidence that executable and mechanized specifications can be practically useful for specification validation, testing, and bug discovery.
 
 The remaining problem is **maintenance cost**. Ethereum continues to evolve through new forks and EIPs, while the current Consensus-SpecTec representation requires substantial manual effort to construct and keep synchronized with the Python consensus specification. The goal of this project is therefore to develop a **proper transpiler from the Ethereum consensus specification to SpecTec**, so that Consensus-SpecTec can be updated and maintained across **Gloas and future forks/EIPs with significantly lower recurring manual cost**.
 
@@ -21,12 +21,26 @@ Following discussions with **Prof. Sukyoung Ryu, other authors and researchers i
 I previously worked with the **Ethereum Foundation Protocol Security Research Team**, and I proposed this direction to **Nikos Baxevanis** (nikos.baxevanis@ethereum.org) and **Fredrik Svantes** (fredrik.svantes@ethereum.org) as infrastructure that could support ongoing mainnet and fork-security work. After subsequent discussions, I was invited to develop the idea further as a grant proposal. We are also considering the possibility of developing the results into a **follow-up research publication**, depending on the technical results of the project.
 
 ### References
-- SpecTrum: Specification-Guided Differential Testing for Ethereum Consensus Clients
+[1] SpecTrum: Specification-Guided Differential Testing for Ethereum Consensus Clients
 https://arxiv.org/abs/2608.17738
-- Bringing the WebAssembly Standard up to Speed with SpecTec (Wasm-SpecTec)
+
+[2] Bringing the WebAssembly Standard up to Speed with SpecTec (Wasm-SpecTec)
 https://doi.org/10.1145/3656440
-- P4-SpecTec: Integrating a Language Mechanization Framework into the Real-World P4 Specification
+
+[3] Wasm SpecTec specification tools
+https://github.com/Wasm-DSL/spectec/tree/main
+
+[4] P4-SpecTec: Integrating a Language Mechanization Framework into the Real-World P4 Specification
 https://arxiv.org/abs/2608.00639
+
+[5] Mechanization toolchain for the P4 programming language
+https://github.com/kaist-plrg/p4-spectec
+
+[6] JavaScript Language Design and Implementation in Tandem
+https://cacm.acm.org/research/javascript-language-design-and-implementation-in-tandem/
+
+[7] ECMAScript Specification (ECMA-262) Metalanguage
+https://github.com/kaist-plrg/esmeta
 
 ## 2. Why This Project Matters / Expected Impact
 
@@ -48,7 +62,7 @@ The expected impact is particularly relevant to Ethereum protocol security in se
 - Testing and fuzzing: Uncovered specification paths can provide concrete targets for additional test generation, differential testing, and fuzzing.
 - Regression detection: Maintaining a synchronized mechanized specification can make it easier to detect unintended behavioral changes as the protocol evolves.
 - Lower long-term maintenance cost: Instead of repeatedly rebuilding SpecTec specifications manually, the transpiler can make future updates incremental and reusable.
-- Research infrastructure: The resulting transpiler and maintained Consensus-SpecTec can support further work in specification-guided testing, model-based test generation, formal analysis, and future research built on SpecTrum.
+- Research infrastructure: The resulting transpiler and maintained Consensus-SpecTec can support further work in specification-guided testing, specification-based test generation, formal analysis, and future research built on SpecTrum.
 
 The project therefore aims to convert the result of SpecTrum from a successful but largely manually maintained research artifact into reusable infrastructure for continuous Ethereum protocol security work.
 
@@ -94,7 +108,7 @@ When a new fork or EIP introduces new behavior, the corresponding specification 
 - targeted test generation,
 - differential testing,
 - fuzzing,
-- model-based testing,
+- specification-based testing,
 - and other specification-driven security analysis.
 
 This allows testing effort to focus more directly on new or insufficiently exercised protocol semantics, rather than relying only on implementation-level coverage.
@@ -105,7 +119,7 @@ MiniZinc and similar constraint-solving approaches remain useful for generating 
 
 The transpiler addresses the upstream problem of maintaining the semantic specification itself.
 
-If successful, the two approaches can become complementary components of a broader testing workflow, where mechanized specification information helps identify meaningful semantic conditions and model-based generation helps construct concrete states that exercise them.
+If successful, the two approaches can become complementary components of a broader testing workflow, where mechanized specification information helps identify meaningful semantic conditions and specification-based generation helps construct concrete states that exercise them.
 
 ## 3.5. Creating reusable infrastructure rather than a one-time research artifact
 
