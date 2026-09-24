@@ -10,6 +10,7 @@ epoch processing functions on a BeaconState.
 import sys
 import os
 import argparse
+import importlib
 
 # Add eth2spec to path
 script_dir = os.path.dirname(os.path.abspath(__file__))
@@ -39,12 +40,10 @@ def main(pre_ssz_path, output_ssz_path, epoch_processing_type, fork="capella"):
     """Execute epoch processing function and save result"""
     
     # Import the appropriate fork module
-    if fork == "deneb":
-        from eth2spec.deneb import mainnet as spec
-    elif fork == "capella":
-        from eth2spec.capella import mainnet as spec
-    else:
-        raise ValueError(f"Unsupported fork: {fork}. Supported forks: 'capella', 'deneb'")
+    try:
+        spec = importlib.import_module(f"eth2spec.{fork}.mainnet")
+    except ModuleNotFoundError as e:
+        raise ValueError(f"Unsupported fork: {fork} ({e})") from e
     
     # Read pre.ssz (BeaconState)
     print(f"Reading pre.ssz (BeaconState) using {fork} fork...")
@@ -94,7 +93,6 @@ if __name__ == '__main__':
                        choices=list(EPOCH_PROCESSING_FUNCTIONS.keys()),
                        help='Type of epoch processing function to execute')
     parser.add_argument('--fork', dest='fork', default='capella',
-                       choices=['capella', 'deneb'],
                        help='Fork name to use (default: capella)')
     args = parser.parse_args()
     
