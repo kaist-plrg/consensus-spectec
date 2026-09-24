@@ -47,7 +47,7 @@ def view_to_jsonable(v: Any) -> Any:
 
     # 4) Bitfields → bit value
     if isinstance(v, (Bitvector, Bitlist)):
-        return bitfield_to_bool_list(v) 
+        return bitfield_to_bool_list(v)
 
     # 5) Basic ints/bools
     if isinstance(v, BASIC_INT_TYPES):
@@ -75,11 +75,9 @@ def view_to_jsonable(v: Any) -> Any:
     return str(v)
 
 def main():
-    # Usage: python DepositSSZToJson.py --in /path/to/deposit_input.ssz --out /path/to/deposit_output.json
-
-    p = argparse.ArgumentParser(description="Convert Deposit SSZ to JSON using remerkleable types.")
+    p = argparse.ArgumentParser(description="Convert SSZ to JSON using remerkleable types.")
     p.add_argument("--type-module", default="eth2spec.capella.mainnet", help="Python module path containing the remerkleable type (default: eth2spec.capella.mainnet)")
-    p.add_argument("--type", dest="type_name", default="Deposit", help="Type name inside the module (default: Deposit)")
+    p.add_argument("--type", dest="type_name", required=True, help="Type name inside the module (e.g., BeaconState, SignedBeaconBlock, Attestation)")
     p.add_argument("--in", dest="in_path", required=True, help="Input SSZ file path")
     p.add_argument("--out", dest="out_path", required=True, help="Output JSON file path")
     args = p.parse_args()
@@ -109,4 +107,3 @@ def main():
 
 if __name__ == "__main__":
     main()
-

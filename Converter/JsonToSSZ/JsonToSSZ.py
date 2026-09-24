@@ -13,9 +13,7 @@ if consensus_specs_path not in sys.path:
     sys.path.insert(0, consensus_specs_path)
 
 from remerkleable.basic import boolean, bit, uint8, uint16, uint32, uint64, uint128, uint256
-from remerkleable.byte_arrays import ByteVector, ByteList
 from remerkleable.bitfields import Bitlist, Bitvector
-from remerkleable.complex import Container, List, Vector
 
 BASIC_INT_TYPES = (uint8, uint16, uint32, uint64, uint128, uint256)
 BASIC_BOOL_TYPES = (boolean, bit)
@@ -78,7 +76,6 @@ def json_to_view(j: Any, typ) -> Any:
             raise TypeError(f"{typ.__name__} expects a JSON list of booleans, e.g. [true, false, ...]")
         return typ(j)
 
-
     # 5) Basic ints/bools
     try:
         if typ in BASIC_INT_TYPES:
@@ -109,12 +106,11 @@ def json_to_view(j: Any, typ) -> Any:
         raise TypeError(f"Cannot coerce JSON value {j!r} to {typ}: {e}")
 
 def main():
-    # Usage : python BeaconStateJsonToSSZ.py --in <input_json_file> --out <output_ssz_file> [--type-module <module_path>] [--type <type_name>]
-    p = argparse.ArgumentParser(description="Convert BeaconState JSON to SSZ using remerkleable types.")
+    p = argparse.ArgumentParser(description="Convert JSON to SSZ using remerkleable types.")
     p.add_argument("--type-module", default="eth2spec.capella.mainnet", help="Python module path containing the remerkleable type (default: eth2spec.capella.mainnet)")
-    p.add_argument("--type", dest="type_name", default="BeaconState", help="Type name inside the module (default: BeaconState)")
-    p.add_argument("--in", dest="in_path", required=True, help="Input BeaconState JSON file path")
-    p.add_argument("--out", dest="out_path", required=True, help="Output BeaconState SSZ file path")
+    p.add_argument("--type", dest="type_name", required=True, help="Type name inside the module (e.g., BeaconState, SignedBeaconBlock)")
+    p.add_argument("--in", dest="in_path", required=True, help="Input JSON file path")
+    p.add_argument("--out", dest="out_path", required=True, help="Output SSZ file path")
     args = p.parse_args()
 
     # 1) Load remerkleable type

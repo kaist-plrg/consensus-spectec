@@ -26,11 +26,7 @@ from typing import Literal
 # Add Converter to path
 script_dir = Path(__file__).parent.resolve()
 converter_dir = script_dir / "Converter"
-json_to_ssz_dir = converter_dir / "JsonToSSZ"
-
-# Import conversion scripts
-sys.path.insert(0, str(json_to_ssz_dir))
-sys.path.insert(0, str(converter_dir))
+json_to_ssz_script = converter_dir / "JsonToSSZ" / "JsonToSSZ.py"
 
 ForkName = Literal["capella", "deneb"]
 
@@ -40,33 +36,30 @@ FORK_TO_TYPE_MODULE: dict[str, str] = {
 }
 
 
-def convert_json_to_ssz(json_path, ssz_path, conversion_script, type_module, type_name=None):
+def convert_json_to_ssz(json_path, ssz_path, type_module, type_name):
     """
-    Convert JSON file to SSZ using the specified conversion script.
-    
+    Convert JSON file to SSZ.
+
     Args:
         json_path: Path to input JSON file
         ssz_path: Path to output SSZ file
-        conversion_script: Path to conversion script (BeaconStateJsonToSSZ.py or SignedBeaconBlockJsonToSSZ.py)
         type_module: Python module path (e.g., eth2spec.capella.mainnet, eth2spec.deneb.mainnet)
-        type_name: Type name (default: None, uses script default)
+        type_name: Type name inside the module (e.g., BeaconState, SignedBeaconBlock)
     """
     if not os.path.exists(json_path):
         print(f"[!] JSON file not found: {json_path}")
         return False
-    
+
     # Build command
     cmd = [
         sys.executable,
-        str(conversion_script),
+        str(json_to_ssz_script),
         "--in", str(json_path),
         "--out", str(ssz_path),
-        "--type-module", type_module
+        "--type-module", type_module,
+        "--type", type_name,
     ]
-    
-    if type_name:
-        cmd.extend(["--type", type_name])
-    
+
     try:
         result = subprocess.run(
             cmd,
@@ -99,18 +92,11 @@ def process_testgen_directory(input_testgen_dir, output_base_dir, fork: ForkName
         print(f"[!] Unsupported fork: {fork}. Supported: {sorted(FORK_TO_TYPE_MODULE.keys())}")
         return
     
-    # Paths to conversion scripts
-    state_converter = json_to_ssz_dir / "BeaconStateJsonToSSZ.py"
-    block_converter = json_to_ssz_dir / "SignedBeaconBlockJsonToSSZ.py"
-    
-    if not state_converter.exists():
-        print(f"[!] State converter not found: {state_converter}")
+    if not json_to_ssz_script.exists():
+        print(f"[!] Converter not found: {json_to_ssz_script}")
         return
-    
-    if not block_converter.exists():
-        print(f"[!] Block converter not found: {block_converter}")
-        return
-    
+
+
     # Check if testgen directory exists
     if not testgen_dir.exists():
         print(f"[!] Input directory not found: {testgen_dir}")
@@ -183,7 +169,6 @@ def process_testgen_directory(input_testgen_dir, output_base_dir, fork: ForkName
             if convert_json_to_ssz(
                 pre_json,
                 tmp_pre_ssz,
-                state_converter,
                 type_module=type_module,
                 type_name="BeaconState"
             ):
@@ -191,7 +176,6 @@ def process_testgen_directory(input_testgen_dir, output_base_dir, fork: ForkName
                 if convert_json_to_ssz(
                     block_json,
                     tmp_block_ssz,
-                    block_converter,
                     type_module=type_module,
                     type_name="SignedBeaconBlock"
                 ):

@@ -10,12 +10,10 @@ Converter/
 ├── snappyDecompressor.py         # Snappy decompression tool
 ├── eth2specResult.py             # eth2spec state transition execution tool
 ├── run_test_suite.py             # Complete test suite runner (independent / sequential modes)
-├── JsonToSSZ/                    # JSON → SSZ conversion tools
-│   ├── BeaconStateJsonToSSZ.py
-│   └── SignedBeaconBlockJsonToSSZ.py
-├── SSZToJson/                    # SSZ → JSON conversion tools
-│   ├── BeaconStateSSZToJson.py
-│   └── SignedBeaconBlockSSZToJson.py
+├── JsonToSSZ/                    # JSON → SSZ conversion tool
+│   └── JsonToSSZ.py              # Any SSZ type, selected with --type
+├── SSZToJson/                    # SSZ → JSON conversion tool
+│   └── SSZToJson.py              # Any SSZ type, selected with --type
 ├── ExampleSSZ/                   # Example SSZ files
 ├── pure_capella_configs/         # Pure Capella network configurations
 │   └── lighthouse_testnet/       # Lighthouse testnet config for pure Capella
@@ -89,38 +87,27 @@ python snappyDecompressor.py compressed.ssz_snappy decompressed.ssz
 
 ### 3. SSZ → JSON Conversion
 
-#### BeaconState SSZ → JSON
+One script handles every SSZ type. The `--type` option selects the type inside `--type-module`.
+
 ```bash
-python SSZToJson/BeaconStateSSZToJson.py --in <input_ssz> --out <output_json> [--type-module <module>] [--type <type_name>]
+python SSZToJson/SSZToJson.py --type <type_name> --in <input_ssz> --out <output_json> [--type-module <module>]
 
-# Example
-python SSZToJson/BeaconStateSSZToJson.py --in beaconstate.ssz --out beaconstate.json
-```
-
-#### SignedBeaconBlock SSZ → JSON
-```bash
-python SSZToJson/SignedBeaconBlockSSZToJson.py --in <input_ssz> --out <output_json> [--type-module <module>] [--type <type_name>]
-
-# Example
-python SSZToJson/SignedBeaconBlockSSZToJson.py --in block.ssz --out block.json
+# Examples
+python SSZToJson/SSZToJson.py --type BeaconState --in beaconstate.ssz --out beaconstate.json
+python SSZToJson/SSZToJson.py --type SignedBeaconBlock --in block.ssz --out block.json
+python SSZToJson/SSZToJson.py --type Attestation --in attestation.ssz --out attestation.json
 ```
 
 ### 4. JSON → SSZ Conversion
 
-#### BeaconState JSON → SSZ
+One script handles every SSZ type. The `--type` option selects the type inside `--type-module`.
+
 ```bash
-python JsonToSSZ/BeaconStateJsonToSSZ.py --in <input_json> --out <output_ssz> [--type-module <module>] [--type <type_name>]
+python JsonToSSZ/JsonToSSZ.py --type <type_name> --in <input_json> --out <output_ssz> [--type-module <module>]
 
-# Example
-python JsonToSSZ/BeaconStateJsonToSSZ.py --in beaconstate.json --out beaconstate.ssz
-```
-
-#### SignedBeaconBlock JSON → SSZ
-```bash
-python JsonToSSZ/SignedBeaconBlockJsonToSSZ.py --in <input_json> --out <output_ssz> [--type-module <module>] [--type <type_name>]
-
-# Example
-python JsonToSSZ/SignedBeaconBlockJsonToSSZ.py --in block.json --out block.ssz
+# Examples
+python JsonToSSZ/JsonToSSZ.py --type BeaconState --in beaconstate.json --out beaconstate.ssz
+python JsonToSSZ/JsonToSSZ.py --type SignedBeaconBlock --in block.json --out block.ssz
 ```
 
 ### 5. eth2spec State Transition (eth2specResult.py)
@@ -319,11 +306,11 @@ python snappyDecompressor.py pre.ssz_snappy pre.ssz
 python snappyDecompressor.py post.ssz_snappy post.ssz
 
 # 3. SSZ → JSON conversion
-python SSZToJson/BeaconStateSSZToJson.py --in pre.ssz --out pre.json
-python SSZToJson/BeaconStateSSZToJson.py --in post.ssz --out post.json
+python SSZToJson/SSZToJson.py --type BeaconState --in pre.ssz --out pre.json
+python SSZToJson/SSZToJson.py --type BeaconState --in post.ssz --out post.json
 
 # 4. JSON → SSZ conversion (verification)
-python JsonToSSZ/BeaconStateJsonToSSZ.py --in pre.json --out pre_converted.ssz
+python JsonToSSZ/JsonToSSZ.py --type BeaconState --in pre.json --out pre_converted.ssz
 
 # 5. Compare results
 python CompareResult.py pre.ssz pre_converted.ssz
