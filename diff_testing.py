@@ -2,7 +2,6 @@
 
 import os
 import sys
-import io
 import subprocess
 import argparse
 import csv
@@ -14,6 +13,8 @@ from time import perf_counter
 from pathlib import Path
 from datetime import datetime
 from collections import defaultdict
+
+from Converter.snappy_decompressor import decompress as decompress_snappy
 
 MERGE_CHUNK_SIZE = 500
 
@@ -226,34 +227,7 @@ class Clients:
         self.log_stderr()
 
 
-def decompress_snappy(converter_dir, input_file, output_file):
-    """
-    Decompress snappy file.
-    
-    Args:
-        converter_dir: Converter directory path
-        input_file: Input snappy file path
-        output_file: Output SSZ file path
-    """
-    snappy_decompressor = Path(converter_dir) / "Converter" / "snappyDecompressor.py"
-    if not snappy_decompressor.exists():
-        # Fallback: script is in spectec-core directory
-        snappy_decompressor = Path(converter_dir) / "snappyDecompressor.py"
-    
-    try:
-        result = subprocess.run(
-            [sys.executable, str(snappy_decompressor), str(input_file), str(output_file)],
-            capture_output=True,
-            text=True,
-            check=True
-        )
-        return True
-    except subprocess.CalledProcessError as e:
-        print(f"  ✗ Snappy decompression failed: {e.stderr}")
-        return False
-
-
-def parse_state_block(state_dir, block_dir, output_parent_dir, converter_dir=None):
+def parse_state_block(state_dir, block_dir, output_parent_dir):
     """
     Find SSZ file pairs from state_dir and block_dir and yield them.
     
@@ -290,13 +264,10 @@ def parse_state_block(state_dir, block_dir, output_parent_dir, converter_dir=Non
         decompressed_dir = os.path.join(output_parent_dir, "_decompressed")
         os.makedirs(decompressed_dir, exist_ok=True)
         
-        if converter_dir is None:
-            script_dir = Path(__file__).parent.resolve()
-            converter_dir = script_dir
         
         decompressed_pre = os.path.join(decompressed_dir, "pre.ssz")
         print(f"[+] Decompressing {pre_snappy} -> {decompressed_pre}")
-        if not decompress_snappy(converter_dir, pre_snappy, decompressed_pre):
+        if not decompress_snappy(pre_snappy, decompressed_pre):
             print(f"[!] Failed to decompress pre.ssz_snappy, skipping...")
             if decompressed_dir and os.path.exists(decompressed_dir) and not os.listdir(decompressed_dir):
                 os.rmdir(decompressed_dir)
@@ -323,16 +294,13 @@ def parse_state_block(state_dir, block_dir, output_parent_dir, converter_dir=Non
                 os.makedirs(decompressed_dir, exist_ok=True)
                 needs_decompression = True
             
-            if converter_dir is None:
-                script_dir = Path(__file__).parent.resolve()
-                converter_dir = script_dir
             
             for block_snappy_file in block_snappy_files:
                 block_num = block_snappy_file.replace("blocks_", "").replace(".ssz_snappy", "")
                 block_snappy_path = os.path.join(block_dir, block_snappy_file)
                 decompressed_block = os.path.join(decompressed_dir, f"blocks_{block_num}.ssz")
                 print(f"[+] Decompressing {block_snappy_file} -> blocks_{block_num}.ssz")
-                if not decompress_snappy(converter_dir, block_snappy_path, decompressed_block):
+                if not decompress_snappy(block_snappy_path, decompressed_block):
                     print(f"[!] Failed to decompress {block_snappy_file}, skipping...")
                     continue
                 if os.path.exists(decompressed_block):
@@ -432,7 +400,7 @@ def parse_state_block(state_dir, block_dir, output_parent_dir, converter_dir=Non
                 yield state_path, block_path, paths_per_pair
 
 
-def parse_operation(test_case_dir, output_parent_dir, converter_dir=None):
+def parse_operation(test_case_dir, output_parent_dir):
     """
     Find operation test cases from test_case_dir and yield them.
     
@@ -470,13 +438,10 @@ def parse_operation(test_case_dir, output_parent_dir, converter_dir=None):
         decompressed_dir = os.path.join(output_parent_dir, "_decompressed")
         os.makedirs(decompressed_dir, exist_ok=True)
         
-        if converter_dir is None:
-            script_dir = Path(__file__).parent.resolve()
-            converter_dir = script_dir
         
         decompressed_pre = os.path.join(decompressed_dir, "pre.ssz")
         print(f"[+] Decompressing {pre_snappy} -> {decompressed_pre}")
-        if not decompress_snappy(converter_dir, pre_snappy, decompressed_pre):
+        if not decompress_snappy(pre_snappy, decompressed_pre):
             print(f"[!] Failed to decompress pre.ssz_snappy, skipping...")
             if decompressed_dir and os.path.exists(decompressed_dir) and not os.listdir(decompressed_dir):
                 os.rmdir(decompressed_dir)
@@ -551,15 +516,12 @@ def parse_operation(test_case_dir, output_parent_dir, converter_dir=None):
             os.makedirs(decompressed_dir, exist_ok=True)
             needs_decompression = True
         
-        if converter_dir is None:
-            script_dir = Path(__file__).parent.resolve()
-            converter_dir = script_dir
         
         # Extract base name without extension
         op_base = operation_file.replace(".ssz_snappy", "")
         decompressed_op = os.path.join(decompressed_dir, f"{op_base}.ssz")
         print(f"[+] Decompressing {operation_file} -> {op_base}.ssz")
-        if not decompress_snappy(converter_dir, operation_path, decompressed_op):
+        if not decompress_snappy(operation_path, decompressed_op):
             print(f"[!] Failed to decompress {operation_file}, skipping...")
             return
         if os.path.exists(decompressed_op):
@@ -615,7 +577,7 @@ def parse_operation(test_case_dir, output_parent_dir, converter_dir=None):
     yield pre_ssz, operation_path, found_operation_type, paths_per_test, execution_valid
 
 
-def parse_epoch_processing(test_case_dir, output_parent_dir, converter_dir=None):
+def parse_epoch_processing(test_case_dir, output_parent_dir):
     """
     Find epoch-processing test cases from test_case_dir and yield them.
     
@@ -652,13 +614,10 @@ def parse_epoch_processing(test_case_dir, output_parent_dir, converter_dir=None)
         decompressed_dir = os.path.join(output_parent_dir, "_decompressed")
         os.makedirs(decompressed_dir, exist_ok=True)
         
-        if converter_dir is None:
-            script_dir = Path(__file__).parent.resolve()
-            converter_dir = script_dir
         
         decompressed_pre = os.path.join(decompressed_dir, "pre.ssz")
         print(f"[+] Decompressing {pre_snappy} -> {decompressed_pre}")
-        if not decompress_snappy(converter_dir, pre_snappy, decompressed_pre):
+        if not decompress_snappy(pre_snappy, decompressed_pre):
             print(f"[!] Failed to decompress pre.ssz_snappy, skipping...")
             if decompressed_dir and os.path.exists(decompressed_dir) and not os.listdir(decompressed_dir):
                 os.rmdir(decompressed_dir)
@@ -701,7 +660,7 @@ def parse_epoch_processing(test_case_dir, output_parent_dir, converter_dir=None)
     yield pre_ssz, epoch_processing_type, paths_per_test
 
 
-def parse_sanity_slots(test_case_dir, output_parent_dir, converter_dir=None):
+def parse_sanity_slots(test_case_dir, output_parent_dir):
     """
     Find sanity-slots test cases from test_case_dir and yield them.
     
@@ -739,13 +698,10 @@ def parse_sanity_slots(test_case_dir, output_parent_dir, converter_dir=None):
         decompressed_dir = os.path.join(output_parent_dir, "_decompressed")
         os.makedirs(decompressed_dir, exist_ok=True)
         
-        if converter_dir is None:
-            script_dir = Path(__file__).parent.resolve()
-            converter_dir = script_dir
         
         decompressed_pre = os.path.join(decompressed_dir, "pre.ssz")
         print(f"[+] Decompressing {pre_snappy} -> {decompressed_pre}")
-        if not decompress_snappy(converter_dir, pre_snappy, decompressed_pre):
+        if not decompress_snappy(pre_snappy, decompressed_pre):
             print(f"[!] Failed to decompress pre.ssz_snappy, skipping...")
             if decompressed_dir and os.path.exists(decompressed_dir) and not os.listdir(decompressed_dir):
                 os.rmdir(decompressed_dir)
@@ -2289,7 +2245,7 @@ def state_transition(state_dir, block_dir, output_parent_dir, spectec_core_dir=N
     if workflow == "sequential":
         # Sequential mode: pre -> blocks_0 -> postState_0 -> blocks_1 -> ...
         # Collect all blocks first
-        block_pairs = list(parse_state_block(state_dir, block_dir, output_parent_dir, converter_dir=spectec_core_dir))
+        block_pairs = list(parse_state_block(state_dir, block_dir, output_parent_dir))
         
         if not block_pairs:
             return successful_clients_by_index
@@ -2361,7 +2317,7 @@ def state_transition(state_dir, block_dir, output_parent_dir, spectec_core_dir=N
             current_state = next_state
     else:
         # Independent mode (default): process each block independently from original pre state
-        for state, block, paths in parse_state_block(state_dir, block_dir, output_parent_dir, converter_dir=spectec_core_dir):
+        for state, block, paths in parse_state_block(state_dir, block_dir, output_parent_dir):
             print(f"[+] Processing pair: {state} and {block}")
             eth2_clients = process_clients(state, block, paths, spectec_core_dir=spectec_core_dir, enable_coverage=enable_coverage, fork_version=fork_version)
             eth2_clients_results.extend(eth2_clients)
@@ -2442,7 +2398,7 @@ def operation(test_case_dir, output_parent_dir, spectec_core_dir=None, enable_co
     all_status = []
     successful_clients_by_index = {}
     
-    for state, operation_path, operation_type, paths, execution_valid in parse_operation(test_case_dir, output_parent_dir, converter_dir=spectec_core_dir):
+    for state, operation_path, operation_type, paths, execution_valid in parse_operation(test_case_dir, output_parent_dir):
         print(f"[+] Processing operation: {state} + {operation_path} (type: {operation_type})")
         eth2_clients = process_clients_operation(state, operation_path, operation_type, paths, spectec_core_dir=spectec_core_dir, enable_coverage=enable_coverage, fork_version=fork_version, execution_valid=execution_valid)
         eth2_clients_results.extend(eth2_clients)
@@ -2509,7 +2465,7 @@ def epoch_processing(test_case_dir, output_parent_dir, spectec_core_dir=None, en
     all_status = []
     successful_clients_by_index = {}
     
-    for state, epoch_processing_type, paths in parse_epoch_processing(test_case_dir, output_parent_dir, converter_dir=spectec_core_dir):
+    for state, epoch_processing_type, paths in parse_epoch_processing(test_case_dir, output_parent_dir):
         print(f"[+] Processing epoch-processing: {state} (type: {epoch_processing_type})")
         eth2_clients = process_clients_epoch_processing(state, epoch_processing_type, paths, spectec_core_dir=spectec_core_dir, enable_coverage=enable_coverage, fork_version=fork_version)
         eth2_clients_results.extend(eth2_clients)
@@ -2576,7 +2532,7 @@ def sanity_slots(test_case_dir, output_parent_dir, spectec_core_dir=None, enable
     all_status = []
     successful_clients_by_index = {}
     
-    for state, slot_value, paths in parse_sanity_slots(test_case_dir, output_parent_dir, converter_dir=spectec_core_dir):
+    for state, slot_value, paths in parse_sanity_slots(test_case_dir, output_parent_dir):
         print(f"[+] Processing sanity-slots: {state} (slot: {slot_value})")
         eth2_clients = process_clients_sanity_slots(state, slot_value, paths, spectec_core_dir=spectec_core_dir, enable_coverage=enable_coverage, fork_version=fork_version)
         eth2_clients_results.extend(eth2_clients)

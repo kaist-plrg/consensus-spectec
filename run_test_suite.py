@@ -19,6 +19,7 @@ OfficialTestSuite 테스트 케이스에 대해 전체 워크플로우를 자동
 import os
 import sys
 import csv
+import filecmp
 import hashlib
 import subprocess
 import argparse
@@ -29,6 +30,8 @@ import time
 import traceback
 from pathlib import Path
 from typing import List, Tuple, Optional
+
+from Converter.snappy_decompressor import decompress as decompress_snappy
 
 
 class TestRunner:
@@ -66,11 +69,9 @@ class TestRunner:
             self.spec_dir = spectec_core / "spec" / f"spec_{fork}"
         
         # 스크립트 경로들
-        self.snappy_decompressor = self.converter_dir / "snappyDecompressor.py"
         self.ssz_to_json_script = self.converter_dir / "SSZToJson" / "SSZToJson.py"
         self.json_to_ssz_script = self.converter_dir / "JsonToSSZ" / "JsonToSSZ.py"
         self.eth2spec_result = self.converter_dir / "eth2specResult.py"
-        self.compare_result = self.converter_dir / "CompareResult.py"
         
         # consensus-specs 경로 (eth2specResult.py에서 사용)
         # converter_dir이 Converter/이면, parent는 spectec-core/, 그 아래에 consensus-specs가 있음
@@ -140,7 +141,7 @@ class TestRunner:
         if pre_snappy.exists() and not pre_ssz.exists():
             decompressed_dir = work_dir / "_decompressed"
             pre_ssz = decompressed_dir / "pre.ssz"
-            if not self.decompress_snappy(pre_snappy, pre_ssz):
+            if not decompress_snappy(pre_snappy, pre_ssz):
                 raise RuntimeError(f"Failed to decompress {pre_snappy}")
 
         if pre_ssz.exists():
@@ -159,7 +160,7 @@ class TestRunner:
                 for block_snappy in block_snappy_files:
                     block_num = block_snappy.name.replace("blocks_", "").replace(".ssz_snappy", "")
                     block_ssz = decompressed_dir / f"blocks_{block_num}.ssz"
-                    if not self.decompress_snappy(block_snappy, block_ssz):
+                    if not decompress_snappy(block_snappy, block_ssz):
                         raise RuntimeError(f"Failed to decompress {block_snappy}")
                     block_ssz_files.append(block_ssz)
 
@@ -198,21 +199,6 @@ class TestRunner:
                 pairs.append((pre_file, block_file, state_index))
 
         return pairs
-    
-    def decompress_snappy(self, input_file: Path, output_file: Path) -> bool:
-        """snappy 파일을 압축 해제합니다."""
-        try:
-            output_file.parent.mkdir(parents=True, exist_ok=True)
-            result = subprocess.run(
-                [sys.executable, str(self.snappy_decompressor), str(input_file), str(output_file)],
-                capture_output=True,
-                text=True,
-                check=True
-            )
-            return True
-        except subprocess.CalledProcessError as e:
-            print(f"  ✗ Snappy decompression failed: {e.stderr}")
-            return False
     
     def ssz_to_json(self, ssz_file: Path, json_file: Path, is_beacon_state: bool = True) -> bool:
         """SSZ 파일을 JSON으로 변환합니다."""
@@ -680,16 +666,10 @@ class TestRunner:
         }
     
     def compare_results(self, file1: Path, file2: Path) -> bool:
-        """두 SSZ 파일을 비교합니다."""
+        """두 SSZ 파일을 바이트 단위로 비교합니다."""
         try:
-            result = subprocess.run(
-                [sys.executable, str(self.compare_result), str(file1), str(file2)],
-                capture_output=True,
-                text=True,
-                check=True
-            )
-            return True
-        except subprocess.CalledProcessError:
+            return filecmp.cmp(file1, file2, shallow=False)
+        except OSError:
             return False
     
     def process_test_case(self, test_case_dir: Path, work_dir: Path, verbose: bool = False) -> Tuple[bool, str]:
@@ -723,14 +703,14 @@ class TestRunner:
         if verbose:
             print("\n[Step 1] Decompressing snappy files...")
         pre_ssz = work_dir / "pre.ssz"
-        if not self.decompress_snappy(pre_snappy, pre_ssz):
+        if not decompress_snappy(pre_snappy, pre_ssz):
             return False, "Failed to decompress pre.ssz_snappy"
         
         block_ssz_files = []
         for block_snappy in block_snappy_files:
             block_num = block_snappy.stem.replace("blocks_", "").replace(".ssz_snappy", "")
             block_ssz = work_dir / f"blocks_{block_num}.ssz"
-            if not self.decompress_snappy(block_snappy, block_ssz):
+            if not decompress_snappy(block_snappy, block_ssz):
                 return False, f"Failed to decompress {block_snappy.name}"
             block_ssz_files.append(block_ssz)
         
@@ -961,14 +941,14 @@ class TestRunner:
         if verbose:
             print("\n[Step 1] Decompressing snappy files...")
         pre_ssz = work_dir / "pre.ssz"
-        if not self.decompress_snappy(pre_snappy, pre_ssz):
+        if not decompress_snappy(pre_snappy, pre_ssz):
             return False, "Failed to decompress pre.ssz_snappy"
 
         block_ssz_files = []
         for block_snappy in block_snappy_files:
             block_num = block_snappy.stem.replace("blocks_", "").replace(".ssz_snappy", "")
             block_ssz = work_dir / f"blocks_{block_num}.ssz"
-            if not self.decompress_snappy(block_snappy, block_ssz):
+            if not decompress_snappy(block_snappy, block_ssz):
                 return False, f"Failed to decompress {block_snappy.name}"
             block_ssz_files.append(block_ssz)
 
