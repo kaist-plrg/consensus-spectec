@@ -1,0 +1,31 @@
+{
+  "increase_balance": {
+    "file": "09-helpers-balance.spectec", "relation": "IncreaseBalance",
+    "arguments": {"state": "state", "index": "vid", "delta": "delta"},
+    "conclusion": "state '.' BALANCES `[ vid `] '+' delta ~> {result}"
+  },
+  "decrease_balance": {
+    "file": "09-helpers-balance.spectec", "relation": "DecreaseBalance",
+    "arguments": {"state": "state", "index": "vid", "delta": "delta"},
+    "conclusion": "state '.' BALANCES `[ vid `] '-' delta ~> {result}"
+  },
+  "get_previous_epoch": {
+    "file": "04-helpers-slot-epoch-time.spectec", "arguments": {"state": "state"}
+  },
+  "get_block_root_at_slot": {
+    "file": "07-helpers-history.spectec", "arguments": {"state": "state", "slot": "slot"}
+  },
+  "get_finality_delay": {
+    "file": "07-helpers-history.spectec", "arguments": {"state": "state"}
+  },
+  "is_active_validator": {
+    "file": "06-helpers-validator.spectec", "arguments": {"validator": "validator", "epoch": "epoch"}
+  },
+  "is_slashable_validator": {
+    "file": "06-helpers-validator.spectec", "arguments": {"validator": "validator", "epoch": "epoch"}
+  },
+  "process_eth1_data_reset": {
+    "file": "12.1-process-slot-and-epoch-functions.spectec", "relation": "ProcessEth1DataReset",
+    "arguments": {"state": "state"}, "conclusion": "state ~> {result}"
+  }
+}
