@@ -1,0 +1,45 @@
+var pyx : int
+var pyy : int
+
+dec $py_abs(int) : int
+def $py_abs(pyx) = pyx
+  -- if $(pyx >= 0)
+def $py_abs(pyx) = $(-pyx)
+  -- if $(pyx < 0)
+
+dec $py_floor_div(int, int) : int
+def $py_floor_div(pyx, pyy) = $($py_abs(pyx) / $py_abs(pyy))
+  -- if pyy =/= 0
+  -- if $(pyx * pyy >= 0)
+def $py_floor_div(pyx, pyy) = $(-(($py_abs(pyx) + $py_abs(pyy) - 1) / $py_abs(pyy)))
+  -- if pyy =/= 0
+  -- if $(pyx * pyy < 0)
+
+dec $py_mod(int, int) : int
+def $py_mod(pyx, pyy) = $(pyx - pyy * $py_floor_div(pyx, pyy))
+
+dec $py_bitand(int, int) : int
+def $py_bitand(pyx, pyy) = 0
+  -- if pyx = 0
+def $py_bitand(pyx, pyy) = pyy
+  -- if pyx = -1
+def $py_bitand(pyx, pyy) = 0
+  -- if pyx =/= 0
+  -- if pyx =/= -1
+  -- if pyy = 0
+def $py_bitand(pyx, pyy) = pyx
+  -- if pyx =/= 0
+  -- if pyx =/= -1
+  -- if pyy = -1
+def $py_bitand(pyx, pyy) =
+  $($py_mod(pyx, 2) * $py_mod(pyy, 2) + 2 * $py_bitand($py_floor_div(pyx, 2), $py_floor_div(pyy, 2)))
+  -- if pyx =/= 0
+  -- if pyx =/= -1
+  -- if pyy =/= 0
+  -- if pyy =/= -1
+
+dec $py_bitor(int, int) : int
+def $py_bitor(pyx, pyy) = $(pyx + pyy - $py_bitand(pyx, pyy))
+
+dec $py_bitxor(int, int) : int
+def $py_bitxor(pyx, pyy) = $(pyx + pyy - 2 * $py_bitand(pyx, pyy))
