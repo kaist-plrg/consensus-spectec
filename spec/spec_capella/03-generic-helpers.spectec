@@ -84,9 +84,5 @@ builtin dec $ee_verify_and_notify_new_payload(executionPayload) : bool
 ;; [Custom: ProcessSyncAggregate] index_of_pubkey(state, pk) : validatorIndex
 dec $index_of_pubkey((validatorIndex, blsPubkey)*, blsPubkey) : validatorIndex
 
-def $index_of_pubkey((vid_h, blsPubkey_h) :: (vid_t, blsPubkey_t)*, blsPubkey_committee) = vid_h
-  -- if blsPubkey_h = blsPubkey_committee
-
-def $index_of_pubkey((vid_h, blsPubkey_h) :: (vid_t, blsPubkey_t)*, blsPubkey_committee)
-  = $index_of_pubkey((vid_t, blsPubkey_t)*, blsPubkey_committee)
-  -- otherwise
+def $index_of_pubkey((vid, blsPubkey_existing)*, blsPubkey_committee)
+  = vid*[$index_of_<blsPubkey>(blsPubkey_existing*, blsPubkey_committee)]
