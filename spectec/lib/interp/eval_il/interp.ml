@@ -68,6 +68,17 @@ let rec assign_exp (ctx : Ctx.t) (exp : exp) (value : value) : Ctx.t =
           vars
       in
       Ctx.add_values ctx bindings
+  | ( IterE
+        ({ it = VarE id_exp; _ }, (List, [ { varid = id; typ; iters = [] } ])),
+      ListV values )
+    when id_exp.it = id.it ->
+      (* Fast path for x*: the value list elements are already x's values,
+         so skip assigning each of them in its own local context *)
+      let value_sub =
+        let typ = Lang.Il.Typ.iterate typ [ List ] in
+        values |> Value.Make.list typ.it |> VH.on_derived ~source:value
+      in
+      Ctx.add_value ctx (id, [ List ]) value_sub
   | IterE (exp, (List, vars)), ListV values ->
       (* Map over the value list elements,
          and assign each value to the iterated expression *)
@@ -885,10 +896,24 @@ and eval_iter_exp (note : typ') (ctx : Ctx.t) (exp : exp) (iterexp : iterexp) :
     let value_res = VH.on_combined ~sources value_res in
     (ctx, value_res)
   in
+  let eval_iter_exp_list_var note ctx varid =
+    (* Fast path for x*: x*'s elements are already the evaluated values,
+       so skip evaluating x in one sub-context per element *)
+    let source = Ctx.find_value ctx (varid, [ List ]) in
+    let values = Value.get_list source in
+    let value_res = values |> Value.Make.list note in
+    let sources = [ source ] in
+    let value_res = VH.on_combined ~sources value_res in
+    (ctx, value_res)
+  in
   let iter, vars = iterexp in
   match iter with
   | Opt -> eval_iter_exp_opt note ctx exp vars
-  | List -> eval_iter_exp_list note ctx exp vars
+  | List -> (
+      match (exp.it, vars) with
+      | VarE id, [ { varid; iters = []; _ } ] when id.it = varid.it ->
+          eval_iter_exp_list_var note ctx varid
+      | _ -> eval_iter_exp_list note ctx exp vars)
 
 (* Argument evaluation *)
 
