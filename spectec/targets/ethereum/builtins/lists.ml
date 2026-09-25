@@ -19,6 +19,18 @@ let count_occurrences_ ~at (_typ : targ) (vs : Value.t list) (target : Value.t)
   in
   Ok (Value.nat count)
 
+(* dec $index_of_<X>(X*, X) : nat, first position of X (python list.index) *)
+
+let index_of_ ~at (_typ : targ) (vs : Value.t list) (target : Value.t) :
+    Value.t result =
+  let rec find i = function
+    | [] -> Error (runtime at "index_of_: value is not in the list")
+    | v :: vs ->
+        if Value.eq v target then Ok (Value.nat (Bigint.of_int i))
+        else find (i + 1) vs
+  in
+  find 0 vs
+
 (* (*dec $to_set_<X>(X*) = X* *)
 
 let to_set_ ~at (typ : targ) (vs : Value.t list) : Value.t result =
@@ -144,6 +156,7 @@ let builtins =
   [
     ( "count_occurrences_",
       Define.T1.a2 (Arg.list_of Arg.value) Arg.value count_occurrences_ );
+    ("index_of_", Define.T1.a2 (Arg.list_of Arg.value) Arg.value index_of_);
     ("to_set_", Define.T1.a1 (Arg.list_of Arg.value) to_set_);
     ("sum_", Define.T1.a1 (Arg.list_of Arg.value) sum_);
     ("repeat_", Define.T1.a2 Arg.value Arg.num repeat_);
