@@ -1351,9 +1351,9 @@ and invoke_rel (ctx : Ctx.t) (id : id) (values_input : value list) :
               (* Try evaluating the rule *)
               let result =
                 attempt_rule' ctx_local prems exps_output
-                |> nest id.at
-                     (F.asprintf "application of rule %s/%s failed" id.it
-                        id_rule.it)
+                |> nestf id.at (fun () ->
+                       F.asprintf "application of rule %s/%s failed" id.it
+                         id_rule.it)
               in
               Instrumentation.Dispatcher.emit
                 (Events.Rule_exit
@@ -1392,7 +1392,8 @@ and invoke_rel (ctx : Ctx.t) (id : id) (values_input : value list) :
       let conclusion = Mode.fill reltyp.it ~ins:values_input ~outs in
       Events.Rel_exit
         { id = id.it; at = id.at; success = Result.is_ok result; conclusion });
-  result |> nest id.at (F.asprintf "invocation of relation %s failed" id.it)
+  result
+  |> nestf id.at (fun () -> F.asprintf "invocation of relation %s failed" id.it)
 
 (* Invoke a function *)
 
@@ -1478,9 +1479,9 @@ and invoke_func (ctx : Ctx.t) (id : id) (targs : targ list) (args : arg list) :
               (* Try evaluating the clause *)
               let result =
                 attempt_clause' ctx_local prems exp_output
-                |> nest id.at
-                     (F.asprintf "application of clause %s%s failed" id.it
-                        (Print.string_of_args args_input))
+                |> nestf id.at (fun () ->
+                       F.asprintf "application of clause %s%s failed" id.it
+                         (Print.string_of_args args_input))
               in
               Instrumentation.Dispatcher.emit
                 (Events.Clause_exit
@@ -1550,11 +1551,11 @@ and invoke_func (ctx : Ctx.t) (id : id) (targs : targ list) (args : arg list) :
   Instrumentation.Dispatcher.emit
     (Events.Func_exit { id = id.it; at = id.at; output });
   result
-  |> nest id.at
-       (F.asprintf "invocation of function %s%s%s failed"
-          (Print.string_of_defid id)
-          (Print.string_of_targs targs)
-          (Print.string_of_args args))
+  |> nestf id.at (fun () ->
+         F.asprintf "invocation of function %s%s%s failed"
+           (Print.string_of_defid id)
+           (Print.string_of_targs targs)
+           (Print.string_of_args args))
 
 (* Load definitions into the context *)
 
