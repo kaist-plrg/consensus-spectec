@@ -46,27 +46,21 @@ The transpiler therefore does not replace MiniZinc or existing consensus tests. 
 
 ## 3. Proposed Work: Consensus SpecTec Transpiler
 
-The main deliverable of this project is **a deterministic transpiler that translates supported parts of the Ethereum Python consensus specification into Consensus-SpecTec**.
+One deterministic transpiler will translate the executable Python state-transition specification through Gloas into Consensus-SpecTec.
 
-AI is currently being used only as an implementation aid during the preliminary development stage, for example to accelerate exploration of translation patterns and prototype implementation. **AI will not be part of the final transpilation process.** The final deliverable will be a mechanical and deterministic transpiler that performs the translation without AI inference and produces reproducible results for the same input specification.
+### 3.1 Translation Requirements
 
-### 3.1 Input and Output
+The input to the transpiler is the Python consensus specification maintained in `ethereum/consensus-specs`, including the additions and modifications introduced by each target fork.
 
-The input is the Python consensus specification maintained in `ethereum/consensus-specs`, including the additions and modifications introduced by each fork within the subset supported by the transpiler.
+The output is the corresponding **Consensus-SpecTec definitions**, suitable for use with the existing Consensus-SpecTec tooling. These definitions must preserve the Python specification's returned values and resulting state on successful executions. Conditions that make the Python execution fail must appear as explicit premises that reject the corresponding input in SpecTec. The transpiler does not plan to reproduce Python exception messages or partially modified state after failure.
 
-The output is the corresponding **Consensus-SpecTec definitions**, suitable for use with the existing Consensus-SpecTec tooling.
+A companion linter will report unsupported Python syntax and operations with their source locations. Unsupported constructs must be rejected rather than silently translated into inaccurate SpecTec definitions.
 
-### 3.2 Initial Scope and Fork Progression
+### 3.2 Coverage and Fork Progression
 
-The initial development will use **Capella and Deneb** as reference specifications because manually written Consensus-SpecTec definitions are already available for comparison and validation.
+Development starts with **Capella and Deneb**, whose handwritten Consensus-SpecTec definitions provide reference behavior, then applies the same translation rules through **Electra, Fulu, and Gloas**. The project will pin the upstream revision used for each fork. The grant deliverable covers every Python construct required by the complete executable state-transition specification through Gloas. Any unsupported construct within that scope must be resolved before release.
 
-Once the transpiler has been established and validated against these reference cases, **the same transpiler** will be applied to subsequent Ethereum consensus forks, including **Electra**, **Fulu**, and **Gloas**.
-
-The purpose is not to build a separate transpiler for each fork. Rather, the transpiler is intended to operate across the evolving `consensus-specs` codebase and translate fork-specific additions and modifications using a common set of translation rules.
-
-If a future fork introduces specification constructs that are not covered by the existing translation rules, the transpiler can be extended to support those constructs while preserving the same overall translation workflow.
-
-The long-term goal is therefore for a single reusable transpiler to continue supporting future **Ethereum consensus forks** as the specification evolves.
+Later forks can use the same toolchain, as long as they use Python constructs supported by the transpiler. The linter will identify unsupported Python syntax or operations that require extensions to the translation rules.
 
 ---
 
