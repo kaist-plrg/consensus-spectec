@@ -22,23 +22,9 @@ SpecTrum applies SpecTec to the Ethereum consensus specification through **Conse
 
 The work demonstrated that this information can expose behaviors that ordinary implementation-level code coverage does not capture. In its evaluation across five Ethereum consensus clients, SpecTrum reported cross-client divergence cases that depended on premises exposed through the mechanized specification [1].
 
-This establishes the main premise behind the proposed project:
+The remaining maintenance task is translating each fork's new or modified Python rules into Consensus-SpecTec and checking the resulting definitions against the source.
 
-> **Maintaining an executable specification-level representation of Ethereum consensus provides practical value for testing and security analysis.**
-
-### 2.2 Incremental Fork Maintenance
-
-The problem is not that the entire Consensus-SpecTec specification must be recreated whenever Ethereum introduces a new fork.
-
-Both Ethereum's Python consensus specification and the SpecTrum approach are naturally incremental. A later fork can be represented in terms of the changes it introduces relative to its predecessor.
-
-However, when a new fork introduces additional consensus rules, the corresponding processes described in SpecTrum still need to be manually applied to those newly introduced rules in Consensus-SpecTec.
-
-As Ethereum continues evolving, this translation and synchronization process becomes a recurring maintenance task.
-
-The proposed transpiler targets this specific problem.
-
-### 2.3 Relationship to MiniZinc
+### 2.2 Relationship to MiniZinc
 
 The existing `consensus-specs` repository also contains model-based fork-choice test generation using MiniZinc [2], which Nikos Baxevanis pointed me to during our discussion.
 
