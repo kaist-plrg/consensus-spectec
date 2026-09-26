@@ -24,23 +24,11 @@ The work demonstrated that this information can expose behaviors that ordinary i
 
 The remaining maintenance task is translating each fork's new or modified Python rules into Consensus-SpecTec and checking the resulting definitions against the source.
 
-### 2.2 Relationship to MiniZinc
+### 2.2 MiniZinc and SpecTrum Test Generation
 
-The existing `consensus-specs` repository also contains model-based fork-choice test generation using MiniZinc [2], which Nikos Baxevanis pointed me to during our discussion.
+MiniZinc and SpecTrum target different parts of Ethereum consensus testing. The `consensus-specs` repository uses MiniZinc models to generate fork-choice compliance tests involving super-majority links and block trees [2]. SpecTrum generates state-transition tests and runs them differentially across consensus clients [1].
 
-For example, MiniZinc models are used to construct constrained super-majority links, block trees, and fork-choice states satisfying particular predicate combinations.
-
-This addresses a different problem from the proposed transpiler.
-
-MiniZinc can be viewed primarily as answering:
-
-> Given a set of manually encoded constraints, what concrete test instances satisfy them?
-
-The Consensus SpecTec Transpiler instead addresses:
-
-> Given the Ethereum consensus specification, how can its supported semantics be systematically translated into and maintained as Consensus-SpecTec?
-
-The transpiler therefore does not replace MiniZinc or existing consensus tests. It provides specification-maintenance infrastructure that can support downstream testing techniques such as those explored by SpecTrum.
+They also obtain test-generation targets differently. MiniZinc solves constraints encoded in its models, while SpecTrum uses premise coverage of Consensus-SpecTec to identify validity conditions that existing tests have not evaluated to false [1]. The proposed transpiler will generate Consensus-SpecTec definitions from the Python `consensus-specs`. Together, the transpiler and SpecTrum would produce premise-guided state-transition tests based on the maintained Python specification.
 
 ---
 
