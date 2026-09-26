@@ -2,23 +2,11 @@
 
 ## 1. Project Overview
 
-### Title
+Building on **SpecTrum: Specification-Guided Differential Fuzzing for Ethereum Consensus Clients** [1], this project will develop a deterministic transpiler for keeping Consensus-SpecTec aligned with Ethereum's Python consensus specification as forks evolve. SpecTrum demonstrated that mechanizing the consensus specification can expose semantic coverage gaps and cross-client divergences that conventional testing may miss.
 
-**Consensus SpecTec Transpiler: Automating SpecTec Authoring and Maintenance for Ethereum Consensus Specifications**
+Ethereum specifications are organized incrementally: each fork builds on the previous fork and specifies its changes. Consensus-SpecTec can likewise be extended using fork differences, but those changes still need to be translated into SpecTec, reviewed, and checked against the Python source. The proposed transpiler will automate that translation, reducing the manual effort needed for each fork.
 
-### Objective
-
-This project is a follow-up to the recent work on **SpecTrum: Specification-Guided Differential Fuzzing for Ethereum Consensus Clients** [1], which demonstrated that mechanizing the Ethereum consensus specification in SpecTec can expose semantic coverage gaps and uncover cross-client divergences that conventional testing may miss.
-
-The underlying SpecTec approach predates SpecTrum and has already been applied to other real-world specifications, including WebAssembly through Wasm-SpecTec [2, 3], P4 through P4-SpecTec [4, 5], and related mechanized specification work for JavaScript/ECMAScript [6, 7]. Together with SpecTrum, these works demonstrate the practical value of executable and mechanized specifications for specification validation, testing, and bug discovery.
-
-The remaining challenge is **maintaining Consensus-SpecTec as the Ethereum consensus specification evolves**. Ethereum specifications are already organized incrementally: each fork builds on the previous fork and specifies its changes. Consensus-SpecTec can similarly be extended using fork differences rather than being rewritten from scratch. However, those changes still need to be manually identified, translated into SpecTec, reviewed, and kept synchronized with the Python consensus specification.
-
-This direction is distinct from the **MiniZinc-based model test generation** currently used in `consensus-specs` [8], which Nikos Baxevanis (nikos.baxevanis@ethereum.org) pointed me to during our discussion. MiniZinc focuses on generating concrete consensus test instances from manually defined constraints, whereas this project addresses an upstream problem: systematically translating and maintaining the mechanized specification itself. The approaches are therefore complementary.
-
-Following discussions with **Prof. Sukyoung Ryu, other authors and researchers involved in SpecTrum, and Youngjoon Song from Offchain Labs**, we have been exploring this follow-up direction for approximately two weeks. As a preliminary experiment, we have been using AI to assist implementation and to explore translation patterns between the Python consensus specification and existing Consensus-SpecTec definitions, using Capella as an initial reference as in the SpecTrum work.
-
-AI is only being used to accelerate this exploratory implementation work. **The intended final deliverable is a mechanical and deterministic transpiler whose translation process does not depend on AI inference.*
+Our team includes Prof. Sukyoung Ryu and Seokhun Jeong, coauthors of SpecTrum, and Youngjun Song from Offchain. We have begun exploring translation from the Python consensus specification to Consensus-SpecTec, using Capella as an initial reference and AI to assist implementation. The delivered transpiler will translate mechanically and deterministically, without AI involvement.
 
 I previously worked with the **Ethereum Foundation Protocol Security Research Team**, and I proposed this direction to **Nikos Baxevanis** (nikos.baxevanis@ethereum.org) and **Fredrik Svantes** (fredrik.svantes@ethereum.org) as infrastructure that could support ongoing mainnet and fork-security work. After subsequent discussions, I was invited to develop the idea further as a grant proposal. We are also considering the possibility of developing the results into a **follow-up research publication**, depending on the technical results of the project.
 
@@ -26,11 +14,11 @@ I previously worked with the **Ethereum Foundation Protocol Security Research Te
 
 ## 2. Existing Work and Remaining Problem
 
-### 2.1 Consensus-SpecTec and SpecTrum
+### 2.1 Mechanized Specifications and SpecTrum
 
-SpecTrum introduced **Consensus-SpecTec**, a mechanized representation of the Ethereum consensus specification that makes specification-level validity conditions explicit.
+Mechanized specifications predate SpecTrum. ESMeta extracts an executable representation of the ECMAScript specification [3, 4]. Wasm-SpecTec uses the SpecTec language to mechanize the WebAssembly specification [5, 6], and P4-SpecTec applies the same framework to P4's static and dynamic semantics [7, 8].
 
-Using this representation, SpecTrum introduced **premise coverage**, which measures whether individual specification premises are exercised as both true and false by existing tests, and used uncovered premises to guide differential fuzzing.
+SpecTrum applies SpecTec to the Ethereum consensus specification through **Consensus-SpecTec**, a mechanized representation that makes validity conditions explicit [1]. Using this representation, SpecTrum introduced **premise coverage**, which measures whether individual specification premises are exercised as both true and false by existing tests, and used uncovered premises to guide differential fuzzing.
 
 The work demonstrated that this information can expose behaviors that ordinary implementation-level code coverage does not capture. In its evaluation across five Ethereum consensus clients, SpecTrum reported cross-client divergence cases that depended on premises exposed through the mechanized specification [1].
 
@@ -52,7 +40,7 @@ The proposed transpiler targets this specific problem.
 
 ### 2.3 Relationship to MiniZinc
 
-The existing `consensus-specs` repository also contains model-based fork-choice test generation using MiniZinc [8].
+The existing `consensus-specs` repository also contains model-based fork-choice test generation using MiniZinc [2], which Nikos Baxevanis pointed me to during our discussion.
 
 For example, MiniZinc models are used to construct constrained super-majority links, block trees, and fork-choice states satisfying particular predicate combinations.
 
@@ -175,23 +163,23 @@ Existing SpecTrum testing workflow
 [1] SpecTrum: Specification-Guided Differential Fuzzing for Ethereum Consensus Clients
 https://arxiv.org/abs/2608.17738
 
-[2] Bringing the WebAssembly Standard up to Speed with SpecTec (Wasm-SpecTec)
-https://doi.org/10.1145/3656440
+[2] MiniZinc in Ethereum Consensus Specification
+https://github.com/ethereum/consensus-specs/tree/master/tests/generators/compliance_runners/fork_choice
 
-[3] Wasm SpecTec specification tools
-https://github.com/Wasm-DSL/spectec/tree/main
-
-[4] P4-SpecTec: Integrating a Language Mechanization Framework into the Real-World P4 Specification
-https://arxiv.org/abs/2608.00639
-
-[5] Mechanization toolchain for the P4 programming language
-https://github.com/kaist-plrg/p4-spectec
-
-[6] JavaScript Language Design and Implementation in Tandem
+[3] JavaScript Language Design and Implementation in Tandem
 https://cacm.acm.org/research/javascript-language-design-and-implementation-in-tandem/
 
-[7] ECMAScript Specification (ECMA-262) Metalanguage
+[4] ECMAScript Specification (ECMA-262) Metalanguage
 https://github.com/kaist-plrg/esmeta
 
-[8] MiniZinc in Ethereum Consensus Specification
-https://github.com/ethereum/consensus-specs/tree/master/tests/generators/compliance_runners/fork_choice
+[5] Bringing the WebAssembly Standard up to Speed with SpecTec (Wasm-SpecTec)
+https://doi.org/10.1145/3656440
+
+[6] Wasm SpecTec specification tools
+https://github.com/Wasm-DSL/spectec/tree/main
+
+[7] P4-SpecTec: Integrating a Language Mechanization Framework into the Real-World P4 Specification
+https://arxiv.org/abs/2608.00639
+
+[8] Mechanization toolchain for the P4 programming language
+https://github.com/kaist-plrg/p4-spectec
