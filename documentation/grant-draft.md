@@ -54,6 +54,10 @@ Later forks can use the same toolchain, as long as they use Python constructs su
 
 ## 4. Project Plan and Milestones
 
+1. **Capella proof of concept:** Use the Python Capella specification and handwritten Consensus-SpecTec definitions as references to implement an initial transpiler. Differentially test its generated definitions against the Python source. Milestone: a working Capella prototype with comparison results.
+2. **Incremental fork coverage:** Complete the Capella translation, then extend the same transpiler through Deneb, Electra, Fulu, and Gloas, resolving unsupported constructs and differentially testing each pinned fork. Milestone: generated definitions for the complete state-transition specification through Gloas.
+3. **Compatibility and release:** Add the compatibility linter, check each pinned fork for incompatible constructs, and document the translation rules, source revisions, and known limitations. Milestone: released tools, evaluation results, and documentation.
+
 ---
 
 ## 5. Deliverables and Evaluation
