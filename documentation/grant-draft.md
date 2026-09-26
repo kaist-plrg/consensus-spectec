@@ -83,15 +83,11 @@ Later forks can use the same toolchain, as long as they use Python constructs su
 
 ---
 
-## 6. Expected Impact and Long-Term Sustainability
+## 6. Expected Impact and Future Work
 
 SpecTrum demonstrated that Consensus-SpecTec can provide useful specification-level information for Ethereum consensus testing and differential fuzzing.
 
-The purpose of this project is to make that approach easier to maintain as the Ethereum consensus specification continues to evolve.
-
-By replacing part of the manual SpecTec authoring process with a reusable transpiler, the project aims to reduce the effort required to keep Consensus-SpecTec aligned with successive protocol upgrades.
-
-The intended workflow is:
+By generating Consensus-SpecTec from the Python specification, the transpiler reduces the manual effort of keeping that representation aligned with protocol changes. Its output can feed the existing SpecTrum testing workflow:
 
 ```
 Ethereum consensus specification
@@ -102,6 +98,8 @@ Consensus-SpecTec
             ↓
 Existing SpecTrum testing workflow
 ```
+
+Support for forks after Gloas and later EIP-driven changes may be explored in the future. The compatibility linter can identify unsupported constructs, but the extensions would need implementation and evaluation.
 
 ---
 
