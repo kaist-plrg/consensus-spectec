@@ -70,45 +70,16 @@ Later forks can use the same toolchain, as long as they use Python constructs su
 
 ## 5. Deliverables and Evaluation
 
-The primary deliverable of this project is a **reusable and deterministic Consensus SpecTec transpiler** that translates supported parts of the Ethereum Python consensus specification into Consensus-SpecTec.
-
 ### 5.1 Primary Deliverables
 
-#### 1. Consensus SpecTec Transpiler
-
-A deterministic transpiler that converts supported parts of the Python consensus specification into corresponding Consensus-SpecTec definitions.
-
-The goal is to build a single reusable transpiler rather than separate translation tooling for individual forks.
-
-#### 2. Validation Using Existing Consensus-SpecTec
-
-**Capella and Deneb** will be used as reference specifications because manually written Consensus-SpecTec definitions are already available.
-
-These existing definitions will provide a basis for evaluating and improving the transpiler during development.
-
-#### 3. Application to Later Forks
-
-After development and validation using Capella and Deneb, the same transpiler will be applied to subsequent Ethereum consensus specifications:
-
-**Deneb -> Electra -> Fulu -> Gloas -> Future Forks**
-
-The objective is to confirm that the transpiler can continue to operate as the consensus specification evolves, rather than requiring a separate translation process for each fork.
-
-The same approach is intended to remain applicable to subsequent Ethereum consensus forks.
-
-#### 4. Documentation
-
-The project will document the transpiler, its supported translation scope, and the process required to maintain and extend it as the Ethereum consensus specification evolves.
+1. **Consensus SpecTec Transpiler:** A deterministic tool that generates executable Consensus-SpecTec definitions for the complete state-transition specification through Gloas.
+2. **Transpiler compatibility linter:** A tool that checks the Python consensus specification against the transpiler's translation rules and reports the source location and reason for any incompatible construct.
+3. **Documentation** of the translation rules, pinned consensus-spec versions, and known limitations.
 
 ### 5.2 Evaluation
 
-The project will primarily evaluate whether the transpiler can:
-
-- generate Consensus-SpecTec from the supported parts of the Python consensus specification
-- reproduce the relevant Consensus-SpecTec definitions available for Capella and Deneb and
-- remain reusable when applied to subsequent forks such as Electra, Fulu, and Gloas.
-
-The main evaluation goal is to determine whether a **single transpiler can be maintained and reused across successive Ethereum consensus forks**.
+1. **Compatibility:** Run both tools on each pinned fork from Capella through Gloas. Transpilation must be successful, and the linter must report no incompatibilities.
+2. **Behavioral equivalence:** Differential test the generated Consensus-SpecTec definitions against the corresponding Python specifications on the same inputs, comparing returned values and resulting states and checking that Python failure conditions correspond to explicit SpecTec rejection premises. Handwritten Capella and Deneb definitions from SpecTrum serve as additional references.
 
 ---
 
