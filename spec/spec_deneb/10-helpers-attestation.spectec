@@ -134,6 +134,7 @@ def $target_flag_list(bool_matching_target)
   = [ $TIMELY_TARGET_FLAG_INDEX ]
   ;; Removed in [Deneb]
   ;;-- if $(uint64_inclusion_delay <= $SLOTS_PER_EPOCH)
+  -- if bool_matching_target
 def $target_flag_list(_) = eps
   -- otherwise
 dec $head_flag_list(bool, uint64) : nat*
@@ -141,6 +142,7 @@ dec $head_flag_list(bool, uint64) : nat*
 def $head_flag_list(bool_matching_head, uint64_inclusion_delay)
   = [ $TIMELY_HEAD_FLAG_INDEX ]
   -- if $(uint64_inclusion_delay = $MIN_ATTESTATION_INCLUSION_DELAY)
+  -- if bool_matching_head
 def $head_flag_list(_, _) = eps
   -- otherwise
 
