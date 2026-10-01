@@ -75,6 +75,9 @@ builtin dec $range(nat) : nat*
 ;; enumerate
 builtin dec $enumerate_<X>(X*) : enumerated_<X>*
 
+;; first position of an element (python list.index); fails if absent
+builtin dec $index_of_<X>(X*, X) : nat
+
 
 ;; --- byte utils ---
 builtin dec $bytes_to_uint64(bytes32) : uint64
