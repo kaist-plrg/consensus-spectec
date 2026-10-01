@@ -16,3 +16,17 @@ relation Add_each:
 rule Add_each:
   x*; y* |- z*
   -- (Add: x; y |- z)*
+
+relation Identity:
+  nat* |- nat*
+  hint(input %0)
+
+rule Identity:
+  x* |- x*
+
+relation Identity_nested:
+  nat** |- nat**
+  hint(input %0)
+
+rule Identity_nested:
+  x** |- x**
