@@ -91,7 +91,7 @@ let rec trace_of_failtrace (failtrace : Common.Attempt.failtrace) =
   in
   {
     region = failtrace.region;
-    message = failtrace.message;
+    message = failtrace.message ();
     children = List.map trace_of_failtrace children;
   }
 

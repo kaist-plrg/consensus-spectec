@@ -210,7 +210,7 @@ clean-fixture:
 #
 #   make test            - quick + new p4 il/sl/pl
 
-.PHONY: test test-quick test-elab test-elab-pos test-elab-neg test-interp-relation test-interp-neg test-cli test-lsp test-struct test-annotate test-roundtrip-il test-roundtrip-el test-parsegen test-package test-bytesv test-instrumentation test-testgen-checkpoint test-dep
+.PHONY: test test-quick test-elab test-elab-pos test-elab-neg test-interp-relation test-attempt test-interp-neg test-cli test-lsp test-struct test-annotate test-roundtrip-il test-roundtrip-el test-parsegen test-package test-bytesv test-instrumentation test-testgen-checkpoint test-dep
 .PHONY: test-il test-il-pos test-il-neg
 .PHONY: test-sl test-sl-pos test-sl-neg
 .PHONY: test-pl test-pl-pos test-pl-neg
@@ -250,6 +250,9 @@ test-elab-neg:
 test-interp-relation:
 	@echo "#### Running interpreter relation tests"
 	@$(DUNE) build @spectec/test/interp/relation/runtest --profile=release && echo OK
+
+test-attempt:
+	@$(DUNE) build @spectec/test/attempt/runtest --profile=release
 
 test-interp-neg:
 	@echo "#### Running interpreter negative tests (per-case impty IL corpus)"
@@ -345,7 +348,7 @@ test-pl-pos-old:
 test-pl-neg-old:
 	$(call run_interp_test,p4-old,pl,neg)
 
-test-quick: test-elab test-elab-pos test-elab-neg test-interp-relation test-interp-neg test-cli test-lsp test-struct test-annotate test-roundtrip-il test-roundtrip-el test-impty test-miniml test-parsegen test-package test-bytesv test-instrumentation test-testgen-checkpoint
+test-quick: test-elab test-elab-pos test-elab-neg test-interp-relation test-attempt test-interp-neg test-cli test-lsp test-struct test-annotate test-roundtrip-il test-roundtrip-el test-impty test-miniml test-parsegen test-package test-bytesv test-instrumentation test-testgen-checkpoint
 	@echo "#### Quick tests passed"
 
 test-il: test-il-pos test-il-neg

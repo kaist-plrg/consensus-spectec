@@ -68,6 +68,15 @@ let rec assign_exp (ctx : Ctx.t) (exp : exp) (value : value) : Ctx.t =
           vars
       in
       Ctx.add_values ctx bindings
+  | ( IterE
+        ({ it = VarE id_exp; _ }, (List, [ { varid = id; typ; iters = [] } ])),
+      ListV values )
+    when id_exp.it = id.it ->
+      let value_sub =
+        let typ = Lang.Il.Typ.iterate typ [ List ] in
+        values |> Value.Make.list typ.it |> VH.on_derived ~source:value
+      in
+      Ctx.add_value ctx (id, [ List ]) value_sub
   | IterE (exp, (List, vars)), ListV values ->
       (* Map over the value list elements,
          and assign each value to the iterated expression *)
@@ -885,10 +894,14 @@ and eval_iter_exp (note : typ') (ctx : Ctx.t) (exp : exp) (iterexp : iterexp) :
     let value_res = VH.on_combined ~sources value_res in
     (ctx, value_res)
   in
-  let iter, vars = iterexp in
-  match iter with
-  | Opt -> eval_iter_exp_opt note ctx exp vars
-  | List -> eval_iter_exp_list note ctx exp vars
+  match (iterexp, exp.it) with
+  | (List, [ { varid; iters = []; _ } ]), VarE id when id.it = varid.it ->
+      let source = Ctx.find_value ctx (varid, [ List ]) in
+      let value_res = Value.get_list source |> Value.Make.list note in
+      let value_res = VH.on_combined ~sources:[ source ] value_res in
+      (ctx, value_res)
+  | (Opt, vars), _ -> eval_iter_exp_opt note ctx exp vars
+  | (List, vars), _ -> eval_iter_exp_list note ctx exp vars
 
 (* Argument evaluation *)
 
@@ -1326,9 +1339,9 @@ and invoke_rel (ctx : Ctx.t) (id : id) (values_input : value list) :
               (* Try evaluating the rule *)
               let result =
                 attempt_rule' ctx_local prems exps_output
-                |> nest id.at
-                     (F.asprintf "application of rule %s/%s failed" id.it
-                        id_rule.it)
+                |> nest id.at (fun () ->
+                       F.asprintf "application of rule %s/%s failed" id.it
+                         id_rule.it)
               in
               Instrumentation.Dispatcher.emit
                 (Events.Rule_exit
@@ -1367,7 +1380,8 @@ and invoke_rel (ctx : Ctx.t) (id : id) (values_input : value list) :
       let conclusion = Mode.fill reltyp.it ~ins:values_input ~outs in
       Events.Rel_exit
         { id = id.it; at = id.at; success = Result.is_ok result; conclusion });
-  result |> nest id.at (F.asprintf "invocation of relation %s failed" id.it)
+  result
+  |> nest id.at (fun () -> F.asprintf "invocation of relation %s failed" id.it)
 
 (* Invoke a function *)
 
@@ -1453,9 +1467,9 @@ and invoke_func (ctx : Ctx.t) (id : id) (targs : targ list) (args : arg list) :
               (* Try evaluating the clause *)
               let result =
                 attempt_clause' ctx_local prems exp_output
-                |> nest id.at
-                     (F.asprintf "application of clause %s%s failed" id.it
-                        (Print.string_of_args args_input))
+                |> nest id.at (fun () ->
+                       F.asprintf "application of clause %s%s failed" id.it
+                         (Print.string_of_args args_input))
               in
               Instrumentation.Dispatcher.emit
                 (Events.Clause_exit
@@ -1525,11 +1539,11 @@ and invoke_func (ctx : Ctx.t) (id : id) (targs : targ list) (args : arg list) :
   Instrumentation.Dispatcher.emit
     (Events.Func_exit { id = id.it; at = id.at; output });
   result
-  |> nest id.at
-       (F.asprintf "invocation of function %s%s%s failed"
-          (Print.string_of_defid id)
-          (Print.string_of_targs targs)
-          (Print.string_of_args args))
+  |> nest id.at (fun () ->
+         F.asprintf "invocation of function %s%s%s failed"
+           (Print.string_of_defid id)
+           (Print.string_of_targs targs)
+           (Print.string_of_args args))
 
 (* Load definitions into the context *)
 
