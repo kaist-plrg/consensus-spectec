@@ -944,10 +944,10 @@ and infer_sub_exp (ctx : Ctx.t) (exp : exp) (plaintyp : plaintyp) :
 and elab_exp (ctx : Ctx.t) (typ_il_expect : Il.typ) (exp : exp) :
     (Ctx.t * Il.exp) attempt =
   elab_exp' ctx typ_il_expect exp
-  |> nest exp.at
-       (Format.asprintf "elaboration of expression %s as type %s failed"
-          (El.Unparse.string_of_exp exp)
-          (Il.Print.string_of_typ typ_il_expect))
+  |> nest exp.at (fun () ->
+         Format.asprintf "elaboration of expression %s as type %s failed"
+           (El.Unparse.string_of_exp exp)
+           (Il.Print.string_of_typ typ_il_expect))
 
 and elab_exp' (ctx : Ctx.t) (typ_il_expect : Il.typ) (exp : exp) :
     (Ctx.t * Il.exp) attempt =
