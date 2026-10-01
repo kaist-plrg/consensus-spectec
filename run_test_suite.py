@@ -23,6 +23,7 @@ import filecmp
 import hashlib
 import subprocess
 import argparse
+import importlib
 import glob
 import tempfile
 import shutil
@@ -378,12 +379,10 @@ class TestRunner:
         try:
             from eth2spec.utils.ssz.ssz_impl import deserialize
 
-            if self.fork == "deneb":
-                from eth2spec.deneb import mainnet as spec
-            elif self.fork == "capella":
-                from eth2spec.capella import mainnet as spec
-            else:
-                raise ValueError(f"Unsupported fork: {self.fork}")
+            try:
+                spec = importlib.import_module(f"eth2spec.{self.fork}.mainnet")
+            except ModuleNotFoundError as e:
+                raise ValueError(f"Unsupported fork: {self.fork} ({e})") from e
 
             with open(pre_ssz, 'rb') as f:
                 state_data = f.read()
@@ -1289,7 +1288,6 @@ def main():
         "--fork", "--fork-version",
         dest="fork",
         default="deneb",
-        choices=["deneb", "capella"],
         help="Fork name to use (default: deneb). Spec files will be loaded from spec/spec_{fork}/"
     )
     parser.add_argument(
@@ -1338,7 +1336,7 @@ def main():
         converter_dir = Path(args.converter_dir).resolve()
     else:
         script_dir = Path(__file__).parent.resolve()
-        converter_dir = script_dir
+        converter_dir = script_dir / "Converter"
 
     spectec_bin = None
     if not args.eth2spec_only:
