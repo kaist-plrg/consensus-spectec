@@ -3,7 +3,7 @@ open Source
 (* Backtracking *)
 
 (* [Guard] marks an applicability-guard failure: the rule did not apply. *)
-type failtrace = { region : region; message : string; kind : kind }
+type failtrace = { region : region; message : unit -> string; kind : kind }
 and kind = Failed of failtrace list | Guard
 
 type 'a attempt = ('a, failtrace list) result
@@ -17,10 +17,10 @@ let rec depth (failtrace : failtrace) : int =
 
 (* Constructors *)
 let fail (at : region) (msg : string) : 'a attempt =
-  Error [ { region = at; message = msg; kind = Failed [] } ]
+  Error [ { region = at; message = (fun () -> msg); kind = Failed [] } ]
 
 let fail_guard (at : region) (msg : string) : 'a attempt =
-  Error [ { region = at; message = msg; kind = Guard } ]
+  Error [ { region = at; message = (fun () -> msg); kind = Guard } ]
 
 (* Fail with no messages *)
 let fail_silent : 'a attempt = Error []
@@ -46,7 +46,7 @@ let rec choice = function
           | Error failtraces_t -> Error (failtraces_h @ failtraces_t)))
 
 (* Nest failtraces within a new failure message *)
-let nest at msg attempt =
+let nest at (msg : unit -> string) attempt =
   match attempt with
   | Ok a -> Ok a
   | Error failtraces ->
