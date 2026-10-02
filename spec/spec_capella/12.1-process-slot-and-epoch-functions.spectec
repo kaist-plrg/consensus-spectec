@@ -142,7 +142,7 @@ rule ProcessRegistryUpdates:
   -- if $sort_<(epoch, validatorIndex)>((epoch_elg, vid_elg)*) =
          (_, vid_activation_queue)*
   ;; 3. dequeue validators up to the churn limit for activation
-  -- if vid_activation_queue*[0:$get_validator_churn_limit(state_1)] = vid_dequeued*
+  -- if $take_prefix(vid_activation_queue*, $get_validator_churn_limit(state_1)) = vid_dequeued*
   -- ApplyActivations:
       state_1 '.' VALIDATORS `[ vid_dequeued* `] '.' ACTIVATION_EPOCH ~>* state_out
 

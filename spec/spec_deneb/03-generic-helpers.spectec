@@ -60,6 +60,13 @@ def $max_uint64(x, y) = x
 def $max_uint64(x, y) = y
   -- otherwise
 
+;; Python slice semantics for queue[:n]: clamps to the list length
+dec $take_prefix(validatorIndex*, nat) : validatorIndex*
+def $take_prefix(vid*, n) = vid*[0:n]
+  -- if $(n <= |vid*|)
+def $take_prefix(vid*, n) = vid*
+  -- otherwise
+
 ;; min for uint64
 dec $min_uint64(uint64, uint64) : uint64
 def $min_uint64(x, y) = x
