@@ -92,6 +92,22 @@ let unparse ~spec:_ values =
           "<json print error: " ^ Interface.JSON.Print.string_of_error e ^ ">")
   | _ -> "<multiple values>"
 
+let save_state filename values =
+  match values with
+  | [ state ] -> (
+      match Interface.JSON.Print.value_to_json state with
+      | Ok json -> (
+          try
+            Yojson.Safe.to_file filename json;
+            Ok ()
+          with Sys_error msg -> Error (Runner.Error.TaskOutputError msg))
+      | Error err ->
+          Error
+            (Runner.Error.TaskOutputError
+               (Interface.JSON.Print.string_of_error err)))
+  | _ ->
+      Error (Runner.Error.TaskOutputError "task must return exactly one state")
+
 (* Expectation filter for collecting tests *)
 type expectation_filter = All | PositiveOnly | NegativeOnly
 
