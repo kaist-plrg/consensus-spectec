@@ -104,7 +104,7 @@ jobs:
       # schema and library on every type, then SpecTec values through the builtins
       - name: Check SSZ roots against the ssz_static vectors
         run: |
-          for preset in mainnet; do
+          for preset in minimal mainnet; do
             make download-fixture SPEC_TESTS_PRESET=$preset SPEC_TESTS_SUITES=ssz_static
             uv run --project consensus-specs --no-sync python spec/ssz/build_static.py Converter/OfficialTestSuite $preset "$RUNNER_TEMP/ssz_static"
             for fork in capella deneb; do
