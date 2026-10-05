@@ -10,11 +10,6 @@ let load_spec source =
   let henv = Spectec.henv_with_il_spec henv spec_il in
   Ok (filenames, spec_il, henv)
 
-let resolve_source ~cli ~config ~default_dir =
-  match cli with
-  | Some source -> source
-  | None -> Option.value config ~default:(Spec_source.Dir default_dir)
-
 let make_task (module Tgt : Spectec.Target.S) ~name ~summary
     (module TC : Task_cli.S) =
   let cmd =
@@ -27,6 +22,10 @@ let make_task (module Tgt : Spectec.Target.S) ~name ~summary
     and verbose = flag "-v" no_arg ~doc:" verbose output"
     and batch_mode = Cli_args.Batch.mode_flag
     and batch_dir = Cli_args.Batch.dir_flag
+    and output =
+      match TC.Task.save_output with
+      | None -> return None
+      | Some _ -> flag "--output" (optional string) ~doc:"FILE save task output"
     and input = TC.flags
     and config = Cli_args.Interpreter.config_flags
     and color = Cli_args.Output.color_flag in
@@ -36,10 +35,18 @@ let make_task (module Tgt : Spectec.Target.S) ~name ~summary
       @@ fun () ->
       let ansi = resolve_ansi color in
       let open Spectec in
+      let* () =
+        if Option.is_some output && (batch_mode || Option.is_some batch_dir)
+        then
+          Error
+            (Error.ConfigError
+               (Common.Source.no_region, "--output requires a single input"))
+        else Ok ()
+      in
       let* () = validate_config config ~mode in
       let* cfg = Config_file.load ~target:Tgt.name () in
       let source =
-        resolve_source ~cli:cli_source ~config:cfg.Config_file.spec_source
+        Spec_source.resolve ~cli:cli_source ~config:cfg.Config_file.spec_source
           ~default_dir:Tgt.spec_dir
       in
       let* _files, spec_il, henv = load_spec source in
@@ -48,7 +55,7 @@ let make_task (module Tgt : Spectec.Target.S) ~name ~summary
       | false, None ->
           Batch.run_and_print_single
             (module TC.Task)
-            ~config ~mode ~spec_il input
+            ~config ?output ~mode ~spec_il input
       | true, None ->
           Batch.run_and_print_batch
             (module TC.Task)
@@ -76,7 +83,7 @@ let make_parse (module Tgt : Spectec.Target.S) ~name ~summary
       let open Spectec in
       let* cfg = Config_file.load ~target:Tgt.name () in
       let source =
-        resolve_source ~cli:cli_source ~config:cfg.Config_file.spec_source
+        Spec_source.resolve ~cli:cli_source ~config:cfg.Config_file.spec_source
           ~default_dir:Tgt.spec_dir
       in
       let* _files, spec_il, _henv = load_spec source in
@@ -135,7 +142,7 @@ let make_batch ?on_no_validate ?slot_gap_filter (module Tgt : Spectec.Target.S)
       let* () = validate_config config ~mode in
       let* cfg = Config_file.load ~target:Tgt.name () in
       let source =
-        resolve_source ~cli:cli_source ~config:cfg.Config_file.spec_source
+        Spec_source.resolve ~cli:cli_source ~config:cfg.Config_file.spec_source
           ~default_dir:Tgt.spec_dir
       in
       let* spec_files, spec_il, henv = load_spec source in
@@ -206,7 +213,7 @@ let make_checkpoint (module Tgt : Spectec.Target.S) ~name =
       guard_unit ~color @@ fun () ->
       let* cfg = Config_file.load ~target:Tgt.name () in
       let source =
-        resolve_source ~cli:None ~config:cfg.Config_file.spec_source
+        Spec_source.resolve ~cli:None ~config:cfg.Config_file.spec_source
           ~default_dir:Tgt.spec_dir
       in
       let* spec_files, spec_il, _henv = load_spec source in

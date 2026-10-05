@@ -40,7 +40,7 @@ class TestRunner:
         converter_dir: str,
         spectec_bin: str = None,
         spec_dir: str = None,
-        run_mode: str = "run-il",
+        run_mode: str = "il",
         workflow: str = "independent",
         fork: str = "deneb",
     ):
@@ -48,14 +48,16 @@ class TestRunner:
         Args:
             converter_dir: Converter 디렉터리 경로
             spectec_bin: Spectec 실행 파일 경로
-            spec_dir: spec 파일들이 있는 디렉터리 (기본값: spectec-core/spec/spec_{fork})
-            run_mode: 실행 모드 ("run-il" 또는 "run-sl", 기본값: "run-il")
+            spec_dir: spec 파일들이 있는 디렉터리 (기본값: Converter/../spec/spec_{fork})
+            run_mode: 실행 모드 ("il", "sl", "pl", 기본값: "il")
             workflow: 테스트 워크플로우 모드 ("independent" 또는 "sequential", 기본값: "independent")
             fork: 사용할 fork 이름 (예: "deneb", "capella", 기본값: "deneb")
         """
         self.converter_dir = Path(converter_dir).resolve()
         self.spectec_bin = Path(spectec_bin).resolve() if spectec_bin else None
         self.run_mode = run_mode
+        if run_mode not in ("il", "sl", "pl"):
+            raise ValueError(f"Unknown interpreter mode: {run_mode}")
         self.workflow = workflow
         self.fork = fork
         
@@ -63,10 +65,7 @@ class TestRunner:
         if spec_dir:
             self.spec_dir = Path(spec_dir).resolve()
         else:
-            # spectec-core/spec 디렉터리 찾기
-            spectec_core = self.converter_dir.parent
-            # spec_deneb 또는 spec_capella 같은 하위 디렉터리 사용
-            self.spec_dir = spectec_core / "spec" / f"spec_{fork}"
+            self.spec_dir = self.converter_dir.parent / "spec" / f"spec_{fork}"
         
         # 스크립트 경로들
         self.ssz_to_json_script = self.converter_dir / "SSZToJson" / "SSZToJson.py"
@@ -74,7 +73,6 @@ class TestRunner:
         self.eth2spec_result = self.converter_dir / "eth2specResult.py"
         
         # consensus-specs 경로 (eth2specResult.py에서 사용)
-        # converter_dir이 Converter/이면, parent는 spectec-core/, 그 아래에 consensus-specs가 있음
         consensus_specs = self.converter_dir.parent / "consensus-specs"
         self.consensus_specs_path = consensus_specs / "tests" / "core" / "pyspec"
     
@@ -245,51 +243,25 @@ class TestRunner:
     def run_spectec(self, pre_json: Path, block_json: Path, output_json: Path, verbose: bool = False) -> Tuple[bool, Optional[str]]:
         """Spectec 프로그램을 실행합니다."""
         try:
-            # spec 파일 찾기 및 파일명 순서대로 정렬
-            # 하위 디렉터리도 재귀적으로 검색 (spec_deneb, spec_capella 등)
-            spec_files = sorted(self.spec_dir.rglob("*.spectec"), key=lambda f: f.name)
-            if not spec_files:
-                return False, f"No .spectec files found in {self.spec_dir}"
-            
-            # spectec-core 디렉터리를 작업 디렉터리로 설정
-            spectec_core_dir = self.spectec_bin.parent
-            
-            # 상대 경로로 변환 (spectec-core 디렉터리 기준)
-            try:
-                pre_json_rel = pre_json.relative_to(spectec_core_dir)
-                block_json_rel = block_json.relative_to(spectec_core_dir)
-                output_json_rel = output_json.relative_to(spectec_core_dir)
-                # spec_deneb/00-types.spectec 같은 형태로 변환
-                spec_args = [str(f.relative_to(spectec_core_dir)) for f in spec_files]
-            except ValueError:
-                # 상대 경로로 변환할 수 없으면 절대 경로 사용
-                pre_json_rel = pre_json
-                block_json_rel = block_json
-                output_json_rel = output_json
-                spec_args = [str(f) for f in spec_files]
-            
-            # 출력 디렉터리 생성
+            pre_json = pre_json.resolve()
+            block_json = block_json.resolve()
+            output_json = output_json.resolve()
             output_json.parent.mkdir(parents=True, exist_ok=True)
-            
-            # spectec-core 디렉터리 기준으로 실행 파일 경로
-            spectec_bin_rel = f"./{self.spectec_bin.name}"  # ./spectec-core
-            
             cmd = [
-                spectec_bin_rel,
-                self.run_mode
-            ] + spec_args + [
-                "--pre", str(pre_json_rel),
-                "--block", str(block_json_rel),
-                "-o", str(output_json_rel)
+                str(self.spectec_bin), "ethereum", "run", "state-transition",
+                "--spec-dir", str(self.spec_dir),
+                "--pre", str(pre_json),
+                "--block", str(block_json),
+                "--output", str(output_json),
             ]
+            if self.run_mode != "il":
+                cmd.append(f"--{self.run_mode}")
             
             if verbose:
                 print(f"    Command: {' '.join(cmd)}")
-                print(f"    Working directory: {spectec_core_dir}")
             
             result = subprocess.run(
                 cmd,
-                cwd=str(spectec_core_dir),  # 작업 디렉터리를 spectec-core로 설정
                 capture_output=True,
                 text=True,
                 check=True,
@@ -1273,7 +1245,7 @@ def main():
     parser.add_argument(
         "--spectec-bin",
         required=False,
-        help="Path to Spectec binary (e.g., ./spectec-core). Required unless --eth2spec-only is used."
+        help="Path to Spectec binary (e.g., ./spectecx). Required unless --eth2spec-only is used."
     )
     parser.add_argument(
         "--converter-dir",
@@ -1283,7 +1255,7 @@ def main():
     parser.add_argument(
         "--spec-dir",
         default=None,
-        help="Path to spec directory containing .spectec files (default: spectec-core/spec/spec_{fork})"
+        help="Path to spec directory containing .spectec files (default: Converter/../spec/spec_{fork})"
     )
     parser.add_argument(
         "--fork", "--fork-version",
@@ -1310,9 +1282,9 @@ def main():
     )
     parser.add_argument(
         "--run-mode",
-        default="run-il",
-        choices=["run-il", "run-sl"],
-        help="Execution mode: run-il or run-sl (default: run-il)"
+        default="il",
+        choices=["il", "sl", "pl"],
+        help="Interpreter mode (default: il)"
     )
     parser.add_argument(
         "--workflow",
@@ -1358,7 +1330,7 @@ def main():
                 print(f"Note: Found executable at {spectec_bin}")
             else:
                 print(f"Error: Spectec binary path is a directory: {spectec_bin}")
-                print(f"Please provide the path to the executable file, e.g., spectec-core/spectec-core")
+                print("Please provide the path to the executable file, e.g., ./spectecx")
                 sys.exit(1)
 
         if not spectec_bin.is_file():
@@ -1403,4 +1375,3 @@ def main():
 
 if __name__ == "__main__":
     main()
-

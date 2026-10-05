@@ -63,7 +63,7 @@ module Task_common = struct
   let parse_string = Lexer.parse_string
   let source ({ filename; _ } : input) = filename
   let expectation ({ expect; _ } : input) = expect
-  let save_output _ _ = ()
+  let save_output = None
 end
 
 module Eval = struct

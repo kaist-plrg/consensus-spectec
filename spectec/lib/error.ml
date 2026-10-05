@@ -5,6 +5,7 @@ type t =
   | InterpError of Interp.error
   | UnhandledException of string
   | TaskParseError of region * string
+  | TaskOutputError of string
   | RoundtripError of region * string
   | SpecMismatchError of string * string
   | DirectoryError of string
@@ -19,6 +20,8 @@ let to_diagnostics = function
            ("Unhandled exception: " ^ msg))
   | TaskParseError (at, msg) ->
       Diag.Bag.singleton (Diag.error ~source:"task-parse" at msg)
+  | TaskOutputError msg ->
+      Diag.Bag.singleton (Diag.error ~source:"task-output" no_region msg)
   | RoundtripError (at, msg) ->
       Diag.Bag.singleton (Diag.error ~source:"roundtrip" at msg)
   | SpecMismatchError (expected, actual) ->

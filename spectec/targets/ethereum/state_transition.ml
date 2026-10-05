@@ -98,5 +98,24 @@ module StateTransition = struct
   let source { pre_file; _ } = pre_file
   let expectation { expect; _ } = expect
   let format_output _values = "State transition succeeded"
-  let save_output _filename _values = ()
+
+  let save_output =
+    Some
+      (fun filename values ->
+        match values with
+        | [ state ] -> (
+            match Interface.JSON.Print.value_to_json state with
+            | Ok json -> (
+                try
+                  Yojson.Safe.to_file filename json;
+                  Ok ()
+                with Sys_error msg -> Error (Runner.Error.TaskOutputError msg))
+            | Error err ->
+                Error
+                  (Runner.Error.TaskOutputError
+                     (Interface.JSON.Print.string_of_error err)))
+        | _ ->
+            Error
+              (Runner.Error.TaskOutputError
+                 "state transition must return exactly one state"))
 end

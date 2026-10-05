@@ -1,14 +1,15 @@
 open Targets_eth.Eth
 
+let ( let* ) = Result.bind
+
 let render_error error =
   Spectec.Diagnostic.Render.render_bag ~ansi:Spectec.Diagnostic.Ansi.plain
     (Spectec.Error.to_diagnostics error)
 
-let load_spec spec_dir =
-  let files = Spectec.collect_spec_files spec_dir in
-  match Result.bind (Spectec.parse_spec_files files) Spectec.elaborate with
-  | Ok spec -> spec
-  | Error error -> failwith (render_error error)
+let load_spec source =
+  let* files = Cli.Spec_source.files source in
+  let* spec = Spectec.parse_spec_files files in
+  Spectec.elaborate spec
 
 let print_uncovered coverage =
   let uncovered = Runner.Testgen.get_uncovered_premises coverage in
@@ -99,9 +100,7 @@ let command =
   let%map coverage_file =
     flag "--coverage" (required string) ~doc:"FILE coverage checkpoint"
   and test_dir =
-    flag "--test-dir"
-      (optional_with_default test_dir string)
-      ~doc:"DIR original test cases"
+    flag "--test-dir" (optional string) ~doc:"DIR original test cases"
   and output_dir =
     flag "--output"
       (optional_with_default "./testgen_output" string)
@@ -113,7 +112,7 @@ let command =
       ~doc:"FILE premise UIDs, one per line"
   and list_only =
     flag "--list" no_arg ~doc:" list uncovered premises without generating"
-  and verify = flag "--verify" no_arg ~doc:" verify generated tests"
+  and verify = flag "--verify" no_arg ~doc:" request verification (unsupported)"
   and checkpoint_file =
     flag "--checkpoint" (optional string) ~doc:"FILE save generation progress"
   and resume_file =
@@ -133,13 +132,28 @@ let command =
     flag "--max-slot-gap"
       (optional_with_default 32 int)
       ~doc:"N maximum block and state slot gap"
-  and spec_dir =
-    flag "--spec-dir"
-      (optional_with_default Target.spec_dir string)
-      ~doc:"DIR Ethereum specification files"
-  in
+  and cli_source = Cli.Cli_args.Spec.source_flag
+  and color = Cli.Cli_args.Output.color_flag in
   fun () ->
     try
+      Cli.Error_handling.guard_unit ~color @@ fun () ->
+      let* () =
+        if verify then
+          Error
+            (Spectec.Error.ConfigError
+               (Common.Source.no_region, "testgen verification is not supported"))
+        else Ok ()
+      in
+      let* cfg = Cli.Config_file.load ~target:Target.name () in
+      let source =
+        Cli.Spec_source.resolve ~cli:cli_source ~config:cfg.spec_source
+          ~default_dir:Target.spec_dir
+      in
+      let test_dir =
+        match test_dir with
+        | Some dir -> dir
+        | None -> Option.value cfg.batch_dir ~default:Targets_eth.Eth.test_dir
+      in
       let _checkpoint, coverage, _dependency =
         Runner.Testgen.load_checkpoint coverage_file
       in
@@ -149,7 +163,9 @@ let command =
             (result.prem_to_uid, result.uid_to_prem)
       | None ->
           Format.eprintf "Warning: checkpoint has no premise coverage data\n%!");
-      if list_only then ignore (print_uncovered coverage)
+      if list_only then (
+        ignore (print_uncovered coverage);
+        Ok ())
       else
         let file_uids =
           match premises_file with
@@ -160,10 +176,11 @@ let command =
         if target_uids = [] then (
           Format.printf
             "No premise UIDs specified. Use --premises or --premises-file.\n%!";
-          ignore (print_uncovered coverage))
-        else (
+          ignore (print_uncovered coverage);
+          Ok ())
+        else
+          let* spec = load_spec source in
           if not (Sys.file_exists output_dir) then Unix.mkdir output_dir 0o755;
-          let spec = load_spec spec_dir in
           initialize_static spec;
           let results =
             Runner.Testgen.generate_tests_with_checkpoint ~test_dir ~output_dir
@@ -172,9 +189,7 @@ let command =
               (analyze_test_case ~spec ~test_dir)
           in
           ignore results;
-          if verify then
-            Format.printf
-              "Verification is not implemented for test-case-centric mode\n%!")
+          Ok ()
     with exn ->
       Format.eprintf "Error: %s\n%!" (Printexc.to_string exn);
       exit 1

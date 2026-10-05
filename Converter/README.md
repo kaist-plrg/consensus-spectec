@@ -156,39 +156,45 @@ Automatically runs the complete workflow for official test suites.
 
 **Usage:**
 
+Run the test-suite commands from the repository root.
+
 ```bash
-python run_test_suite.py <test_suite_dir> --spectec-bin <spectec_binary> [options]
+python run_test_suite.py <test_suite_dir> --converter-dir Converter --spectec-bin <spectec_binary> [options]
 
 # Examples (independent mode, default, using Deneb fork)
-python run_test_suite.py Converter/OfficialTestSuite/deneb/random --spectec-bin ../spectec-core
-python run_test_suite.py Converter/OfficialTestSuite/deneb/sanity/blocks --spectec-bin ../spectec-core --verbose
+python run_test_suite.py Converter/OfficialTestSuite/deneb/random --converter-dir Converter --spectec-bin ./spectecx
+python run_test_suite.py Converter/OfficialTestSuite/deneb/sanity/blocks --converter-dir Converter --spectec-bin ./spectecx --verbose
 
 # Examples (using Capella fork)
-python run_test_suite.py Converter/OfficialTestSuite/capella/random --spectec-bin ../spectec-core --fork capella
-python run_test_suite.py Converter/OfficialTestSuite/capella/sanity/blocks --spectec-bin ../spectec-core --fork capella --verbose
+python run_test_suite.py Converter/OfficialTestSuite/capella/random --converter-dir Converter --spectec-bin ./spectecx --fork capella
+python run_test_suite.py Converter/OfficialTestSuite/capella/sanity/blocks --converter-dir Converter --spectec-bin ./spectecx --fork capella --verbose
 
 # Examples (sequential mode, v2-style chained execution)
-python run_test_suite.py Converter/OfficialTestSuite/deneb/random --spectec-bin ../spectec-core --workflow sequential
-python run_test_suite.py Converter/OfficialTestSuite/deneb/sanity/blocks --spectec-bin ../spectec-core --workflow sequential --verbose
+python run_test_suite.py Converter/OfficialTestSuite/deneb/random --converter-dir Converter --spectec-bin ./spectecx --workflow sequential
+python run_test_suite.py Converter/OfficialTestSuite/deneb/sanity/blocks --converter-dir Converter --spectec-bin ./spectecx --workflow sequential --verbose
 
 # Examples with custom output directory
-python run_test_suite.py Converter/OfficialTestSuite/deneb/random --spectec-bin ../spectec-core --output-dir custom_results
-python run_test_suite.py Converter/OfficialTestSuite/deneb/sanity/blocks --spectec-bin ../spectec-core --workflow sequential --output-dir ./my_test_results --verbose
+python run_test_suite.py Converter/OfficialTestSuite/deneb/random --converter-dir Converter --spectec-bin ./spectecx --output-dir custom_results
+python run_test_suite.py Converter/OfficialTestSuite/deneb/sanity/blocks --converter-dir Converter --spectec-bin ./spectecx --workflow sequential --output-dir ./my_test_results --verbose
 ```
 
 **Required Arguments:**
+
 - `test_suite`: Test suite directory (e.g., `Converter/OfficialTestSuite/deneb/random` or `Converter/OfficialTestSuite/capella/sanity/blocks`)
-- `--spectec-bin`: Path to Spectec executable (e.g., `../spectec-core`)
+- `--spectec-bin`: Path to Spectec executable, such as `./spectecx`.
 
 **Optional Arguments:**
+
 - `--converter-dir <dir>`: Path to Converter directory (default: auto-detect from script location)
-- `--spec-dir <dir>`: Path to spec files directory (default: `spectec-core/spec/spec_{fork}`). If not specified, automatically uses the fork-specific directory based on `--fork` option.
+- `--spec-dir <dir>`: Path to spec files. The default is `spec/spec_{fork}` under the parent of the Converter directory.
 - `--fork <fork>`: Fork name to use (`deneb` or `capella`, default: `deneb`). Spec files will be loaded from `spec/spec_{fork}/` directory.
 - `--output-dir <dir>`: Output directory for test results (default: `test_suite/_results`). All intermediate files (SSZ, JSON) and comparison results are saved here. Example: `--output-dir custom_results` or `--output-dir ./my_test_results`
 - `--filter <name>`: Filter test cases by name (e.g., `randomized_0`)
 - `-v, --verbose`: Verbose output
-- `--run-mode <mode>`: Execution mode (`run-il` or `run-sl`, default: `run-il`)
- - `--workflow <mode>`: Test workflow mode (`independent` or `sequential`, default: `independent`)
+- `--run-mode <mode>`: Interpreter mode. Accepts `il`, `sl`, or `pl`, defaulting to `il`.
+- `--workflow <mode>`: Test workflow mode (`independent` or `sequential`, default: `independent`)
+
+Use `--run-mode il` for the Capella and Deneb specifications. Structuring these specifications for SL or PL fails on definitions with multiple `otherwise` clauses.
 
 **Output:**
 - Intermediate and result files created in work directory for each test case
@@ -315,18 +321,21 @@ cmp -s pre.ssz pre_converted.ssz && echo identical || echo different
 ```
 
 ### Complete Test Suite Workflow
+
+Run these commands from the repository root.
+
 ```bash
 # Run complete test suite (automated workflow, using Deneb by default)
-python run_test_suite.py Converter/OfficialTestSuite/deneb/random --spectec-bin ../spectec-core --verbose
+python run_test_suite.py Converter/OfficialTestSuite/deneb/random --converter-dir Converter --spectec-bin ./spectecx --verbose
 
 # Run with Capella fork
-python run_test_suite.py Converter/OfficialTestSuite/capella/random --spectec-bin ../spectec-core --fork capella --verbose
+python run_test_suite.py Converter/OfficialTestSuite/capella/random --converter-dir Converter --spectec-bin ./spectecx --fork capella --verbose
 
 # Run with specific test filter
-python run_test_suite.py Converter/OfficialTestSuite/deneb/sanity/blocks --spectec-bin ../spectec-core --filter randomized_0
+python run_test_suite.py Converter/OfficialTestSuite/deneb/sanity/blocks --converter-dir Converter --spectec-bin ./spectecx --filter randomized_0
 
 # Run with custom output directory
-python run_test_suite.py Converter/OfficialTestSuite/deneb/random --spectec-bin ../spectec-core --output-dir custom_results
+python run_test_suite.py Converter/OfficialTestSuite/deneb/random --converter-dir Converter --spectec-bin ./spectecx --output-dir custom_results
 ```
 
 ### eth2spec State Transition

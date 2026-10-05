@@ -5,6 +5,12 @@
   (package spectec-target-impty)
   (package spectec-target-miniml)
   (package spectec-target-p4)
+  ../dep_pos/pre.json.gz
+  ../dep_pos/block.json
+  ../../../run_test_suite.py
+  ../../../Converter/snappy_decompressor.py
+  ../testgen_checkpoint/main.exe
+  (source_tree ../../../spec/spec_capella)
   (source_tree ../../specs/impty)
   (source_tree ../../specs/miniml)
   (source_tree ../../testdata/interp/impty)

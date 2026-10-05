@@ -63,7 +63,7 @@ module type S = sig
   val collect : ?dir:string -> unit -> input list
 
   val format_output : Il.Value.t list -> string
-  val save_output : string -> Il.Value.t list -> unit
+  val save_output : (string -> Il.Value.t list -> unit result) option
 end
 
 (** Existential wrapper for heterogeneous tasks *)

@@ -75,5 +75,5 @@ module Slots = struct
   let source { pre_file; _ } = pre_file
   let expectation { expect; _ } = expect
   let format_output _values = "Sanity slots processed"
-  let save_output _filename _values = ()
+  let save_output = None
 end

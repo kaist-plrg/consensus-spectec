@@ -386,7 +386,7 @@ let run_batch_with_outcomes (type i) (module T : Task.S with type input = i)
 (* --- Composed run + print --- *)
 
 let run_and_print_single (type i) (module T : Task.S with type input = i)
-    ?config ~mode ~spec_il (input : i) =
+    ?config ?output ~mode ~spec_il (input : i) =
   let outcome =
     run_with_outcome_with_instrumentation
       (module T)
@@ -394,6 +394,17 @@ let run_and_print_single (type i) (module T : Task.S with type input = i)
   in
   match outcome with
   | Task.Pass values | Task.UnexpectedPass values ->
+      let ( let* ) = Result.bind in
+      let* () =
+        match (output, T.save_output) with
+        | None, _ -> Ok ()
+        | Some filename, Some save -> save filename values
+        | Some _, None ->
+            Error
+              (ConfigError
+                 ( Common.Source.no_region,
+                   "output is not supported for " ^ T.name ))
+      in
       Format.printf "%s\n" (T.format_output values);
       Ok ()
   | Task.Fail err | Task.ExpectedFail err -> Error err

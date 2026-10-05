@@ -183,7 +183,7 @@ module Typecheck = struct
   let source { filename; _ } = filename
   let expectation { expect; _ } = expect
   let format_output _values = "Typechecker succeeded"
-  let save_output _filename _values = ()
+  let save_output = None
 end
 
 (* P4 Typechecker task — old spec *)
@@ -226,7 +226,7 @@ module Typecheck_old = struct
   let source { filename; _ } = filename
   let expectation { expect; _ } = expect
   let format_output _values = "Typechecker succeeded"
-  let save_output _filename _values = ()
+  let save_output = None
 end
 
 module Typecheck_cli : Cli.Task_cli.S = struct

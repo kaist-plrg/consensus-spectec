@@ -1,0 +1,33 @@
+syntax key = int
+var k : key
+var n : nat
+
+dec $find_key((nat, key)*, key) : nat
+
+def $find_key((n_h, k_h) :: (n_t, k_t)*, k) = n_h
+  -- if k_h = k
+
+def $find_key((n_h, k_h) :: (n_t, k_t)*, k) = $find_key((n_t, k_t)*, k)
+  -- otherwise
+
+relation Find_key:
+  (nat, key)*; key |- nat
+  hint(input %0 %1)
+
+rule Find_key:
+  (n, k)*; k_query |- $find_key((n, k)*, k_query)
+
+relation As_nat:
+  int |- nat
+  hint(input %0)
+
+rule As_nat:
+  k |- n
+  -- if n = k
+
+relation As_int:
+  nat |- int
+  hint(input %0)
+
+rule As_int:
+  n |- n

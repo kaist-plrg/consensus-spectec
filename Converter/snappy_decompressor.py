@@ -1,8 +1,6 @@
 import sys
 from pathlib import Path
 
-import snappy
-
 
 def decompress(input_file, output_file) -> bool:
     """Decompress a Snappy file, creating the output directory if needed.
@@ -10,6 +8,8 @@ def decompress(input_file, output_file) -> bool:
     Input that does not decompress is written unchanged. Returns False if
     the file could not be read or written.
     """
+    import snappy
+
     try:
         data = Path(input_file).read_bytes()
         # Official vectors use Snappy blocks without a stream identifier,

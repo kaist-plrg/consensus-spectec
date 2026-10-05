@@ -3,7 +3,7 @@
 # ============================================
 
 ARG UBUNTU_VERSION=22.04
-FROM ubuntu:${UBUNTU_VERSION} AS base
+FROM ubuntu:${UBUNTU_VERSION} AS system
 
 # Avoid interactive prompts during package installation
 ARG DEBIAN_FRONTEND=noninteractive
@@ -43,6 +43,28 @@ RUN apt-get update && \
         ca-certificates \
     && apt-get clean \
     && rm -rf /var/lib/apt/lists/*
+
+FROM system AS ocaml
+
+RUN apt-get update && \
+    apt-get install -y opam m4 && \
+    apt-get clean && \
+    rm -rf /var/lib/apt/lists/*
+
+RUN opam init --disable-sandboxing --bare -y && \
+    opam switch create eth-spectec ocaml-base-compiler.5.1.1
+
+WORKDIR /workspace/spectec-core
+COPY *.opam *.opam.locked ./
+RUN opam install --switch=eth-spectec . --deps-only --locked -y
+
+ENV OPAM_SWITCH_PREFIX="/root/.opam/eth-spectec"
+ENV CAML_LD_LIBRARY_PATH="/root/.opam/eth-spectec/lib/stublibs"
+ENV OCAML_TOPLEVEL_PATH="/root/.opam/eth-spectec/lib/toplevel"
+ENV PATH="/root/.opam/eth-spectec/bin:${PATH}"
+
+FROM ocaml AS base
+WORKDIR /workspace
 
 # ============================================
 # Stage 2: Install Rust (for Lighthouse)
@@ -110,39 +132,6 @@ RUN wget -q https://nim-lang.org/download/nim-${NIM_VERSION}-linux_x64.tar.xz &&
     rm -rf /opt/nim/nimcache
 
 ENV PATH="/opt/nim/bin:${PATH}"
-
-# ============================================
-# Stage 7.5: Install OCaml and opam (for Spectec)
-# ============================================
-RUN apt-get update && \
-    apt-get install -y \
-        opam \
-        m4 \
-    && apt-get clean \
-    && rm -rf /var/lib/apt/lists/*
-
-# Initialize opam and create OCaml switch (name must match Makefile SWITCH=eth-spectec)
-# The package list mirrors the (depends ...) stanza of spectec/dune-project; keep the
-# two in sync.
-RUN opam init --disable-sandboxing -y && \
-    opam switch create eth-spectec ocaml-base-compiler.5.1.0 && \
-    eval $(opam env --switch=eth-spectec) && \
-    opam install -y \
-        dune \
-        menhir menhirLib \
-        bignum \
-        bls12-381 bls12-381-signature \
-        core core_unix \
-        digestif \
-        ppx_let \
-        pprint \
-        linol-eio eio_main \
-        yojson bisect_ppx
-
-ENV OPAM_SWITCH_PREFIX="/root/.opam/eth-spectec"
-ENV CAML_LD_LIBRARY_PATH="/root/.opam/eth-spectec/lib/stublibs:/root/.opam/default/lib/stublibs"
-ENV OCAML_TOPLEVEL_PATH="/root/.opam/eth-spectec/lib/toplevel"
-ENV PATH="/root/.opam/eth-spectec/bin:/root/.opam/default/bin:${PATH}"
 
 # ============================================
 # Stage 8: Clone and set up clients
@@ -213,10 +202,9 @@ RUN make _pyspec
 WORKDIR /workspace/spectec-core
 RUN pip3 install --no-cache-dir -r requirements.txt
 
-# Build spectec-core executable
+# Build the checkout launcher
 WORKDIR /workspace/spectec-core
-RUN eval $(opam env) && \
-    make exe
+RUN make exe
 
 # Stage 10: Apply modified code
 # ============================================
@@ -293,7 +281,7 @@ RUN test -f transition.js || test -f transition || echo "Warning: Lodestar trans
 # ============================================
 # Stage 12: Coverage build stage
 # ============================================
-# Note: This stage inherits from base, so spectec-core executable,
+# Note: This stage inherits from base, so the spectecx launcher,
 # consensus-specs (eth2spec), and all other dependencies are already available.
 FROM base AS coverage
 

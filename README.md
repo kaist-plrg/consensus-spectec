@@ -35,16 +35,16 @@ The lockfile (`spectec.opam.locked`) records the exact transitive dependency set
 ### 1. Docker Setup
 
 **Environment:**
+
 - **Base Image:** Ubuntu 22.04 LTS
 - **Requirements:** Docker installed on your system
 - **Platform:** Linux (x86_64), macOS, or Windows with WSL2
-- **Architecture:** the image is `linux/amd64` only. The Go, Nim and JDK
-  installs all resolve amd64 paths, so on Apple Silicon pass
-  `--platform=linux/amd64` and build under emulation.
+- **Architecture:** the client images are `linux/amd64` only. The Go, Nim and JDK installs use amd64 paths, so on Apple Silicon pass `--platform=linux/amd64` and build under emulation.
 
 The Dockerfile provides a reproducible, isolated environment for building and testing all Ethereum 2.0 client implementations (Lighthouse, Prysm, Nimbus, Teku, Lodestar) with coverage instrumentation support.
 
 **What it does:**
+
 1. Installs all required dependencies:
    - Rust (stable + nightly with llvm-tools-preview)
    - Go 1.25.1 (for Prysm)
@@ -53,10 +53,10 @@ The Dockerfile provides a reproducible, isolated environment for building and te
    - Nim 1.6.20 (for Nimbus)
    - Python 3 with dependencies (including snappy for decompression)
    - Coverage tools: lcov, go-bcov, llvm-profdata, JaCoCo, c8
-   - OCaml and build tools (for spectec-core executable)
-2. Sets up the environment for building spectec-core executable:
+   - OCaml 5.1.1 and locked build dependencies (for the spectecx executable)
+2. Sets up the environment for building spectecx executable:
    - Installs OCaml compiler and opam package manager
-   - Configures build environment for spectec-core
+   - Configures build environment for spectecx
 3. Clones and builds client implementations:
    - Lighthouse (v8.0.1)
    - Prysm (v7.0.0)
@@ -82,18 +82,13 @@ docker build --platform=linux/amd64 -t eth2test:base --target base .
 docker build --platform=linux/amd64 -t eth2test:coverage --target coverage .
 ```
 
-On an x86_64 host `--platform=linux/amd64` is a no-op and may be omitted.
+On an x86_64 host `--platform=linux/amd64` is a no-op and may be omitted. The `ocaml` target builds only the system and OCaml dependency layers, without the client toolchains.
 
-The Dockerfile intentionally leaves out the official test vectors to keep the
-image smaller. After building, start a container and run `make download-fixture`
-from `/workspace/spectec-core` before testing (see step 4). Downloaded vectors
-and cached archives disappear when the container is removed unless their parent
-directory, `/workspace/spectec-core/Converter`, is stored in a persistent volume
-or bind mount.
+The Dockerfile leaves out the official test vectors. After building, start a container and run `make download-fixture` from `/workspace/spectec-core` before testing (see step 4). Downloaded vectors and cached archives disappear when the container is removed unless `/workspace/spectec-core/Converter` is stored in a persistent volume or bind mount.
 
 ### 2. Building the Project
 
-**Use spectec-core executable:**
+**Use spectecx executable:**
 
 ```bash
 # Inside the container:
@@ -102,31 +97,34 @@ cd /workspace/spectec-core
 make exe
 ```
 
-This creates an executable `spectec-core` in the project root.
+This creates an executable named `spectecx` in the project root. It runs the local build through the `eth-spectec` switch. Override the switch with `make exe SWITCH=<name>` when needed. The installed command is `spectec`.
+
 ```bash
 # Print IL representation
-./spectec-core elab spec/spec_capella/*.spectec
+./spectecx elab spec/spec_capella/*.spectec
 ```
 
 ### Structure
 
 The SpecTec compiler consists of these main components.
+
 * SpecTec EL is the surface language in which the spec is authored.
 * SpecTec IL (internal language). EL -> IL conversion is called "elaboration". Elaboration makes the spec more algorithmic and unambiguous.
 * SpecTec SL (structured language). IL -> SL conversion is called "structuring". Structuring groups related execution paths into explicit branching with over-approximation. This minimizes backtracking, making the SL interpreter much faster than the IL interpreter.
-* Interpreter backends for IL/SL.
+* Interpreter backends for IL, SL, and PL.
   * Needs to be coupled with a parser that converts an input file into a SpecTec IL value.
 
 Repository layout:
 
 ```
-spectec/lib/lang/        ASTs for el / il / sl / xl
+spectec/lib/lang/        ASTs for EL, IL, SL, PL, and shared syntax
 spectec/lib/pass/        parse, elaborate (EL→IL), structure (IL→SL)
-spectec/lib/interp/      IL and SL interpreters, builtins, target interface
+spectec/lib/interp/      IL, SL, and PL interpreters, builtins, target interface
 spectec/lib/cli/         reusable CLI machinery and target plugin loading
 spectec/lib/spectec.ml   public facade (pipeline + eval + Error/Task/Target)
-spectec/targets/<t>/     per-target code, CLI modules, and plugin registration
-spectec/bin/             target-independent command-line entrypoint
+spectec/targets/<t>/     per-target code, builtins, and upstream target plugins
+spectec/bin/targets/     Ethereum command modules and plugin registration
+spectec/bin/main.ml      command-line entrypoint
 spectec/test/            diff-based test drivers
 spectec/testdata/        test inputs
 ```
@@ -137,31 +135,47 @@ The P4, Mini-ML, and Impty examples require the corresponding target package. Et
 
 ```bash
 # print out the IL representation of a SpecTec spec
-./spectec-core elab spec/*.spectec
+./spectecx elab spec/spec_capella/*.spectec
 # print the SL representation of a SpecTec spec
-./spectec-core struct spec/*.spectec
+./spectecx struct spectec/specs/impty/base/spec.spectec
 
 ## P4-specific commands
 
-# parse a P4 program to an IL value (-r to do a roundtrip test)
-./spectec-core p4 parse spec/*.spectec -i spectec/testdata/interp/p4-tests/includes -p target/file.p4 [-r]
+# parse a P4 program to an IL value
+p4_program=spectec/testdata/interp/p4/p4c/p4_16_samples/empty.p4
+./spectecx p4 parse --spec-dir spectec/specs/p4 -i spectec/testdata/interp/p4/p4c/includes -p "$p4_program"
 
 # run a P4 program based on SpecTec IL/SL
-./spectec-core p4 typecheck -i spectec/testdata/interp/p4-tests/includes -p target/file.p4
-./spectec-core p4 typecheck -i spectec/testdata/interp/p4-tests/includes -p target/file.p4 --sl
+./spectecx p4 typecheck -i spectec/testdata/interp/p4/p4c/includes -p "$p4_program"
+./spectecx p4 typecheck -i spectec/testdata/interp/p4/p4c/includes -p "$p4_program" --sl
 ```
 
 Ethereum commands are grouped under `ethereum`:
 
 ```bash
-# Run one state transition
-./spectec-core ethereum run state-transition --pre pre.json --block block.json
+# Run one state transition and export the validated post-state
+./spectecx ethereum run state-transition --pre pre.json --block block.json --output post.json
 
 # Collect premise coverage and save a resumable checkpoint
-./spectec-core ethereum coverage --batch-dir eth-tests --premise-coverage.level summary --checkpoint coverage.ckpt
+./spectecx ethereum coverage --batch-dir eth-tests --premise-coverage.level summary --checkpoint coverage.ckpt
 
 # Generate mutations for selected uncovered premise UIDs
-./spectec-core ethereum testgen --coverage coverage.ckpt --premises-file targets.txt --test-dir eth-tests --output testgen_output
+./spectecx ethereum testgen --coverage coverage.ckpt --premises-file targets.txt --test-dir eth-tests --output testgen_output
+```
+
+Ethereum commands use the packaged Capella specification by default. Pass `--spec-dir spec/spec_deneb` for Deneb, or repeat `--spec FILE` to select files explicitly. Target commands read `spectecx.config` in the current directory, with explicit flags taking precedence:
+
+```text
+ethereum.spec_dir = spec/spec_deneb
+ethereum.batch_dir = eth-tests
+```
+
+`ethereum.spec` and `ethereum.spec_dir` are mutually exclusive. Test generation also uses `ethereum.batch_dir` as its seed directory unless `--test-dir` is given. Its `--verify` option is unsupported and returns an error.
+
+The differential runner uses the same state-transition command. Its `--run-mode` accepts `il`, `sl`, or `pl`. Use `il` for the Capella and Deneb specifications. Structuring these specifications for SL or PL fails on definitions with multiple `otherwise` clauses.
+
+```bash
+python3 run_test_suite.py Converter/OfficialTestSuite/capella/sanity/blocks --converter-dir Converter --spectec-bin ./spectecx --fork capella --run-mode il
 ```
 
 ### Editor support
@@ -169,17 +183,19 @@ Ethereum commands are grouped under `ethereum`:
 Integrations for `.spectec` files live in `editors/`:
 
 - **Syntax highlighting** for VS Code, Emacs, and Vim/Neovim, one per subdirectory.
-- **Diagnostics**: `make lsp` builds `spectec-core-lsp`, a language server that reports parse and elaboration errors as you edit.
+- **Diagnostics**: `make lsp` builds `spectecx-lsp`, a language server that reports parse and elaboration errors as you edit.
 
 See [editors/README.md](editors/README.md) for installing a highlighter and turning on the language server.
 
 ### 3. Testing
+
 ```bash
 make test
 ```
 
-- Checks parsing, elaboration and structuring using the `spectec/examples/p4-concrete` spec corpus.
-- Checks IL/SL interpreter coupled with the P4 parser using `spectec/testdata/interp/p4-tests` files.
+- `make test-quick` covers compiler fixtures, IL/SL/PL relation tests, CLI behavior, and a validated Capella state transition in IL.
+- `make test` also runs the P4 interpreter corpus under `spectec/testdata/interp/p4`.
+- `make test-dep` checks the Ethereum dependency-report fixture.
 
 ### Adding a New Target
 
@@ -193,9 +209,9 @@ Targets live in `spectec/targets/<name>/`, separate from `spectec/lib/`. The reu
 6. Declare a target package in `dune-project`, including any named installation directories for packaged specifications.
 7. Add a Dune `plugin` stanza that installs the entry module in the core package's `target_plugins` directory. Use `generate_sites_module` when target code needs to locate packaged specifications.
 
-The Ethereum, P4, Mini-ML, and Impty targets are packaged independently, so adding a target does not require changing `spectec/bin/main.ml`.
+Ethereum is bundled with the core package. P4, Mini-ML, and Impty have separate packages. Each target registers through a plugin, so adding a target does not require changing `spectec/bin/main.ml`.
 
-**Note:** This script must be run from the project root directory (where `Makefile` is located).
+Run the checkout commands from the repository root, where `Makefile` is located.
 
 ### 4. Fetch the official test vectors
 
