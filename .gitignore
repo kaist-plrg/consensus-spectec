@@ -18,3 +18,6 @@ testing_clients/
 # consensus-spec-tests vectors - fetched by `make download-fixture`, not git
 Converter/OfficialTestSuite/
 Converter/.fixture-cache/
+
+# Python cache files
+__pycache__/
