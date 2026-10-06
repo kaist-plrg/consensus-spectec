@@ -1,0 +1,67 @@
+name: Spec tests
+
+on:
+  pull_request:
+  push:
+    branches:
+      - main
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: spec-tests-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+jobs:
+  spec-tests:
+    strategy:
+      fail-fast: false
+      matrix:
+        fork: [capella, deneb]
+        suites: ["operations epoch_processing", "sanity/blocks random", "finality"]
+        # Pull requests skip finality because it is the slowest suite.
+        exclude:
+          - suites: ${{ github.event_name == 'pull_request' && 'finality' || '' }}
+    name: ${{ matrix.fork }} ${{ matrix.suites }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 120
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          submodules: true
+
+      - name: Set up OCaml
+        uses: ocaml/setup-ocaml@v3
+        with:
+          ocaml-compiler: "5.1.1"
+          opam-pin: false
+          opam-local-packages: "*.opam"
+
+      - name: Build SpecTec
+        run: |
+          opam install . --deps-only --locked
+          make exe SWITCH="$(opam switch show -s)"
+
+      - name: Set up uv
+        uses: astral-sh/setup-uv@v6
+        with:
+          enable-cache: true
+          cache-dependency-glob: consensus-specs/uv.lock
+
+      - name: Build pyspec
+        run: make -C consensus-specs _pyspec
+
+      - name: Cache test vectors
+        uses: actions/cache@v4
+        with:
+          path: Converter/.fixture-cache
+          key: spec-tests-${{ hashFiles('Makefile') }}
+
+      - name: Fetch test vectors
+        run: make download-fixture SPEC_TESTS_FORKS=${{ matrix.fork }} SPEC_TESTS_SUITES="${{ matrix.suites }}"
+
+      - name: Check SpecTec against the vectors
+        run: uv run --project consensus-specs --no-sync python check_spec_tests.py --jobs 4 Converter/OfficialTestSuite/${{ matrix.fork }}
