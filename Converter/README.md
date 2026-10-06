@@ -200,7 +200,7 @@ uv run --project consensus-specs --no-sync python run_test_suite.py Converter/Of
 - `--run-mode <mode>`: Interpreter mode. Accepts `il`, `sl`, or `pl`, defaulting to `il`.
 - `--workflow <mode>`: Test workflow mode (`independent` or `sequential`, default: `independent`)
 
-Use `--run-mode il` for the Capella and Deneb specifications. Structuring these specifications for SL or PL fails on definitions with multiple `otherwise` clauses.
+Use `--run-mode il` for the Capella and Deneb specifications.
 
 **Output:**
 - Intermediate and result files created in work directory for each test case
