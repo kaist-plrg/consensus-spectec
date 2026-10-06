@@ -172,7 +172,7 @@ ethereum.batch_dir = eth-tests
 
 `ethereum.spec` and `ethereum.spec_dir` are mutually exclusive. Test generation also uses `ethereum.batch_dir` as its seed directory unless `--test-dir` is given. Its `--verify` option is unsupported and returns an error.
 
-The differential runner uses the same state-transition command. Its `--run-mode` accepts `il`, `sl`, or `pl`. Use `il` for the Capella and Deneb specifications. Structuring these specifications for SL or PL fails on definitions with multiple `otherwise` clauses.
+The differential runner uses the same state-transition command. Its `--run-mode` accepts `il`, `sl`, or `pl`. Use `il` for the Capella and Deneb specifications.
 
 ```bash
 python3 run_test_suite.py Converter/OfficialTestSuite/capella/sanity/blocks --converter-dir Converter --spectec-bin ./spectecx --fork capella --run-mode il
@@ -193,7 +193,7 @@ See [editors/README.md](editors/README.md) for installing a highlighter and turn
 make test
 ```
 
-- `make test-quick` covers compiler fixtures, IL/SL/PL relation tests, CLI behavior, and a validated Capella state transition in IL.
+- `make test-quick` covers compiler fixtures, IL/SL/PL relation tests, CLI behavior, Capella and Deneb structuring, and a validated Capella state transition in IL and SL with identical post-states.
 - `make test` also runs the P4 interpreter corpus under `spectec/testdata/interp/p4`.
 - `make test-dep` checks the Ethereum dependency-report fixture.
 - `check_spec_tests.py` checks SpecTec against the official test vectors (see step 5).

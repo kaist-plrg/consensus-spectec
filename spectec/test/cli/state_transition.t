@@ -15,6 +15,12 @@ State transitions export the post-state only after successful evaluation.
   > PY
   Post-state exported
 
+SL execution produces the same post-state as IL.
+
+  $ spectec ethereum run state-transition --spec-dir ../../../spec/spec_capella --pre pre.json --block ../dep_pos/block.json --output post-sl.json --color never --sl
+  State transition succeeded
+  $ cmp post.json post-sl.json
+
 Output cannot be shared by a batch.
 
   $ spectec ethereum run state-transition --batch --output batch.json --color never
