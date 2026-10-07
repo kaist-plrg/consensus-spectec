@@ -217,7 +217,7 @@ Run the checkout commands from the repository root, where `Makefile` is located.
 ### 4. Fetch the official test vectors
 
 The official consensus test vectors are release assets of
-[ethereum/consensus-specs](https://github.com/ethereum/consensus-specs/releases/tag/v1.6.0),
+[ethereum/consensus-specs](https://github.com/ethereum/consensus-specs/releases/tag/v1.7.0-beta.3),
 not content of this repository. Pull them before running the converter or
 `diff_testing.py`:
 
@@ -228,8 +228,7 @@ cd /workspace/spectec-core
 make download-fixture
 ```
 
-This downloads the pinned `mainnet.tar.gz` (v1.6.0, matching the `consensus-specs`
-submodule) once into
+This downloads the pinned `mainnet.tar.gz` (v1.7.0-beta.3) once into
 `Converter/.fixture-cache/` and unpacks the Capella and Deneb `sanity`, `random`
 and `finality` suites into `Converter/OfficialTestSuite/<fork>/<suite>/...`, the
 layout the scripts below expect. Both directories are gitignored.
