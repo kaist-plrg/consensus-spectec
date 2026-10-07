@@ -347,13 +347,6 @@ python eth2specResult.py --pre pre.ssz --block blocks_0.ssz --out eth2specResult
 python eth2specResult.py --pre pre.ssz --block blocks_0.ssz --out eth2specResult.ssz --fork deneb
 ```
 
-## Dependencies
-
-These tools require the following Python packages:
-- `remerkleable`: SSZ serialization/deserialization
-- `eth2spec`: Ethereum 2.0 specification implementation
-- `snappy`: Snappy compression/decompression
-
 ## Important Notes
 
 1. **Type Compatibility**: Use correct `--type-module` and `--type` parameters

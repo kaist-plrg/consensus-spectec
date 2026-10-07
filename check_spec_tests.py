@@ -2,10 +2,11 @@
 """
 Check SpecTec against the official consensus-spec test vectors.
 
-  python3 check_spec_tests.py [--jobs N] DIR...
+  uv run --project consensus-specs --no-sync python check_spec_tests.py [--jobs N] DIR...
 
-The checker requires the Python packages in requirements.txt and ./spectecx
-built by make exe. DIR selects unpacked vectors under Converter/OfficialTestSuite,
+The checker requires the pyspec environment created by
+`make -C consensus-specs build` and ./spectecx built by make exe.
+DIR selects unpacked vectors under Converter/OfficialTestSuite,
 for example Converter/OfficialTestSuite/deneb/operations.
 
 Cases with post.ssz_snappy must be accepted with a byte-identical post state.

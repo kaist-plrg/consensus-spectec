@@ -52,7 +52,7 @@ jobs:
           cache-dependency-glob: consensus-specs/uv.lock
 
       - name: Build pyspec
-        run: make -C consensus-specs _pyspec
+        run: make -C consensus-specs build
 
       - name: Cache test vectors
         uses: actions/cache@v4
