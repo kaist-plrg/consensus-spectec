@@ -1,333 +1,299 @@
 # Contributing
 
-This guide is the source of truth for how to contribute to SpecTecX. It is read by both human contributors and AI coding agents, so conventions are stated with the reasoning behind them — not just the rule.
+These policies apply the [principles](PRINCIPLES.md) to contribution decisions. Each policy links to its supporting principles. Policy IDs name topics and stay stable when rules move or their wording changes. `↔` marks a tradeoff. See [CONVENTIONS.md](CONVENTIONS.md) for code and prose conventions, message formats, and command recipes. See [README.md](README.md) for setup and use.
 
-For project orientation, build, and run instructions, see [README.md](README.md). This guide assumes you can build the project and run the test suite.
+## Working together
 
-A few `make` targets matter mostly to contributors:
+<a id="p.rules"></a>
 
-- `make fmt` — runs `dune fmt`. Run before committing. Requires `opam install ocamlformat 0.27.0` in your switch.
-- `make fmt-check` — runs `dune build @fmt`; fails if anything is unformatted. CI runs the same check.
-- `make check` — runs `dune build @check`: type-checks every library and executable without producing the final binary. Faster than `make exe` for catching type errors during iteration.
-- `make test-quick` runs the fast test groups, including package ownership and plugin discovery.
-- `make promote` — regenerates `.expected` files. The test suite is diff-based, so a spec or interpreter change that shifts output requires this before the commit lands, otherwise `make test` is red.
+**[P.rules](#p.rules). Follow the rules in this guide and CONVENTIONS.md.**
 
-## Code Conventions
+*[Responsibility][responsibility], [Coordination][coordination]*
 
-**Names are part of the spec.** SpecTecX is a language-specification compiler; names are vocabulary, not decoration. A misleading name is a semantic bug, not a style nit. Before settling on a name, check it against existing usage sites for the same concept, and prefer a name that communicates *responsibility*, not mechanism. Sweep all usage sites when renaming.
+Contributors are expected to follow the rules in this guide and CONVENTIONS.md, including the component guides linked from them.
 
-OCaml conventions: `snake_case` for values and types, `PascalCase` for modules and constructors.
+Rules marked as guidance, preferences, or defaults describe the recommended approach and should normally be followed. Contributors who take a different approach must let the reviewer know and explain why. All other rules are requirements. Contributors need to agree on exceptions to requirements with the core maintainer before proceeding. Steps marked optional may be skipped.
 
-**Don't let naming get ahead of architecture.** Rename only once the code has earned the new name. If the boundary or responsibility behind the name isn't yet right, fix that first.
+Reviewers should refer to these documents or their linked guides when asking contributors to follow a rule. They may also raise concrete problems under [P.review-blockers](#p.review-blockers).
 
-**No backward-compatibility aliases during refactors.** A rename worth doing is worth completing. Transitional names accumulate.
+Contributors are welcome to raise issues with this guide or CONVENTIONS.md when they have ideas for improving the contribution process.
 
-**Prefer self-documenting code over comments.** Before writing a comment, ask whether a clearer name, a smaller function, or a tighter type makes it unnecessary. Comments that survive that test capture what the code genuinely can't: a non-obvious choice taken over the obvious alternative, an invariant relied on but not visible locally, the spec rule being implemented. Comments that paraphrase the next line, restate a function name, or mark sections do not survive.
+<a id="p.responsibility"></a>
 
-**Public APIs reflect the final semantic model.** Internal module paths can differ when dependency direction forces it, but the user-facing surface should preserve the clearest ownership story.
+**[P.responsibility](#p.responsibility). Take responsibility for the work you submit, regardless of tools or assistance.**
 
-**Boundary between `lib/` and `bin/`.** Reusable code such as domain presentation, CLI infrastructure, and error rendering lives in `lib/`. CLI machinery specifically lives in `lib/cli/` so targets can instantiate it. Target plugins register their `Cli` modules through the registry in `lib/cli/`. The `bin/` directory holds only the top-level entrypoints that load available plugins and dispatch commands. New logic should land in `lib/`, not `bin/`.
+*[Verification][verification], [Responsibility][responsibility]*
 
-**Prefer explicit organization over umbrella buckets** like `core` once distinct concerns have separated.
+Contributors are responsible for the work they submit, and reviewers are responsible for the edits they make. Contributors must understand their changes well enough to explain them and answer review questions. AI tools, code generators, and other assistance do not change these responsibilities or the contribution requirements.
 
-**Don't introduce one-off meta-patterns** unless they clearly pay for themselves. Small local duplication beats a bespoke helper used nowhere else.
+Routine AI-use disclosures are not required. Explain tool use when it is part of the research method or necessary to understand a result or its limits. Contributors remain responsible for submitted work, including work copied or adapted from others.
 
-**Use `with_*` only for true scoped wrappers** that run a callback under setup/teardown. When a helper is fundamentally an accumulator update, prefer accumulator-first parameter order to match `fold_left` style.
+<a id="p.reviewer-tasks"></a>
 
-**Prefer direct code over clever abstractions** when exception handling is involved.
+**[P.reviewer-tasks](#p.reviewer-tasks). Announce the review tasks you will take on and let the contributor take them instead.**
 
-**Prefer small local recursion or folds over mutable refs** when they make control flow easier to read.
+*[Responsibility][responsibility], [Coordination][coordination]*
 
-**Use `@@` only when it clearly reduces indentation** around a single callback body.
+Reviewers should tell the contributor which tasks they plan to take on, including edits, commits, pushes, history rewrites, and PR metadata changes. This lets the contributor avoid duplicate work or take on those tasks themselves. Final editorial polish remains the maintainer's responsibility under [P.editorial-cleanup](#p.editorial-cleanup).
 
-## Why these conventions
+Before changing behavior, design, or the contributor's stated reasoning, the reviewer should discuss the change with the contributor. History rewrites and PR metadata edits also need agreement unless they fall within P.editorial-cleanup.
 
-Three values drive the workflow rules below: **bisectability**, **reviewability**, and **provenance**. Most specific rules trace back to one of these.
+<a id="p.editorial-cleanup"></a>
 
-*Bisectability* — `git bisect` should land on a small, buildable, single-purpose commit. That requires three things: every commit builds (otherwise bisect stalls on a non-buildable revision), commits are grouped into merge bubbles (so bisect can step over a whole PR when it isn't the culprit), and refactors stay separate from fixes and features (so the commit bisect lands on isn't doing two things at once).
+**[P.editorial-cleanup](#p.editorial-cleanup). The maintainer may polish comments and commit messages during final integration.**
 
-*Reviewability* is the counterweight. Bisect alone would push toward ever-smaller commits, but the reviewer needs the changes to add up to a coherent story. This is why:
+*[Provenance][provenance], [Responsibility][responsibility] ↔ [Coordination][coordination]*
 
-- we don't introduce stubs solely to keep the build green (noise to the reader);
-- every non-trivial commit names its motivation;
-- PRs are organized around one arc rather than a flat changelog.
+The core maintainer bears most of the lasting cost of unclear documentation. During final integration, the maintainer may make the editorial corrections below without asking for separate approval.
 
-*Provenance* — most code in this repo lives downstream of P4-SpecTec, so each change should record where it came from and how much was adapted. This is what backs the `Original-commit:` trailer, the Port vs. Sync PR distinction, and the `Adapted` / `Omitted` scope buckets. With provenance preserved, comparing against upstream or another SpecTec variant remains a tractable git operation rather than archeology.
+- Correct spelling, grammar, formatting, and wording in existing comments while preserving their facts, constraints, and reasons.
+- Correct spelling, grammar, and wording in commit subjects and bodies without changing their meaning or motivation.
+- Apply commit-message format and wrapping conventions.
+- Format existing source and attribution trailers without changing their facts or credit.
+- Add the PR number to a single-commit PR's commit subject.
 
-When a rule below feels arbitrary, it's usually one of these three showing through.
+The maintainer may amend commits, rebase their descendants, and push the rewritten PR branch with `--force-with-lease` to publish these corrections. File edits are limited to comments, and executable code, behavior, commit order, and author attribution must stay unchanged. Before rewriting, the maintainer should coordinate with contributors whose branches depend on the affected commits. When merging the PR, the maintainer should tell the contributor what was edited.
 
-## Commits
+An edit that adds an explanation, corrects a factual claim, changes an assumption, or resolves ambiguous intent needs discussion under [P.reviewer-tasks](#p.reviewer-tasks). Changes to motivation, attribution, or PR metadata also follow P.reviewer-tasks.
 
-We use [Conventional Commits](https://www.conventionalcommits.org/) with one project-specific type:
+## Shaping the work
 
-```
-type(scope): imperative summary
+<a id="p.change-scope"></a>
 
-<motivation: one or two sentences on the prior problem>
+**[P.change-scope](#p.change-scope). Each commit should express one idea, and each PR should develop one main topic.**
 
-<solution: what the change makes true now>
-```
+*[Coherence][coherence] ↔ [Proportionality][proportionality]*
 
-Standard types apply (`feat`, `fix`, `refactor`, `test`, `docs`, `chore`, `perf`, `style`). Plus:
+Edits that implement, test, or explain the same idea belong together. Unrelated ideas should have separate commits so readers can understand and review each change on its own.
 
-- **`spec`** — changes to `.spectec` files. *All other commits are assumed to be OCaml changes* under the appropriate standard type. A spec rule update is `spec(...)`; a change to the elaborator that consumes it is `refactor(elaborate): ...`.
-- **`reorg`** — directory renames, file moves, or layout-only changes that don't restructure code or alter behavior. Distinct from `refactor` (changes code structure) and `chore` (build config or deps). When a rename forces caller updates, the change stays `reorg` if the caller updates are mechanical path/identifier swaps; promote to `refactor` when the rename motivates a real API or structure change.
+A PR may include commits outside its main topic when a separate PR would add review and landing overhead without enough practical benefit. Those commits should remain distinct, and the PR body should explain why they belong. Ports still follow the narrower boundary in [P.port-scope](#p.port-scope).
 
-  The type exists because behavior preservation is a useful property to advertise — tools and reviewers can act differently when they know a change is layout-only. Reviewers seeing `reorg:` skip semantic review and focus on the mechanical check ("did all references update? did anything break the build?"). `git bisect skip $(git log --grep "^reorg" bad..good --format=%H)` removes layout noise from regression bisects. Cherry-picks and reverts are mechanical (paths or identifiers) rather than requiring behavioral analysis.
+While a PR is under review, its planned topic should remain stable. Newly discovered independent work normally belongs in another PR, unless the same grouping exception applies. Once the contribution is ready, [P.follow-ups](#p.follow-ups) explains how to handle follow-up work. Final commit preparation follows [P.commit-buildability](#p.commit-buildability).
 
-  Examples: renaming a directory, splitting a corpus into subdirectories, consolidating duplicated test data.
+<a id="p.port-scope"></a>
 
-Scope is the narrowest area that honestly describes the change: `cli`, `elaborate`, `il`, `interp`, `instrumentation`, `mixop`, `lang`, `targets/p4`, etc.
+**[P.port-scope](#p.port-scope). Limit each Port to one upstream PR and its local adaptations.**
 
-### Subject
+*[Coherence][coherence], [Provenance][provenance]*
 
-The subject is **imperative**, present-tense — `extract error handling`, not `extracted` or `extracts`. It names a *concept*, not specific code. Identifiers belong in the body.
+A Port follows one upstream PR so reviewers can compare the original work with its local adaptations. It may include the local edits needed to make that work function here. Independent local changes belong in another PR. A Sync can cover broader upstream changes and related local work.
 
-- Good: `refactor(cli): extract error handling and group shared flags by role`
-- Avoid: `refactor(cli): extract guard from subcommand.ml and group flags into Output/Spec/Batch/Checkpoint`
+<a id="p.established-forms"></a>
 
-### Body
+**[P.established-forms](#p.established-forms). Prefer established forms when alternatives offer no clear benefit.**
 
-The body answers **why** (motivation: what was wrong or limiting) and **what** (solution: the shape the code is in now). The **how** is in the diff — do not restate it in prose.
+*[Coherence][coherence], [Proportionality][proportionality]*
 
-Two parts, distinguished by **tense**:
+Familiar forms let readers focus on meaning and avoid repeated decisions about routine choices. When several forms express the same idea equally clearly, follow the established form in the surrounding code or prose. Use a different form when it makes a specific operation, dependency, or relationship clearer. Project-wide conventions settle choices shared across components and documents. Exceptions to required conventions still follow [P.rules](#p.rules).
 
-- **Motivation** — describes the prior state, one or two sentences. Past tense (`The diagnostic helper lived inline in subcommand.ml, duplicated across multiple consumers.`) or a `Currently, …` framing (`Currently, errors and warnings print immediately when encountered.`); past tense is the default and preferred form.
-- **Solution** — third-person present, reading as if narrating what *this commit* does (`The helper is extracted to error_handling.ml…`, `Adds…`, `Replaces…`, `Updates…`). Avoid first-person (`We extract…`) and avoid future tense (`Will extract…`). Bullets follow the same voice.
+<a id="p.abstractions"></a>
 
-The motivation paragraph is **optional when the motivation is self-evident from the subject** — adding tests, syncing with upstream, a one-line typo fix. Where it earns its keep is `fix` and `refactor` commits: both must justify themselves against the prior state, so a short past-tense sentence on what was wrong or what was limiting is almost always worth writing.
+**[P.abstractions](#p.abstractions). Give each abstraction a responsibility that current callers need.**
 
-Name actual identifiers in the body — modules, functions, flags. Plain English is for framing; identifiers are for specifics.
+*[Coherence][coherence]*
 
-Bullets only when the change spans distinct scopes that don't flow as prose. A single-scope commit gets a prose paragraph.
+An abstraction adds a concept readers must learn. Its justification should identify an operation current callers need or logic they need to share. Hypothetical future uses alone do not justify generic options or extension points. This applies [YAGNI](https://martinfowler.com/bliki/Yagni.html) to abstractions.
 
-**ASCII only.** Commit messages flow through varied consumers (`git log`, `gh`, CI logs, `git send-email`, changelog generators), not all of which render UTF-8 reliably. Prefer `->` over `→`. Avoid em-dashes (`—`) entirely rather than substituting `--`; restructure with commas, parens, or periods instead. PR bodies render as Markdown and are fair game for typography; commit messages aren't.
+Names and interfaces should express the abstraction's responsibility. Callers should be able to use its operations without knowing their internal steps. Interfaces should show what callers supply and what they can rely on. Inputs that affect results should be explicit by default.
 
-### Trailers
+<a id="p.invariants"></a>
 
-One trailer carries provenance:
+**[P.invariants](#p.invariants). Keep invariant enforcement with the data and operations it governs.**
 
-- `Original-commit:` — the upstream or sibling-repo commit this change is based on, regardless of how literal or adapted. May appear multiple times when one local commit consolidates a chain of upstream changes. The prose body carries the *degree* of adaptation: a one-line "Ported from P4-SpecTec." signals a direct port; a paragraph explaining what was kept and changed signals an adaptation.
+*[Coherence][coherence], [Verification][verification]*
 
-When attributing to upstream in prose, write **"Ported from P4-SpecTec."** as its own paragraph between the solution prose and the trailer block. It pairs visually with `Original-commit:` to form a provenance stanza, separate from the motivation and solution above:
+Callers need to know which guarantees they can rely on. The component that owns a value must establish those guarantees when constructing it and preserve them through every exposed update. Keep shared mutable state with the operations responsible for maintaining its constraints. Identify the state's owner and lifetime.
 
-```
-<motivation paragraph>
+<a id="p.renames"></a>
 
-<solution paragraph and/or bullets>
+**[P.renames](#p.renames). Rename declarations and callers together unless a consumer cannot migrate.**
 
-Ported from P4-SpecTec.
+*[Coherence][coherence] ↔ [Coordination][coordination]*
 
-Original-commit: https://github.com/kaist-plrg/p4-spectec/commit/<sha>
-```
+A rename normally updates the declaration and all its callers in the same change. Keeping a compatibility alias can suggest that the two names mean different things, so aliases should not be retained by default.
 
-A second trailer, `Copied-from:`, is used for literal tree imports (e.g. dropping in a fresh upstream `spec/` directory) rather than commit ports.
+A temporary alias is acceptable when an identified consumer cannot migrate in the same change. The contributor should record the migration obstacle and agree with the core maintainer on when the alias will be removed.
 
-**Use the full GitHub URL in commit-message trailers**, not the `org/repo@sha` shorthand:
+<a id="p.comments"></a>
 
-```
-Original-commit: https://github.com/kaist-plrg/p4-spectec/commit/3e806c83fc38
-```
+**[P.comments](#p.comments). Use comments for constraints and reasons absent from the code.**
 
-The shorthand (`kaist-plrg/p4-spectec@3e806c83fc38`) renders nicely on GitHub but is opaque in `git log` and unclickable in plain terminals. Reserve it for **PR bodies and merge-commit cover letters**, where GitHub's rendering is the primary read path.
+*[Coherence][coherence]*
 
-### Atomicity
+A comment should explain a constraint or reason that names, types, and implementation do not show. Information already evident from the code does not need another explanation in a comment. What changed and why belongs in the change record.
 
-Each commit must build on its own. Split work as far as possible *without* introducing placeholders or scaffolding solely to satisfy the rule. If keeping a commit buildable would require dead code, fold it into the next.
+<a id="p.documentation"></a>
 
-### Worked examples
+**[P.documentation](#p.documentation). Document the current system and keep change history in change records.**
 
-A refactor, from [`388d6b3d`](https://github.com/kaist-plrg/spectecx/commit/388d6b3d):
+*[Coherence][coherence]*
 
-> `refactor(cli): extract error handling and group shared flags by role`
->
-> The diagnostic helper lived inline in `subcommand.ml`, duplicated across multiple consumers. Shared flag definitions sat at the top of `cli_args.ml` with no organization.
->
-> The helper is extracted to `error_handling.ml` as `guard`/`guard_unit`, called from both `subcommand.ml` and `bin/main.ml`. Shared CLI flags are grouped into `Output`, `Spec`, `Batch`, `Checkpoint` and `Interpreter` submodules. Checkpoint flags become a composite record since they always appear together; the rest stay individual for now.
+Project documentation describes the system's current organization, use, and constraints. Readers should be able to follow it without knowing an earlier implementation. The history of a change belongs in change records, where its motivation and result can be explained together.
 
-A feature, from [`39f18ac1`](https://github.com/kaist-plrg/spectecx/commit/39f18ac1):
+Give each explanation an authoritative home. Other documents should link to that explanation instead of maintaining competing copies.
 
-> `feat(diagnostic): scaffolding for comprehensive diagnostics`
->
-> Currently, errors and warnings print immediately when encountered.
->
-> To improve diagnostic structure and error messages, as well as support LSPs in the future, a new global `Diagnostic` type is added, with basic scaffolding such as constructors and collectors.
+## Presenting the change
 
-Both follow the same shape: a past-tense framing sentence, then a present-tense paragraph narrating what the commit does.
+<a id="p.change-summaries"></a>
 
-## Rebasing
+**[P.change-summaries](#p.change-summaries). Commit subjects and PR titles should summarize the conceptual change.**
 
-A messy WIP branch becomes a reviewable history through interactive rebase. The atomicity rule above defines the *target shape*; this section is *how to get there*.
+*[Coherence][coherence]*
 
-### Folding WIP into atomic commits
+A commit subject or PR title should name the action and affected concept so readers can identify the change before opening its details. The commit subject describes that commit's idea, and the PR title names the contribution's main topic. The PR body accounts for accompanying work.
 
-```bash
-git rebase -i <base>
-```
+<a id="p.commit-intent"></a>
 
-Use `fixup` and `squash` to absorb follow-ups into the commit they belong to. The criterion is the per-commit buildability rule: if combining produces the smallest commit that still builds and tells one coherent story, fold.
+**[P.commit-intent](#p.commit-intent). Classify each commit by its intent, including specification work.**
 
-Rewrite messages during the rebase, not before — the final subject and body describe the *folded* result, not any intermediate state.
+*[Coherence][coherence]*
 
-When folding port commits, use `squash` rather than `fixup` so that `Original-commit:` trailers from the absorbed commits survive into the rewritten message — `fixup` discards messages, including trailers. Consolidate all surviving trailers in the rewritten message; one local commit may carry multiple `Original-commit:` lines.
+Commit types describe the intent of the work, so specification changes use the same categories as other changes. The message should distinguish changes in modeled behavior from changes in notation or organization. Classify structural or behavioral changes by their own intent, even when they accompany reorganization or formatting. Explain that work separately. Type and scope syntax is described in [CONVENTIONS.md](CONVENTIONS.md#commit-messages).
 
-### Verifying buildability
+<a id="p.commit-explanations"></a>
 
-Don't trust the invariant; enforce it:
+**[P.commit-explanations](#p.commit-explanations). Each final commit message should explain the motivation and resulting change.**
 
-```bash
-git rebase -i --exec 'make exe' <base>
-# or, slower but stronger:
-git rebase -i --exec 'make test-quick' <base>
-```
+*[Motivation][motivation], [Coherence][coherence]*
 
-The rebase stops on the first commit that fails. Fix or fold and continue.
+A commit message should let readers understand why the change was needed and what it accomplishes without having seen the original discussion. Motivation explains the prior problem, limitation, or research goal. Solution describes the resulting change that addresses it. For a refactor, the explanation must identify the structural limitation and show why the new structure addresses it.
 
-### `.expected` files during rebase
+When the subject already conveys the required explanation, the message does not need a body. Source records still follow [P.source-credit](#p.source-credit) and [P.regression-origin](#p.regression-origin).
 
-`.expected` files are generated output, not source. When a rebase conflict lands inside one, **do not hand-merge the diff** — regenerate it. Roughly:
+<a id="p.pr-explanations"></a>
 
-1. Resolve any non-`.expected` conflicts and ensure `make exe` succeeds.
-2. `make promote` to regenerate the affected `.expected` files from current code.
-3. `git add` the regenerated files and `git rebase --continue`.
+**[P.pr-explanations](#p.pr-explanations). Each PR body should explain its motivation, result, and scope.**
 
-If a commit shifts output and a later commit depends on the new expected state, mid-rebase regeneration is the only correct resolution. Hand-merging silently bakes stale expectations into the history.
+*[Motivation][motivation], [Coherence][coherence], [Verification][verification], [Proportionality][proportionality]*
 
-### Authoring messages during the rebase
+The PR body should give reviewers enough context to assess the contribution as a whole. It explains the problem or research goal, the resulting change, and the affected components and kinds of change. One short description may cover all three.
 
-When the rebase pauses on a `reword` or `squash`, the commit-message conventions above apply — the rebase is when messages get rewritten, not just when commits get reordered.
+The PR body should identify commits outside the main topic and explain their inclusion. Section formats are described in [CONVENTIONS.md](CONVENTIONS.md#pr-titles-and-descriptions).
 
-## Direct commits to main
+<a id="p.single-commit-record"></a>
 
-The default is that every change lands through a PR. Two narrow categories may be pushed directly to `main`:
+**[P.single-commit-record](#p.single-commit-record). A single-commit PR's message must explain the PR's motivation, result, and scope.**
 
-- **Documentation-only changes** — `README.md`, `CONTRIBUTING.md`, in-tree docs. No code, no expectations shifted.
-- **Trivial project-wide fixes** with no semantic content — e.g. a missing `dune` dependency, a typo in a build flag, a dead import. The bar is that a reviewer's only useful response would be "yes, obviously."
+*[Motivation][motivation], [Coherence][coherence], [Provenance][provenance], [Proportionality][proportionality]*
 
-Anything that touches behavior, output, or the spec goes through a PR even when small. When in doubt, open the PR — the cost of a one-line PR is low; the cost of a direct commit that turned out to need discussion is a revert.
+When a single-commit PR is fast-forwarded, there is no merge message to preserve its overview. The commit message must therefore include the PR's motivation, result, and scope, along with source records when applicable.
 
-The commit-message conventions above still apply: a direct-to-main commit isn't an excuse for a terse subject and no body.
+<a id="p.source-credit"></a>
 
-## Pull Requests
+**[P.source-credit](#p.source-credit). Commits containing copied or adapted work must cite its source and preserve author credit.**
 
-PRs fall into five shapes. The shape determines title prefix and body structure:
+*[Provenance][provenance]*
 
-| Type     | Title                          | Body skeleton                                                                |
-| -------- | ------------------------------ | ---------------------------------------------------------------------------- |
-| Refactor | `Refactor <concept>`           | `## Motivation` → optional `## Core Concept(s)` → optional `## Scope` → `## Commit Log` |
-| Feature  | concept-led, no prefix         | `## Motivation` → `## Core Concept(s)` → optional `## Scope` → `## Commit Log` |
-| Port     | concept-led, no prefix         | `## Motivation` (cite original PR) → `## Scope` (Ported / Adapted / Omitted) → `## Commit Log` |
-| Sync     | `Sync <area>`                  | `## Motivation` → `## Scope` (Ported / Adapted / Local Changes) → `## Commit Log` |
-| Reorg    | `Reorg <concept>`              | `## Motivation` → optional `## Scope` (rename list) → `## Commit Log` |
+Source references let readers trace inherited work and preserve its contributors' credit. A commit containing copied or adapted work should identify the source revision and explain local differences in behavior or design. When several commits are folded together, all their source references should remain in the resulting message.
 
-`## Future Work` is optional on any type for deferred follow-ups and open design questions. `## Minor Changes` holds commits that ship in the PR but don't fit the main story.
+Rewrites must preserve source references and author attribution. Coauthor credit is optional and reserved for actual human joint authorship. Do not add coauthor credit for AI tools or other generators. Credit records do not change responsibility under [P.responsibility](#p.responsibility). Source-trailer formats are described in [CONVENTIONS.md](CONVENTIONS.md#sources-and-credit).
 
-The Port/Sync distinction is intentional: a **Port** tracks one upstream PR end-to-end and contains only the adaptations needed to land it locally; a **Sync** is a catch-up that may bundle several upstream commits *and* genuinely local fixes or features. The two share vocabulary but differ in what each is allowed to bundle.
+<a id="p.regression-origin"></a>
 
-**Reorgs** typically fast-forward (single-commit) and use `## Scope` to list the moves explicitly. Behavior preservation is the implicit precondition — if the change has any semantic shift, it's a Refactor.
+**[P.regression-origin](#p.regression-origin). Identify a regression's introducing commit when known.**
 
-### Title
+*[Verification][verification], [Provenance][provenance]*
 
-One clean angle, not a two-sided story. If you reach for `X and Y`, ask whether the two halves are one concept under a better name.
+When a regression's introducing commit is known, the message should identify it with the `Fixes:` record described in [CONVENTIONS.md](CONVENTIONS.md#sources-and-credit). This lets readers trace the regression to its cause. If the introducing commit cannot be established, omit that record.
 
-- One concept: [`#34 Refactor CLI into per-target modules`](https://github.com/kaist-plrg/spectecx/pull/34) — clearer than `Refactor CLI to define subcommand interfaces and consolidate target modules`, even though the diff does both.
-- Two genuinely independent threads, joined explicitly: [`#32 Refactor instrumentation architecture and make lifecycle exception-safe`](https://github.com/kaist-plrg/spectecx/pull/32).
+<a id="p.imported-work"></a>
 
-`Refactor`, `Sync`, and `Reorg` lead with the verb. Features and Ports lead with the concept directly ([`#30 Simplify elaboration using IL types`](https://github.com/kaist-plrg/spectecx/pull/30)) — the verb prefix is dropped because the concept already names the change.
+**[P.imported-work](#p.imported-work). Port and Sync PRs must distinguish imported work, adaptations, omissions, and local changes.**
 
-When themes mix, pick the dominant one for the title and let off-arc commits live under `## Minor Changes` in the body. Avoid abstract nouns like `composition` or `orchestration` in the title; reserve those for the body where they have room to be defined.
+*[Coherence][coherence], [Provenance][provenance], [Proportionality][proportionality]*
 
-### Body
+A Port or Sync description should identify the source PRs or revisions and explain how the local result differs. That includes adaptations, conflict resolutions, omissions, and any local work, so reviewers can compare the upstream and local changes. Independent local work in a Port still follows [P.port-scope](#p.port-scope). Scope-group formats are described in [CONVENTIONS.md](CONVENTIONS.md#pr-titles-and-descriptions).
 
-Open every PR with `## Motivation` — the problem, pressure, or design goal. The remaining sections depend on the type.
+<a id="p.upstream-explanations"></a>
 
-**Refactors and Features** share the skeleton shown in the table above, with optional `## Scope` and `## Future Work` when the change needs more explanation. The criterion for adding `## Scope` mirrors the criterion for bullets in a commit message: the concept is coherent at the top level, but it touches enough distinct scopes that prose alone leaves the reader without a map. A small refactor in one module needs `Motivation` and `Commit Log` only; a cross-cutting one needs the scoped breakdown.
+**[P.upstream-explanations](#p.upstream-explanations). Reuse upstream explanations only when they cover the adopted design and its local assumptions.**
 
-`## Core Concept(s)` typically lists ideas as bolded bullets and closes with one paragraph naming the direction the PR moves the code in. The bullets are the *what*; the closing paragraph is *why this hangs together*. Drop it when the motivation already names the concept clearly.
+*[Motivation][motivation], [Coherence][coherence], [Provenance][provenance], [Proportionality][proportionality]*
 
-**Ports and Syncs** share a vocabulary for what comes from upstream:
+A Port or Sync may refer readers to an upstream explanation when it explains the adopted design and its assumptions still hold locally. This avoids duplicating the reasoning and keeps it attached to the original work.
 
-- `### Ported` — upstream commits taken nearly directly.
-- `### Adapted` — upstream commits whose intent is preserved but whose code was adjusted for the local context.
-- `### Omitted` — upstream commits explicitly not taken, with a one-line reason.
+The local PR should link the explanation and summarize why the work is needed here and what result it brings. Any missing reasoning or local design differences still need an explanation in the local PR.
 
-`### Omitted` is mainly used in Ports, where one-to-one upstream tracking makes the gap worth noting. Bullets in all three sections cite their origin: `Original: kaist-plrg/p4-spectec@<sha>`.
+## Reviewing and revising
 
-The two types diverge in one bucket: **only Syncs allow `### Local Changes`**, capturing local-origin fixes or features that ride along with the catch-up. A Port that wants to include a local fix should split the fix into its own commit landing through a separate PR — Ports stay one-to-one with their upstream PR. Ports also expect the Motivation to link the upstream PR being tracked.
+Resolve questions about the contribution's behavior, design, and readiness.
 
-Scoped bullets summarize **thematically**, not one-per-commit. Group commits serving the same idea under one bullet — five commits often collapse to two or three. The per-commit view is preserved by `## Commit Log`; scope bullets give the reader the *shape*.
+<a id="p.review-blockers"></a>
 
-End multi-commit PRs with `## Commit Log` listing commit subjects verbatim — including their `type(scope):` prefixes — in final-history order. GitHub's `is:pr` search matches title and body only, not commit subjects, so inlining them keeps the PR discoverable.
+**[P.review-blockers](#p.review-blockers). Explain why a requested change is needed before merging.**
 
-The body is prose-first. Bullets enumerate concrete changes or scope boundaries — they aren't the default format for the whole PR. Within the body, GitHub shorthand for cross-repo references (`org/repo@sha`, `org/repo#NN`) is preferred over full URLs since GitHub renders them inline.
+*[Responsibility][responsibility], [Coordination][coordination]*
 
-### Opening a PR
+A reviewer who asks for a change that must be made before merging should explain why it is necessary. The explanation should identify a required rule under [P.rules](#p.rules) that the contribution does not follow, or describe what would go wrong if the contribution were merged as written. For concerns about correctness, usability, documentation, or maintenance, the reviewer should explain the specific consequences.
 
-```bash
-git push -u origin <branch>
-gh pr create --title "<title>" --body-file <body.md>
-```
+Reviewers should present preferences as suggestions. If a rule's meaning is unclear, the reviewer should ask for clarification.
 
-Drafting the body in a file produces cleaner prose than typing it into the `gh` flag.
+<a id="p.follow-ups"></a>
 
-### Worked examples
+**[P.follow-ups](#p.follow-ups). Do not delay a ready contribution for independent follow-up work.**
 
-- **Refactor:** [#34 — Refactor CLI into per-target modules](https://github.com/kaist-plrg/spectecx/pull/34): scoped refactor with `Core Concepts` + `Scope` and an off-arc `feat(cli)` bullet under `Minor Changes`.
-- **Refactor (two-threaded):** [#32 — Refactor instrumentation architecture and make lifecycle exception-safe](https://github.com/kaist-plrg/spectecx/pull/32): legitimate two-threaded title; the cover letter splits the threads in the scope bullets.
-- **Port:** [#30 — Simplify elaboration using IL types](https://github.com/kaist-plrg/spectecx/pull/30): concept-led title (no `Refactor` prefix) tracking one upstream PR, with `Scope` split into `Ported` / `Adapted` / `Omitted`.
-- **Sync:** [#35 — Sync new P4 concrete spec](https://github.com/kaist-plrg/spectecx/pull/35): catch-up bundling upstream ports with local changes, with `Scope` split into `Ported` / `Adapted` / `Local Changes`.
+*[Coherence][coherence], [Proportionality][proportionality]*
 
-When unsure, run `git log --merges` and find the most recent merge whose shape matches yours. (Single-commit ff-merged PRs — see below — won't appear in `--merges`; scan `git log` directly for those.)
+Once review blockers are resolved, the contribution can proceed towards landing. Newly discovered work belongs in another PR unless it is needed to implement or verify the current contribution. Independent follow-up work should not hold up a ready contribution or other work that depends on it.
 
-## Merge Commits
+The PR should identify work explicitly postponed from the contribution and explain why it was postponed. Preserve that record when landing. Possible future improvements are not deferred commitments.
 
-Merge commits are *cover letters*, not rewritten commit logs. Their reader is scanning `git log` to answer "what landed, where, and what's deferred" without opening individual commits or PRs. Structure follows that role: one framing paragraph summarizing the branch-level outcome, then scoped bullets only when they make the cover letter quicker to parse than prose alone.
+## Landing the change
 
-Subject: `Merge: <lowercase summary> (#PR)`. The summary mirrors the PR title (lowercased) so a reader scanning `git log` sees consistent phrasing on both sides.
+Prepare the reviewed contribution for `main` and record its integration. Substantive changes made during preparation return to review.
 
-Avoid one-bullet-per-commit. Prefer scoped summaries (`refactor(instrumentation): ...`, `fix(interp): ...`) describing the merged result. Apply the same thematic grouping as `## Scope`: a six-commit branch may merit only three or four scoped bullets.
+<a id="p.commit-buildability"></a>
 
-Off-arc commits (the `## Minor Changes` of the PR body) get their own bullet at the end of the scoped block in their original `feat(...)` / `fix(...)` form, so the reader sees them as distinct from the refactor arc.
+**[P.commit-buildability](#p.commit-buildability). Finalize each commit as a buildable unit.**
 
-```bash
-git checkout main && git pull
-git merge --no-ff <branch>      # editor opens; write the cover letter
-git push origin main
-```
+*[Coherence][coherence], [Verification][verification], [Proportionality][proportionality]*
 
-Squash merges are never used: they discard the per-commit history that the rest of this guide is built around. Fast-forward merges are reserved for the single-commit-PR exception below.
+Each final commit should express one idea under [P.change-scope](#p.change-scope) and leave the project buildable, so maintainers can investigate regressions without first repairing intermediate states. If separating commits would require placeholders or break the build, they should be combined.
 
-### Scoped sections
+Review fixups are folded into the commits they complete before landing. Their messages may remain brief until that cleanup. Final editorial polish follows [P.editorial-cleanup](#p.editorial-cleanup).
 
-A single thematic bullet list needs no header; bullets sit directly under the framing paragraph. Use section headers only when the cover letter benefits from peer grouping. A Port or Sync may lift its `### Ported / ### Adapted / ### Omitted / ### Local Changes` distinctions to peer sections (`Ported:`, `Adapted:`, …) instead of mixing them inside one bullet list. Mixing `PORTED:`, `ADAPTED:`, `OMITTED:` prefixes inside a single list makes the cover letter obscure: a reader has to disambiguate every bullet by prefix instead of skimming uniform peer lists.
+<a id="p.rebase-timing"></a>
 
-Bullets, whether in a peer section or as a single list, take the form `type(scope): Description.` (matching the corresponding commit subject's prefix). Optional `Original: <ref>` suffix when citing upstream provenance, in the same form the PR body uses (full URL, GitHub shorthand, bare SHA, or absent).
+**[P.rebase-timing](#p.rebase-timing). Rebase during final integration by default.**
 
-### Deferred items
+*[Coordination][coordination], [Proportionality][proportionality]*
 
-Deferred items appear as a bullet group with a `DEFERRED:` prefix per bullet and no section header:
+While work is under review, a branch needs an update when dependencies or conflicts require it. Contributors are not expected to rebase every open branch after each merge. Final integration normally includes a rebase onto current `main`.
 
-```
-- DEFERRED: <description>.
-- DEFERRED: <description>.
-```
+The person rebasing should coordinate the rewrite under [P.reviewer-tasks](#p.reviewer-tasks), including with contributors whose branches depend on the replaced commits. If rebasing would disrupt shared work, the contributors and maintainer should agree on another integration method.
 
-The prefix is the signal: `git log --grep "DEFERRED:"` collects backlogs scattered across history. A wrapping section header would only repeat that signal, so it is omitted.
+<a id="p.conflict-resolution"></a>
 
-### Single-commit PRs (exception)
+**[P.conflict-resolution](#p.conflict-resolution). Resolve integration conflicts on the PR branch before landing.**
 
-The default above — `--no-ff`, cover letter, no squash — assumes a multi-commit PR whose internal structure deserves preservation. Large refactors invert this: splitting a sweeping rename or cross-cutting restructure into many atomic commits produces intermediate states that don't individually clarify the change, and the reviewer ends up reading the diff as a whole anyway. For these, a **single-commit PR** is allowed, and is **fast-forwarded** onto main.
+*[Coherence][coherence], [Coordination][coordination]*
 
-Fast-forward, not squash: the branch is already one commit, so merging just advances `main`. No merge commit is created, and the commit's SHA is preserved across the merge.
+Integration conflicts are resolved on the PR branch, where reviewers can inspect the resolutions. Those resolutions can change behavior, so substantive changes need an explanation and a return to review before landing. The landing merge must introduce no further conflict-resolution edits.
 
-Because there is no merge commit, the lone commit's message *is* the cover letter. It must carry the framing a `Merge:` subject and body would otherwise provide — motivation, the shape of the result, and (if relevant) scope bullets — under the normal `type(scope):` subject. The PR body still follows the Pull Requests conventions above; ff-merging does not skip the PR.
+<a id="p.merge-method"></a>
 
-```bash
-git checkout main && git pull
-git merge --ff-only <branch>
-git push origin main
-```
+**[P.merge-method](#p.merge-method). Use merge commits for multi-commit PRs and default to fast-forwards for single-commit PRs.**
 
-`--ff-only` makes the merge fail loudly if the branch isn't actually one commit ahead of `main`, rather than silently creating a merge commit. If it fails, rebase the branch onto `main` first.
+*[Coherence][coherence], [Provenance][provenance], [Proportionality][proportionality]*
 
-This exception is for refactors whose atomicity would be artificial. A feature, fix, or port stays multi-commit and `--no-ff`.
+The number of commits after final cleanup determines how the PR lands. A multi-commit PR uses a merge commit whose message explains the contribution as a whole. A single-commit PR is fast-forwarded by default because its commit message already provides that record.
+
+The final commits are preserved without squashing. For a single-commit PR, the PR number is added to the subject through an authorized amendment under [P.editorial-cleanup](#p.editorial-cleanup). Message formats and commands are described in the [landing conventions](CONVENTIONS.md#landing).
+
+<a id="p.direct-pushes"></a>
+
+**[P.direct-pushes](#p.direct-pushes). The maintainer may push bounded repairs and current-state documentation directly to `main`.**
+
+*[Responsibility][responsibility], [Coordination][coordination] ↔ [Proportionality][proportionality]*
+
+The core maintainer may push a fix directly to `main` when it addresses an identified fault with known expected behavior and affected callers. Documentation edits may also go directly to `main` when they describe existing behavior or clarify existing rules. This keeps routine corrections from waiting for a separate PR that would add little value.
+
+New design or interfaces, multiple independent behaviors, uncertain impact, and changes to contribution rules need a PR. Other contributors use PRs by default. The same motivation and [component checking instructions](CONVENTIONS.md#build-and-checks) still apply to direct commits.
+
+[motivation]: PRINCIPLES.md#motivation
+[coherence]: PRINCIPLES.md#coherence
+[verification]: PRINCIPLES.md#verification
+[provenance]: PRINCIPLES.md#provenance
+[responsibility]: PRINCIPLES.md#responsibility
+[coordination]: PRINCIPLES.md#coordination
+[proportionality]: PRINCIPLES.md#proportionality
