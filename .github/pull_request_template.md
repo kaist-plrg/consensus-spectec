@@ -63,10 +63,9 @@ Port/Sync: use the subsections below. Each bullet ends with `Original: kaist-plr
 
 ## Commit Log
 
-<!-- Commit subjects verbatim, with `type(scope):` prefixes, in final-history order.
-`git log --reverse --format='- %s' main..HEAD` -->
-
-- type(scope): summary
+<!-- Filled by .github/workflows/pr-commit-log.yml on every push. Keep the markers. -->
+<!-- commit-log:start -->
+<!-- commit-log:end -->
 
 <!--
 Before requesting review:
