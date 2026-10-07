@@ -5,55 +5,48 @@ import os
 import sys
 from typing import Any
 
-# Add eth2spec to path
+# Add the pyspec (eth_consensus_specs) to path
 # Get the absolute path to ensure it works from any directory
 script_dir = os.path.dirname(os.path.abspath(__file__))
 consensus_specs_path = os.path.abspath(os.path.join(script_dir, '../../consensus-specs/tests/core/pyspec'))
 if consensus_specs_path not in sys.path:
     sys.path.insert(0, consensus_specs_path)
 
-from remerkleable.basic import boolean, bit, uint8, uint16, uint32, uint64, uint128, uint256
-from remerkleable.byte_arrays import ByteVector, ByteList
-from remerkleable.bitfields import Bitlist, Bitvector
-from remerkleable.complex import Container, List, Vector
-
-BASIC_INT_TYPES = (uint8, uint16, uint32, uint64, uint128, uint256)
-BASIC_BOOL_TYPES = (boolean, bit)
+from ssz import BaseUint, BitList, BitVector, Boolean, ByteList, ByteVector, Container, List, Vector
 
 def _to_hex(b: bytes) -> str:
     return "0x" + b.hex()
 
 def bitfield_to_bool_list(v):
-    L = v.length()
-    return [bool(v.get(i)) for i in range(L)]
+    return [bool(b) for b in v]
 
 
-def view_to_jsonable(v: Any) -> Any:
+def ssz_to_json(v: Any) -> Any:
     # 1) Container
     if isinstance(v, Container):
         out = {}
-        for fname in v.fields():
+        for fname in type(v).model_fields:
             sub = getattr(v, fname)
-            out[fname] = view_to_jsonable(sub)
+            out[fname] = ssz_to_json(sub)
         return out
 
     # 2) Vectors/Lists (of anything)
     if isinstance(v, (Vector, List)):
-        return [view_to_jsonable(e) for e in v]
+        return [ssz_to_json(e) for e in v]
 
     # 3) Byte arrays → hex
     if isinstance(v, (ByteVector, ByteList)):
         return _to_hex(bytes(v))
 
     # 4) Bitfields → bit value
-    if isinstance(v, (Bitvector, Bitlist)):
+    if isinstance(v, (BitVector, BitList)):
         return bitfield_to_bool_list(v)
 
     # 5) Basic ints/bools
-    if isinstance(v, BASIC_INT_TYPES):
+    if isinstance(v, BaseUint):
         # Cast to Python int
         return int(v)
-    if isinstance(v, BASIC_BOOL_TYPES):
+    if isinstance(v, Boolean):
         return bool(v)
 
     # 6) Raw Python primitives (int/bytes/str/bool)
@@ -64,19 +57,12 @@ def view_to_jsonable(v: Any) -> Any:
     if v is None:
         return None
 
-    get = getattr(v, "get", None)
-    if callable(get):
-        try:
-            return view_to_jsonable(get())
-        except Exception:
-            pass
-
-    # If we reach here, we don't know how to render it; fall back to str()
-    return str(v)
+    # An unknown SSZ type (e.g. a progressive type of a later fork) must not turn into str(v)
+    raise TypeError(f"Cannot render {type(v).__name__} as JSON")
 
 def main():
-    p = argparse.ArgumentParser(description="Convert SSZ to JSON using remerkleable types.")
-    p.add_argument("--type-module", default="eth2spec.capella.mainnet", help="Python module path containing the remerkleable type (default: eth2spec.capella.mainnet)")
+    p = argparse.ArgumentParser(description="Convert SSZ to JSON using pyspec (eth-ssz-specs) types.")
+    p.add_argument("--type-module", default="eth_consensus_specs.capella.mainnet", help="Python module path containing the SSZ type (default: eth_consensus_specs.capella.mainnet)")
     p.add_argument("--type", dest="type_name", required=True, help="Type name inside the module (e.g., BeaconState, SignedBeaconBlock, Attestation)")
     p.add_argument("--in", dest="in_path", required=True, help="Input SSZ file path")
     p.add_argument("--out", dest="out_path", required=True, help="Output JSON file path")
@@ -94,10 +80,10 @@ def main():
 
     # 3) Deserialize: use decode_bytes class method
     try:
-        view = typ.decode_bytes(ssz_bytes)
+        value = typ.decode_bytes(ssz_bytes)
     except Exception as e:
         raise SystemExit(f"Failed to deserialize SSZ as {args.type_name}: {e}")
-    py_obj = view_to_jsonable(view)
+    py_obj = ssz_to_json(value)
 
     # Dump JSON
     with open(args.out_path, "w", encoding="utf-8") as f:

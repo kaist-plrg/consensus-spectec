@@ -105,7 +105,7 @@ class JsonTestCaseGenerator:
     def ssz_to_json(self, ssz_file: Path, json_file: Path, is_beacon_state: bool = True) -> bool:
         """Convert SSZ file to JSON."""
         try:
-            type_module = f"eth2spec.{self.fork}.mainnet"
+            type_module = f"eth_consensus_specs.{self.fork}.mainnet"
             result = subprocess.run(
                 [sys.executable, str(self.ssz_to_json_script),
                  "--type-module", type_module,
@@ -205,7 +205,7 @@ class JsonTestCaseGenerator:
                 print(f"  ✗ Unknown operation type: {operation_type}")
                 return False
 
-            type_module = f"eth2spec.{self.fork}.mainnet"
+            type_module = f"eth_consensus_specs.{self.fork}.mainnet"
 
             result = subprocess.run(
                 [sys.executable, str(self.ssz_to_json_script),

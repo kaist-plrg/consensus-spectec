@@ -228,7 +228,8 @@ cd /workspace/spectec-core
 make download-fixture
 ```
 
-This downloads the pinned `mainnet.tar.gz` (v1.7.0-beta.3) once into
+This downloads the pinned `mainnet.tar.gz` (v1.7.0-beta.3, matching the
+`consensus-specs` submodule) once into
 `Converter/.fixture-cache/` and unpacks the Capella and Deneb `sanity`, `random`
 and `finality` suites into `Converter/OfficialTestSuite/<fork>/<suite>/...`, the
 layout the scripts below expect. Both directories are gitignored.

@@ -32,8 +32,8 @@ ROOT = Path(__file__).resolve().parent
 sys.path[:0] = [str(ROOT / "consensus-specs/tests/core/pyspec"),
                 str(ROOT / "Converter/SSZToJson"), str(ROOT / "Converter/JsonToSSZ")]
 import snappy  # noqa: E402
-from JsonToSSZ import json_to_view  # noqa: E402
-from SSZToJson import view_to_jsonable  # noqa: E402
+from JsonToSSZ import json_to_ssz  # noqa: E402
+from SSZToJson import ssz_to_json  # noqa: E402
 from ruamel.yaml import YAML  # noqa: E402
 
 # handler -> (SpecTec task, input file, input SSZ type, SpecTec flag)
@@ -72,14 +72,14 @@ def check(case):
 
     post = case / "post.ssz_snappy"
 
-    spec = importlib.import_module(f"eth2spec.{fork}.mainnet")
+    spec = importlib.import_module(f"eth_consensus_specs.{fork}.mainnet")
 
     with tempfile.TemporaryDirectory() as tmp:
         tmp = Path(tmp)
 
         def to_json(name, typ, data):
             """Write the decoded SSZ input as JSON and return its file path."""
-            (tmp / name).write_text(json.dumps(view_to_jsonable(getattr(spec, typ).decode_bytes(data))))
+            (tmp / name).write_text(json.dumps(ssz_to_json(getattr(spec, typ).decode_bytes(data))))
             return str(tmp / name)
 
         def spectec(*args):
@@ -98,7 +98,7 @@ def check(case):
                     raise RuntimeError(" ".join(log.split())[-300:])
                 return None, " ".join(log.split())[:300]
 
-            return json_to_view(json.loads(out.read_text()), spec.BeaconState).encode_bytes(), ""
+            return json_to_ssz(json.loads(out.read_text()), spec.BeaconState).encode_bytes(), ""
 
         pre = to_json("pre.json", "BeaconState", ssz(case / "pre.ssz_snappy"))
         if runner == "epoch_processing":

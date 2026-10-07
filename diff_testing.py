@@ -771,7 +771,7 @@ def process_clients(state, block, paths, spectec_core_dir=None, enable_coverage=
     testing_clients_dir = Path(spectec_core_dir) / "testing_clients"
     eth2spec_result = Path(spectec_core_dir) / "Converter" / "eth2specResult.py"
     consensus_specs_path = Path(spectec_core_dir) / "consensus-specs" / "tests" / "core" / "pyspec"
-    eth2spec_mainnet = consensus_specs_path / "eth2spec" / fork_version / "mainnet.py"
+    eth_consensus_spec_mainnet = consensus_specs_path / "eth_consensus_specs" / fork_version / "mainnet.py"
 
     # Check Lodestar transition.js file path
     lodestar_transition = testing_clients_dir / "lodestar" / "transition.js"
@@ -995,12 +995,12 @@ def process_clients(state, block, paths, spectec_core_dir=None, enable_coverage=
                         "--data-file",
                         str(coverage_data),
                         "--include",
-                        str(eth2spec_mainnet),
+                        str(eth_consensus_spec_mainnet),
                     ] + [str(arg) for arg in client.cmd_args]
                     client.cmd_args = coverage_args
                     cmd = [str(client.cmd_path)] + coverage_args
                     print(f"[+] Coverage enabled: coverage.py data-file={coverage_data}")
-                    print(f"[+] Coverage include target: {eth2spec_mainnet}")
+                    print(f"[+] Coverage include target: {eth_consensus_spec_mainnet}")
 
             print(f"[+] Command: {client.cmd_path} {' '.join(str(arg) for arg in client.cmd_args)}")
 
