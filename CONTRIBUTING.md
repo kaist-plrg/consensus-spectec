@@ -1,6 +1,6 @@
 # Contributing
 
-These policies apply the [principles](PRINCIPLES.md) to contribution decisions. Each policy links to its supporting principles. Policy IDs name topics and stay stable when rules move or their wording changes. `↔` marks a tradeoff. See [CONVENTIONS.md](CONVENTIONS.md) for code and prose conventions, message formats, and command recipes. See [README.md](README.md) for setup and use.
+These policies apply the [principles](PRINCIPLES.md) to contribution decisions. Each policy links to its supporting principles. Policy IDs name topics and stay stable when rules move or their wording changes. `↔` marks a tradeoff. See [CONVENTIONS.md](CONVENTIONS.md) for code and prose conventions and message formats. See the [workflow guide](documentation/contributing-workflow.md) for command recipes. See [README.md](README.md) for setup and use.
 
 ## Working together
 
@@ -202,7 +202,7 @@ When a regression's introducing commit is known, the message should identify it 
 
 *[Coherence][coherence], [Provenance][provenance], [Proportionality][proportionality]*
 
-A Port or Sync description should identify the source PRs or revisions and explain how the local result differs. That includes adaptations, conflict resolutions, omissions, and any local work, so reviewers can compare the upstream and local changes. Independent local work in a Port still follows [P.port-scope](#p.port-scope). Scope-group formats are described in [CONVENTIONS.md](CONVENTIONS.md#pr-titles-and-descriptions).
+A Port or Sync description should identify the source PRs or revisions and explain how the local result differs. That includes adaptations, conflict resolutions, omissions, and any local work, so reviewers can compare the upstream and local changes. Independent local work in a Port still follows [P.port-scope](#p.port-scope). Scope-group formats are described in [CONVENTIONS.md](CONVENTIONS.md#ports-and-syncs).
 
 <a id="p.upstream-explanations"></a>
 
@@ -278,7 +278,7 @@ Integration conflicts are resolved on the PR branch, where reviewers can inspect
 
 The number of commits after final cleanup determines how the PR lands. A multi-commit PR uses a merge commit whose message explains the contribution as a whole. A single-commit PR is fast-forwarded by default because its commit message already provides that record.
 
-The final commits are preserved without squashing. For a single-commit PR, the PR number is added to the subject through an authorized amendment under [P.editorial-cleanup](#p.editorial-cleanup). Message formats and commands are described in the [landing conventions](CONVENTIONS.md#landing).
+The final commits are preserved without squashing. For a single-commit PR, the PR number is added to the subject through an authorized amendment under [P.editorial-cleanup](#p.editorial-cleanup). Message formats are described in the [landing conventions](CONVENTIONS.md#landing), and commands are in the [workflow guide](documentation/contributing-workflow.md#landing).
 
 <a id="p.direct-pushes"></a>
 
