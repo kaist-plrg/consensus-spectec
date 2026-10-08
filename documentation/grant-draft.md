@@ -26,9 +26,15 @@ The remaining maintenance task is translating each fork's new or modified Python
 
 ### 2.2 MiniZinc and SpecTrum Test Generation
 
-MiniZinc and SpecTrum target different parts of Ethereum consensus testing. The `consensus-specs` repository uses MiniZinc models to generate fork-choice compliance tests involving super-majority links and block trees [2]. SpecTrum generates state-transition tests and runs them differentially across consensus clients [1].
+MiniZinc-based test generation and SpecTrum pursue the same goal: tests that exercise each validity condition of a state-transition function as both satisfied and violated. A validity condition is a check that makes a function reject its input, most often an `assert` statement in the Python specification. The `consensus-specs` repository applies MiniZinc first to fork choice [2] and, in an open pull request, to Gloas state-transition functions, including block operations and epoch-processing steps [9]. For each function, the test authors write a model of its validity conditions, and a constraint solver generates inputs that satisfy all of them as well as inputs that violate exactly one, so that each rejection has a single cause.
 
-They also obtain test-generation targets differently. MiniZinc solves constraints encoded in its models, while SpecTrum uses premise coverage of Consensus-SpecTec to identify validity conditions that existing tests have not evaluated to false [1]. The proposed transpiler will generate Consensus-SpecTec definitions from the Python `consensus-specs`. Together, the transpiler and SpecTrum would produce premise-guided state-transition tests based on the maintained Python specification.
+SpecTrum instead derives its test targets from Consensus-SpecTec, an executable SpecTec representation of the specification [1]. Each validity condition appears as a premise of a SpecTec rule. SpecTrum measures which premises existing tests have not exercised as both satisfied and violated, and directs differential fuzzing across consensus clients toward them.
+
+The main advantage of Consensus-SpecTec over a model-based approach is that it can be executed and tested against the original specification. Running Consensus-SpecTec and the Python specification on the same inputs and comparing their results checks whether the representation is faithful to its source. A MiniZinc model, by contrast, abstracts only the conditions its authors select. The tests it generates are checked against the Python specification, but the model itself cannot be run on arbitrary inputs, so a condition missing from the model goes unnoticed.
+
+Consensus-SpecTec also represents every validity condition, including those that the Python code never writes as an `assert`, and comparing the two approaches on the same operations makes this difference visible. Four block operations that have existed since Capella reject a validator index that does not exist in the registry: `process_bls_to_execution_change`, `process_voluntary_exit`, `process_proposer_slashing`, and `process_attester_slashing`. Only `process_bls_to_execution_change` checks the index with an `assert`, and only its MiniZinc model generates a nonexistent index. The other three fail implicitly when they read `state.validators` at that index, and their MiniZinc models always select an existing validator, although the hand-written tests in `consensus-specs` include this case. The Capella definitions of Consensus-SpecTec state the index check as a premise in all four operations.
+
+In addition, the proposed transpiler would derive Consensus-SpecTec automatically from the Python specification, whereas MiniZinc models are written by hand for each function. A hand-written model covers only the conditions its authors identify and must be revised whenever the specification changes or a new fork is added. The current Consensus-SpecTec definitions are also written by hand. The transpiler would replace this manual step: it would turn every failure point in the Python code into a premise and regenerate the definitions for each fork, and the behavioral-equivalence evaluation in Section 5.2 would check the generated definitions against the Python specification.
 
 ---
 
@@ -124,3 +130,6 @@ https://arxiv.org/abs/2608.00639
 
 [8] Mechanization toolchain for the P4 programming language
 https://github.com/kaist-plrg/p4-spectec
+
+[9] Gloas state-transition compliance test generator (open pull request, revision 8cb10666)
+https://github.com/ethereum/consensus-specs/pull/5573
