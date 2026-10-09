@@ -2,6 +2,53 @@
 
 These policies apply the [principles](PRINCIPLES.md) to contribution decisions. Each policy links to its supporting principles. Policy IDs name topics and stay stable when rules move or their wording changes. `↔` marks a tradeoff. See [CONVENTIONS.md](CONVENTIONS.md) for code and prose conventions and message formats. See the [workflow guide](documentation/contributing-workflow.md) for command recipes. See [README.md](README.md) for setup and use.
 
+## Policy outline
+
+The outline lists policies by workflow. Each policy ID links to its rule, rationale, and application details.
+
+**[Working together](#working-together)**
+
+- [P.rules](#p.rules). Follow the rules in this guide and CONVENTIONS.md.
+- [P.responsibility](#p.responsibility). Take responsibility for the work you submit, regardless of tools or assistance.
+- [P.reviewer-tasks](#p.reviewer-tasks). Announce the review tasks you will take on and let the contributor take them instead.
+- [P.editorial-cleanup](#p.editorial-cleanup). The maintainer may polish comments and commit messages during final integration.
+
+**[Shaping the work](#shaping-the-work)**
+
+- [P.change-scope](#p.change-scope). Each commit should express one idea, and each PR should develop one main topic.
+- [P.port-scope](#p.port-scope). Limit each Port to one upstream PR and its local adaptations.
+- [P.established-forms](#p.established-forms). Prefer established forms when alternatives offer no clear benefit.
+- [P.abstractions](#p.abstractions). Give each abstraction a responsibility that current callers need.
+- [P.invariants](#p.invariants). Keep invariant enforcement with the data and operations it governs.
+- [P.renames](#p.renames). Rename declarations and callers together unless a consumer cannot migrate.
+- [P.comments](#p.comments). Use comments for constraints and reasons absent from the code.
+- [P.documentation](#p.documentation). Document the current system and keep change history in change records.
+
+**[Presenting the change](#presenting-the-change)**
+
+- [P.change-summaries](#p.change-summaries). Commit subjects and PR titles should summarize the conceptual change.
+- [P.commit-intent](#p.commit-intent). Classify each commit by its intent, including specification work.
+- [P.commit-explanations](#p.commit-explanations). Each final commit message should explain the motivation and resulting change.
+- [P.pr-explanations](#p.pr-explanations). Each PR body should explain its motivation, result, and scope.
+- [P.single-commit-record](#p.single-commit-record). A single-commit PR's message must explain the PR's motivation, result, and scope.
+- [P.source-credit](#p.source-credit). Commits containing copied or adapted work must cite its source and preserve author credit.
+- [P.regression-origin](#p.regression-origin). Identify a regression's introducing commit when known.
+- [P.imported-work](#p.imported-work). Port and Sync PRs must distinguish imported work, adaptations, omissions, and local changes.
+- [P.upstream-explanations](#p.upstream-explanations). Reuse upstream explanations only when they cover the adopted design and its local assumptions.
+
+**[Reviewing and revising](#reviewing-and-revising)**
+
+- [P.review-blockers](#p.review-blockers). Explain why a requested change is needed before merging.
+- [P.follow-ups](#p.follow-ups). Do not delay a ready contribution for independent follow-up work.
+
+**[Landing the change](#landing-the-change)**
+
+- [P.commit-buildability](#p.commit-buildability). Finalize each commit as a buildable unit.
+- [P.rebase-timing](#p.rebase-timing). Rebase during final integration by default.
+- [P.conflict-resolution](#p.conflict-resolution). Resolve integration conflicts on the PR branch before landing.
+- [P.merge-method](#p.merge-method). Use merge commits for multi-commit PRs and default to fast-forwards for single-commit PRs.
+- [P.direct-pushes](#p.direct-pushes). The maintainer may push bounded repairs and current-state documentation directly to `main`.
+
 ## Working together
 
 <a id="p.rules"></a>
