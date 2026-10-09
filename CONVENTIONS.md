@@ -2,11 +2,17 @@
 
 Conventions settle routine decisions so contributors can reuse them. As a rule of thumb, document a routine choice here after similar decisions have been made three times. State the choice and when it applies.
 
-[CONTRIBUTING.md](CONTRIBUTING.md) states contribution policies, and [PRINCIPLES.md](PRINCIPLES.md) explains their purpose. These conventions apply [P.established-forms](CONTRIBUTING.md#p.established-forms) to routine choices and message formats. See the [workflow guide](documentation/contributing-workflow.md) for command recipes. Requirements and recommendations follow the distinction in CONTRIBUTING.md.
+This is an optional reference. [PRINCIPLES.md](PRINCIPLES.md) and the policy outline in [CONTRIBUTING.md](CONTRIBUTING.md#policy-outline) are the shared reading baseline. Defaults describe the usual approach, and editorial preferences guide writing and final polish. This document adds no requirements. References to obligations restate the outline. See the [workflow guide](documentation/contributing-workflow.md) for command recipes.
 
-Convention IDs name topics and stay stable when rules move or their wording changes. Links below each convention group identify its supporting policies. Those policies explain the decisions, while conventions specify how to apply them consistently.
+Convention IDs name topics and stay stable when rules move or their wording changes. Links below convention groups identify the shared requirements or principles that support them. Entries are defaults unless marked as editorial preferences or identified as restatements of an outline requirement. Defaults allow judgment under [P.rules](CONTRIBUTING.md#p.rules).
 
 ## Across media
+
+<a id="c.established-forms"></a>**[C.established-forms](#c.established-forms). Prefer established code and prose forms when alternatives offer no clear benefit.**
+
+*Default. Principles [Coherence](PRINCIPLES.md#coherence), [Proportionality](PRINCIPLES.md#proportionality).*
+
+Familiar forms let readers focus on meaning and avoid repeated decisions. When alternatives express the same idea equally clearly, follow the surrounding code or prose. Use a different form when it makes an operation, dependency, or relationship clearer.
 
 As general writing guidance, write for readers who do not share your context. Explain what the surrounding artifact cannot readily show. The rules below make sentence structure, terminology, and punctuation easier to follow.
 
@@ -14,7 +20,7 @@ As general writing guidance, write for readers who do not share your context. Ex
 
 **[C.prose](#c.prose). Prose clarity**
 
-*Policies [P.established-forms](CONTRIBUTING.md#p.established-forms), [P.comments](CONTRIBUTING.md#p.comments), [P.documentation](CONTRIBUTING.md#p.documentation), [P.commit-explanations](CONTRIBUTING.md#p.commit-explanations), [P.pr-explanations](CONTRIBUTING.md#p.pr-explanations).*
+*Editorial preference. Policies [P.documentation](CONTRIBUTING.md#p.documentation), [P.commit-explanations](CONTRIBUTING.md#p.commit-explanations), [P.pr-explanations](CONTRIBUTING.md#p.pr-explanations).*
 
 Apply these conventions to prose sentences.
 
@@ -56,7 +62,7 @@ The [Swift API Design Guidelines](https://www.swift.org/documentation/api-design
 
 ### Names and boundaries
 
-As general guidance, use names and interfaces to make a component's meaning and responsibility clear to its callers. Choose names from the project's vocabulary and use them consistently for the same concept. Keep code that maintains the same invariant together under [P.invariants](CONTRIBUTING.md#p.invariants).
+As general guidance, use names and interfaces to make a component's meaning and responsibility clear to its callers. Choose names from the project's vocabulary and use them consistently for the same concept. As a default, keep code that maintains the same invariant together. [P.invariants](CONTRIBUTING.md#p.invariants) requires operations to preserve the guarantees callers rely on.
 
 As guidance, spend naming effort in proportion to how widely and how long a name is used. The default order of attention is module names, function names, labeled parameters, positional parameters, local bindings, and bindings in lambdas or match arms. Short names are appropriate when the surrounding code makes their roles immediately clear.
 
@@ -64,7 +70,7 @@ As guidance, spend naming effort in proportion to how widely and how long a name
 
 **[C.names](#c.names). Names**
 
-*Policies [P.established-forms](CONTRIBUTING.md#p.established-forms), [P.abstractions](CONTRIBUTING.md#p.abstractions), [P.renames](CONTRIBUTING.md#p.renames).*
+*Default. Principle [Coherence](PRINCIPLES.md#coherence). Policy [P.renames](CONTRIBUTING.md#p.renames).*
 
 - <a id="c.names.modules"></a>**[C.names.modules](#c.names.modules). Name modules for the responsibilities they own.**
 
@@ -88,13 +94,19 @@ Check existing uses of a concept before choosing its name. Evaluate a name at it
 
 Rename a component once its boundary and responsibility support the new name. Public APIs should express the intended semantic model even when dependency constraints require different internal module paths. Prefer explicit organization over broad buckets such as `core` when distinct responsibilities can be named.
 
+<a id="c.names.renames"></a>**[C.names.renames](#c.names.renames). Rename declarations and callers together by default.**
+
+*Default. Principle [Coherence](PRINCIPLES.md#coherence). Policy [P.renames](CONTRIBUTING.md#p.renames).*
+
+Do not retain compatibility aliases by default. Two names can suggest different meanings. When a consumer cannot migrate in the same change, record the obstacle and agree the alias’s removal under [P.renames](CONTRIBUTING.md#p.renames).
+
 ### Types and data
 
 <a id="c.types"></a>
 
 **[C.types](#c.types). Type constraints**
 
-*Policy [P.invariants](CONTRIBUTING.md#p.invariants).*
+*Default. Policy [P.invariants](CONTRIBUTING.md#p.invariants).*
 
 Types let callers rely on constraints without checking them at every use. As guidance, make invalid states unrepresentable with the simplest type that captures the constraint.
 
@@ -108,13 +120,15 @@ As guidance, prefer explicit checks when encoding a constraint in a type would m
 
 ### Abstractions and interfaces
 
-Callers should be able to use an abstraction without knowing its internal steps, as required by [P.abstractions](CONTRIBUTING.md#p.abstractions).
+As a default, give abstractions responsibilities that current callers need. An abstraction adds a concept readers must learn, so hypothetical future uses alone do not justify generic options or extension points. This applies [YAGNI](https://martinfowler.com/bliki/Yagni.html) to abstractions.
+
+Names and interfaces should express the responsibility, what callers supply, and what they can rely on. Callers should be able to use operations without knowing their internal steps. Inputs that affect results should be explicit by default.
 
 <a id="c.abstractions"></a>
 
 **[C.abstractions](#c.abstractions). Abstraction boundaries**
 
-*Policy [P.abstractions](CONTRIBUTING.md#p.abstractions).*
+*Default. Principle [Coherence](PRINCIPLES.md#coherence).*
 
 - <a id="c.abstractions.operations"></a>**[C.abstractions.operations](#c.abstractions.operations). Extract meaningful operations.** Give each helper or module an operation or responsibility that its callers can name. One caller can justify an abstraction when it expresses a distinct operation.
 
@@ -132,7 +146,7 @@ As general guidance, prefer functional updates that return new values over mutat
 
 **[C.mutation](#c.mutation). Mutation**
 
-*Policies [P.established-forms](CONTRIBUTING.md#p.established-forms), [P.abstractions](CONTRIBUTING.md#p.abstractions), [P.invariants](CONTRIBUTING.md#p.invariants).*
+*Default. Principle [Coherence](PRINCIPLES.md#coherence). Policy [P.invariants](CONTRIBUTING.md#p.invariants).*
 
 - <a id="c.mutation.inputs"></a>**[C.mutation.inputs](#c.mutation.inputs). Pass inputs as arguments instead of reading mutable global state by default.** Pass settings and environments that affect a result at the call site. This lets readers see the function's dependencies.
 
@@ -148,7 +162,7 @@ Mutation can serve caches, registries, usage tracking, and resource management.
 
 **[C.ocaml](#c.ocaml). OCaml conventions**
 
-*Policy [P.established-forms](CONTRIBUTING.md#p.established-forms).*
+*Default. Principles [Coherence](PRINCIPLES.md#coherence), [Proportionality](PRINCIPLES.md#proportionality).*
 
 - <a id="c.ocaml.casing"></a>**[C.ocaml.casing](#c.ocaml.casing). Follow OCaml's casing conventions.** Use `snake_case` for values and types and `PascalCase` for modules and constructors.
 
@@ -164,7 +178,7 @@ Prefer direct code when handling exceptions.
 
 **[C.compiler-layout](#c.compiler-layout). Place compiler code according to its responsibility.**
 
-*Policy [P.abstractions](CONTRIBUTING.md#p.abstractions).*
+*Default. Principle [Coherence](PRINCIPLES.md#coherence).*
 
 | Responsibility | Location |
 | --- | --- |
@@ -176,6 +190,12 @@ Keep semantic logic out of executable entrypoints so other callers can use it wi
 
 ## Comments
 
+<a id="c.comments.purpose"></a>**[C.comments.purpose](#c.comments.purpose). Use comments for constraints and reasons absent from the code.**
+
+*Default. Principle [Coherence](PRINCIPLES.md#coherence). Policy [P.documentation](CONTRIBUTING.md#p.documentation).*
+
+Names, types, and implementation often supply the explanation. Add a comment when a constraint or reason is not evident from them. Accounts of what changed and why belong in change records under [P.documentation](CONTRIBUTING.md#p.documentation).
+
 Before adding a comment, consider whether a clearer name, smaller function, or stronger type can express the information. Omit comments that only paraphrase code, repeat a name, or label the next block.
 
 A reader should be able to understand a comment without seeing an earlier version of the code.
@@ -184,7 +204,7 @@ A reader should be able to understand a comment without seeing an earlier versio
 
 **[C.comments](#c.comments). Comment placement and idiom**
 
-*Policy [P.comments](CONTRIBUTING.md#p.comments).*
+*Default. Policy [P.documentation](CONTRIBUTING.md#p.documentation).*
 
 - <a id="c.comments.definitions"></a>**[C.comments.definitions](#c.comments.definitions). Use function definition comments for caller-visible facts not evident from the signature.** For example, explain a required input order here.
 
@@ -202,13 +222,19 @@ A reader should be able to understand a comment without seeing an earlier versio
 
 ## Documentation
 
-Document the current system's organization, use, and lasting constraints. Put setup and usage guidance in the relevant README, and keep component-specific details near the component. Link to authoritative explanations when repeating them would create competing versions.
+<a id="c.documentation.locations"></a>**[C.documentation.locations](#c.documentation.locations). Give each explanation an authoritative home by default.**
+
+*Default. Principle [Coherence](PRINCIPLES.md#coherence). Policy [P.documentation](CONTRIBUTING.md#p.documentation).*
+
+Link to the explanation instead of maintaining competing copies. Put setup and usage guidance in the relevant README, and keep component-specific details near the component.
+
+Comments and documentation describe the current system under [P.documentation](CONTRIBUTING.md#p.documentation).
 
 <a id="c.markdown-wrapping"></a>
 
 **[C.markdown-wrapping](#c.markdown-wrapping). Do not hard-wrap Markdown paragraphs or bullet text.**
 
-*Policy [P.established-forms](CONTRIBUTING.md#p.established-forms).*
+*Editorial preference. Principles [Coherence](PRINCIPLES.md#coherence), [Proportionality](PRINCIPLES.md#proportionality).*
 
 Keep each paragraph or bullet's text on one source line and let the renderer wrap it. Preserve line breaks required by code blocks, tables, or other Markdown structure. This also applies to PR bodies.
 
@@ -216,11 +242,17 @@ Keep each paragraph or bullet's text on one source line and let the renderer wra
 
 <a id="c.checking-instructions"></a>**[C.checking-instructions](#c.checking-instructions). Keep build and checking instructions with the component they apply to.**
 
-*Policy [P.documentation](CONTRIBUTING.md#p.documentation).*
+*Default. Policy [P.documentation](CONTRIBUTING.md#p.documentation).*
 
 Document formatter versions, commands, and prerequisites in the relevant component guide. Link those instructions instead of maintaining another command list here. The [workflow guide](documentation/contributing-workflow.md#build-and-checks) provides compiler command recipes.
 
 ## Change records
+
+<a id="c.change-summaries"></a>**[C.change-summaries](#c.change-summaries). Summarize the conceptual change in commit subjects and PR titles.**
+
+*Default. Principle [Coherence](PRINCIPLES.md#coherence). Policies [P.commit-explanations](CONTRIBUTING.md#p.commit-explanations), [P.pr-explanations](CONTRIBUTING.md#p.pr-explanations).*
+
+Name the action and affected concept so readers can identify the change before opening its details. A commit subject describes that commit’s idea. A PR title names the contribution’s main topic, and its body accounts for accompanying work.
 
 ### Commit messages
 
@@ -228,7 +260,7 @@ Document formatter versions, commands, and prerequisites in the relevant compone
 
 **[C.commit-format](#c.commit-format). Commit classification and format**
 
-*Policies [P.change-summaries](CONTRIBUTING.md#p.change-summaries), [P.commit-intent](CONTRIBUTING.md#p.commit-intent).*
+*Default. Principle [Coherence](PRINCIPLES.md#coherence). Policy [P.commit-explanations](CONTRIBUTING.md#p.commit-explanations).*
 
 <a id="c.commit-format.subject"></a>**[C.commit-format.subject](#c.commit-format.subject). Use `type(scope): summary`, with standard types and the additional `reorg` type.**
 
@@ -244,13 +276,17 @@ Solution describing the resulting change.
 
 <a id="c.commit-format.classification"></a>**[C.commit-format.classification](#c.commit-format.classification). Choose the type by intent and the scope by affected area, regardless of implementation language.**
 
-Standard types include `feat`, `fix`, `refactor`, `test`, `docs`, `chore`, `perf`, and `style`. Classification applies across implementation languages. The additional `reorg` type covers directory renames, file moves, and layout changes that preserve code structure and behavior. Mechanical caller updates can remain `reorg`. Use `refactor` when responsibilities or APIs change, and `chore` for build configuration or dependencies. A `reorg` label does not establish behavior preservation by itself.
+Commit types include `feat`, `fix`, `refactor`, `test`, `docs`, `ci`, `chore`, `perf`, and `style`. Classification applies across implementation languages. The additional `reorg` type covers directory renames, file moves, and layout changes that preserve code structure and behavior. Mechanical caller updates can remain `reorg`. Use `refactor` when responsibilities or APIs change. Use `ci` for CI configuration and automated build, check, or release workflows. Use `chore` for other build configuration or dependencies.
+
+Classify structural or behavioral changes by their own intent, even when they accompany reorganization or formatting. Explain those changes separately. A `reorg` label does not establish behavior preservation by itself.
 
 Choose the narrowest accurate scope, such as `converter`, `cli`, `elaborate`, `il`, `interp`, `instrumentation`, or `targets/p4`.
 
 For documentation changes, choose the scope by topic. Use `docs(principles)` for project principles, `docs(conventions)` for routine conventions, and `docs(contributing)` for contribution policies or changes spanning the contribution process. Name affected documents in the body when that helps readers locate the work.
 
 <a id="c.commit-format.specifications"></a>**[C.commit-format.specifications](#c.commit-format.specifications). Use `spec` or `spec/<target>` scopes for specification work, such as `fix(spec/deneb): correct blob validation`.**
+
+Specification messages should distinguish changes in modeled behavior from changes in notation or organization.
 
 The `spec` commit type is deprecated. Historical `spec` commits denote specification changes. Do not rewrite existing history solely to replace the deprecated type.
 
@@ -260,11 +296,11 @@ The `spec` commit type is deprecated. Historical `spec` commits denote specifica
 
 **[C.commit-prose](#c.commit-prose). Commit prose**
 
-*Policies [P.change-summaries](CONTRIBUTING.md#p.change-summaries), [P.commit-explanations](CONTRIBUTING.md#p.commit-explanations).*
+*Editorial preference. Policy [P.commit-explanations](CONTRIBUTING.md#p.commit-explanations).*
 
 <a id="c.commit-prose.subjects"></a>**[C.commit-prose.subjects](#c.commit-prose.subjects). Use imperative subjects.** Name the concept. Put code identifiers in the body, where there is room to explain them. For example, `refactor(cli): group shared flags by role` gives the reader a concept, while its body can identify the modules and flag groups.
 
-<a id="c.commit-prose.bodies"></a>**[C.commit-prose.bodies](#c.commit-prose.bodies). Organize bodies as Motivation followed by Solution, without requiring section headings.** The body explains why and what. Omit the body when the subject already conveys both under [P.commit-explanations](CONTRIBUTING.md#p.commit-explanations). Required source records still apply.
+<a id="c.commit-prose.bodies"></a>**[C.commit-prose.bodies](#c.commit-prose.bodies). Organize bodies as Motivation followed by Solution, without requiring section headings.** The body explains why and what. Omit the body when the subject already conveys both under [P.commit-explanations](CONTRIBUTING.md#p.commit-explanations). Source citations still follow [P.source-credit](CONTRIBUTING.md#p.source-credit).
 
 <a id="c.commit-prose.motivation-tense"></a>**[C.commit-prose.motivation-tense](#c.commit-prose.motivation-tense). Describe prior problems in past tense by default.** A `Currently, ...` framing is also acceptable.
 
@@ -278,11 +314,11 @@ The `spec` commit type is deprecated. Historical `spec` commits denote specifica
 
 **[C.commit-display](#c.commit-display). Commit character set and wrapping**
 
-*Policy [P.established-forms](CONTRIBUTING.md#p.established-forms).*
+*Editorial preference. Principles [Coherence](PRINCIPLES.md#coherence), [Proportionality](PRINCIPLES.md#proportionality).*
 
 <a id="c.commit-display.characters"></a>**[C.commit-display.characters](#c.commit-display.characters). Prefer ASCII in commit-message prose for predictable terminal display.** Use UTF-8 when accurate names, identifiers, or exact source text require it.
 
-<a id="c.commit-display.wrapping"></a>**[C.commit-display.wrapping](#c.commit-display.wrapping). Prefer wrapping commit-message prose at 72 columns.** URLs are an exception and must remain unbroken. Keep identifiers and verbatim subjects in source records intact even when they exceed that width. Markdown paragraphs and PR bodies follow [C.markdown-wrapping](#c.markdown-wrapping).
+<a id="c.commit-display.wrapping"></a>**[C.commit-display.wrapping](#c.commit-display.wrapping). Prefer wrapping commit-message prose at 72 columns.** Leave URLs unbroken. Keep identifiers and verbatim subjects in source records intact even when they exceed that width. Markdown paragraphs and PR bodies follow [C.markdown-wrapping](#c.markdown-wrapping).
 
 ### Sources and credit
 
@@ -290,7 +326,7 @@ The `spec` commit type is deprecated. Historical `spec` commits denote specifica
 
 **[C.sources](#c.sources). Source and related-revision records**
 
-*Policies [P.source-credit](CONTRIBUTING.md#p.source-credit), [P.regression-origin](CONTRIBUTING.md#p.regression-origin), [P.responsibility](CONTRIBUTING.md#p.responsibility).*
+*Default. Policies [P.source-credit](CONTRIBUTING.md#p.source-credit), [P.commit-explanations](CONTRIBUTING.md#p.commit-explanations), [P.responsibility](CONTRIBUTING.md#p.responsibility).*
 
 In commit messages, source records use full URLs so they remain useful outside GitHub's PR view. Repeat records when a local commit combines several sources. Describe meaningful adaptations in the body. Preserve credit under [P.source-credit](CONTRIBUTING.md#p.source-credit).
 
@@ -312,9 +348,9 @@ Ported from P4-SpecTec.
 Original-commit: https://github.com/kaist-plrg/p4-spectec/commit/<12-character-sha>
 ```
 
-<a id="c.sources.regressions"></a>**[C.sources.regressions](#c.sources.regressions). Record a known regression's introducing commit as `Fixes: <12-character SHA> ("<subject>")`.** Preserve its full subject. Omit the record when the introducing commit cannot be identified. Hash-length exceptions follow [C.sources.hashes](#c.sources.hashes). This format is the exception to the full-URL convention. It may coexist with source records.
+<a id="c.sources.regressions"></a>**[C.sources.regressions](#c.sources.regressions). Record a known regression's introducing commit as `Fixes: <12-character SHA> ("<subject>")`.** Preserve its full subject. Omit the record when the introducing commit cannot be identified. Hash-length exceptions follow [C.sources.hashes](#c.sources.hashes). This format is an exception to the full-URL default. It may coexist with source records.
 
-<a id="c.sources.hashes"></a>**[C.sources.hashes](#c.sources.hashes). Use 12-character commit hashes in same-repository references and Git URLs that accept abbreviated hashes.** This includes prose references, GitHub shorthand, commit URLs, revision paths, and both endpoints of comparison URLs. Use a longer hash when 12 characters would be ambiguous or the URL requires it. Shortening the hash does not replace a required full URL with shorthand or change which commit the record identifies. Preserve hashes in verbatim source quotations and copied commit subjects.
+<a id="c.sources.hashes"></a>**[C.sources.hashes](#c.sources.hashes). Use 12-character commit hashes in same-repository references and Git URLs that accept abbreviated hashes.** This includes prose references, GitHub shorthand, commit URLs, revision paths, and both endpoints of comparison URLs. Use a longer hash when 12 characters would be ambiguous or the URL requires it. Shortening a hash changes its length while retaining the URL and the identified revision. Preserve hashes in verbatim source quotations and copied commit subjects.
 
 <a id="c.sources.coauthors"></a>**[C.sources.coauthors](#c.sources.coauthors). Credit human coauthors with optional `Co-authored-by: Name <email>` trailers.** Use the trailer only for actual joint authorship and place it in the final record block. Do not add AI or other tool names as coauthors. Existing attribution records remain subject to preservation under [P.source-credit](CONTRIBUTING.md#p.source-credit) and agreement on attribution changes under [P.reviewer-tasks](CONTRIBUTING.md#p.reviewer-tasks).
 
@@ -326,7 +362,7 @@ Choose a title that identifies the main concept. When several changes form one i
 
 <a id="c.pr-titles"></a>**[C.pr-titles](#c.pr-titles). Match the PR title form to its category.**
 
-*Policy [P.change-summaries](CONTRIBUTING.md#p.change-summaries).*
+*Default. Policy [P.pr-explanations](CONTRIBUTING.md#p.pr-explanations).*
 
 | Type | Title form |
 | --- | --- |
@@ -342,7 +378,7 @@ A Port names the work being adopted. A Sync names the area being brought to a re
 
 **[C.pr-body](#c.pr-body). PR sections**
 
-*Policies [P.change-scope](CONTRIBUTING.md#p.change-scope), [P.pr-explanations](CONTRIBUTING.md#p.pr-explanations), [P.follow-ups](CONTRIBUTING.md#p.follow-ups), [P.responsibility](CONTRIBUTING.md#p.responsibility).*
+*Default. Policies [P.change-scope](CONTRIBUTING.md#p.change-scope), [P.pr-explanations](CONTRIBUTING.md#p.pr-explanations), [P.follow-ups](CONTRIBUTING.md#p.follow-ups), [P.responsibility](CONTRIBUTING.md#p.responsibility).*
 
 <a id="c.pr-body.sections"></a>**[C.pr-body.sections](#c.pr-body.sections). Add sections when they answer additional review questions.** Use the standard headings for the purposes defined below. Give additional sections headings that describe their content. Omit sections that repeat information already covered elsewhere.
 
@@ -382,9 +418,13 @@ Under `### Ideas and Open Questions`, describe possible improvements or open des
 
 **[C.ports-syncs](#c.ports-syncs). Upstream scope groups**
 
-*Policies [P.port-scope](CONTRIBUTING.md#p.port-scope), [P.imported-work](CONTRIBUTING.md#p.imported-work), [P.upstream-explanations](CONTRIBUTING.md#p.upstream-explanations).*
+*Default. Policies [P.change-scope](CONTRIBUTING.md#p.change-scope), [P.imported-work](CONTRIBUTING.md#p.imported-work), [P.source-credit](CONTRIBUTING.md#p.source-credit), [P.pr-explanations](CONTRIBUTING.md#p.pr-explanations).*
 
-Ports link their upstream PR in Motivation. Syncs link the comparison range or reference state being adopted. Reuse upstream explanations under [P.upstream-explanations](CONTRIBUTING.md#p.upstream-explanations) when they cover the adopted design and its local assumptions.
+<a id="c.ports-syncs.scope"></a>**[C.ports-syncs.scope](#c.ports-syncs.scope). Limit each Port to one upstream PR and its necessary local adaptations.** This restates [P.change-scope](CONTRIBUTING.md#p.change-scope) so reviewers can compare the original work with the local result. Independent local changes belong in another PR. A Sync may cover broader upstream changes and related local work.
+
+<a id="c.ports-syncs.explanations"></a>**[C.ports-syncs.explanations](#c.ports-syncs.explanations). Reuse upstream explanations only when they cover the adopted design and its local assumptions.** Ports link their upstream PR in Motivation. Syncs link the comparison range or reference state being adopted.
+
+The local PR should summarize why the work is needed here and what result it brings. Link sufficient upstream explanations instead of repeating them. Explain any missing reasoning or local design differences in the local PR.
 
 <a id="c.ports-syncs.groups"></a>**[C.ports-syncs.groups](#c.ports-syncs.groups). Use `Ported`, `Adapted`, `Omitted`, and Sync-only `Local Changes` as upstream scope headings.** Use `###` headings within `## Scope`. Include the applicable groups and omit empty ones.
 
@@ -397,23 +437,49 @@ Ports link their upstream PR in Motivation. Syncs link the comparison range or r
 
 An omission does not by itself promise later adoption. Include it under Deferred Tasks only when its later adoption has been explicitly deferred.
 
-<a id="c.ports-syncs.references"></a>**[C.ports-syncs.references](#c.ports-syncs.references). Use GitHub source references in upstream scope groups.** Identify origins, for example `Original: org/repo@sha`, or link a comparison range or reference file for a Sync. A Port includes necessary local adaptations, while independent local changes need a separate PR under [P.port-scope](CONTRIBUTING.md#p.port-scope).
+<a id="c.ports-syncs.references"></a>**[C.ports-syncs.references](#c.ports-syncs.references). Use GitHub source references in upstream scope groups.** Identify origins, for example `Original: org/repo@sha`, or link a comparison range or reference file for a Sync.
 
 ## Review
 
 <a id="c.review-labels"></a>**[C.review-labels](#c.review-labels). Label a review comment when its status could be unclear.**
 
-*Policy [P.review-blockers](CONTRIBUTING.md#p.review-blockers).*
+*Default. Policy [P.review-blockers](CONTRIBUTING.md#p.review-blockers).*
 
 Use `Required:`, `Suggestion:`, or `Question:` to distinguish blockers, preferences, and requests for clarification. A label is unnecessary when the status is already clear. Explain blockers under [P.review-blockers](CONTRIBUTING.md#p.review-blockers).
 
 ## Landing
 
+### Integration defaults
+
+<a id="c.integration"></a>**[C.integration](#c.integration). Integration defaults**
+
+*Default. Policies [P.rules](CONTRIBUTING.md#p.rules), [P.reviewer-tasks](CONTRIBUTING.md#p.reviewer-tasks), [P.merge-method](CONTRIBUTING.md#p.merge-method).*
+
+<a id="c.integration.rebase"></a>**[C.integration.rebase](#c.integration.rebase). Rebase onto current `main` during final integration by default.**
+
+*Default. Principles [Coordination](PRINCIPLES.md#coordination), [Proportionality](PRINCIPLES.md#proportionality).*
+
+Update earlier when dependencies or conflicts require it. Contributors need not rebase every open branch after each merge. Before replacing commits that dependent branches use, coordinate with affected contributors under [P.rules](CONTRIBUTING.md#p.rules). Reviewer rewrites also follow [P.reviewer-tasks](CONTRIBUTING.md#p.reviewer-tasks). Agree another integration method if rebasing would disrupt shared work.
+
+<a id="c.integration.method"></a>**[C.integration.method](#c.integration.method). Fast-forward single-commit PRs by default.**
+
+*Default. Policy [P.merge-method](CONTRIBUTING.md#p.merge-method).*
+
+Count commits after final cleanup. A fast-forward avoids an extra merge commit because the single commit supplies the contribution’s permanent record.
+
+### Single-commit records
+
+<a id="c.single-commit-record"></a>**[C.single-commit-record](#c.single-commit-record). A single-commit PR’s message must explain the PR’s motivation, result, and scope.**
+
+*Outline requirement. Policies [P.commit-explanations](CONTRIBUTING.md#p.commit-explanations), [P.pr-explanations](CONTRIBUTING.md#p.pr-explanations), [P.merge-method](CONTRIBUTING.md#p.merge-method).*
+
+A fast-forward creates no merge message, so the commit message is the permanent landing record. Include the PR’s motivation, result, and scope, along with applicable source records.
+
 ### Merge messages
 
 <a id="c.merge-subjects"></a>**[C.merge-subjects](#c.merge-subjects). Use `Merge: <lowercase summary> (#PR)` for merge subjects.**
 
-*Policies [P.commit-explanations](CONTRIBUTING.md#p.commit-explanations), [P.merge-method](CONTRIBUTING.md#p.merge-method).*
+*Default. Policies [P.commit-explanations](CONTRIBUTING.md#p.commit-explanations), [P.merge-method](CONTRIBUTING.md#p.merge-method).*
 
 The summary uses the PR title with ordinary words in lowercase. Preserve proper names and acronyms. A framing paragraph explains the PR's motivation and resulting change. Summary bullets follow when useful under [C.merge-summary](#c.merge-summary).
 
@@ -421,7 +487,7 @@ The summary uses the PR title with ordinary words in lowercase. Preserve proper 
 
 **[C.merge-summary](#c.merge-summary). Merge-message summaries**
 
-*Policies [P.pr-explanations](CONTRIBUTING.md#p.pr-explanations), [P.merge-method](CONTRIBUTING.md#p.merge-method).*
+*Default. Policies [P.pr-explanations](CONTRIBUTING.md#p.pr-explanations), [P.merge-method](CONTRIBUTING.md#p.merge-method).*
 
 <a id="c.merge-summary.overview"></a>**[C.merge-summary.overview](#c.merge-summary.overview). Summarize the PR as a whole.** A framing paragraph can suffice when it explains the motivation, result, and affected work. Add thematic bullets when they make the affected work easier to scan. Choose scopes for the merged result, not for each individual commit. Use `type: Description.` when a narrower scope adds no useful distinction. Commit subjects still follow [C.commit-format](#c.commit-format).
 
@@ -443,7 +509,7 @@ Minor Changes:
 
 <a id="c.deferred-work"></a>**[C.deferred-work](#c.deferred-work). Reserve `DEFERRED:` for work explicitly postponed from the contribution.**
 
-*Policies [P.follow-ups](CONTRIBUTING.md#p.follow-ups), [P.merge-method](CONTRIBUTING.md#p.merge-method).*
+*Default. Policies [P.follow-ups](CONTRIBUTING.md#p.follow-ups), [P.merge-method](CONTRIBUTING.md#p.merge-method).*
 
 Carry only the explicitly deferred items identified in the PR's Deferred Tasks subsection or review discussion. These can include a known shortcoming accepted for this PR that should be repaired soon, or work intentionally omitted from a Port or Sync for later adoption. Ideas and Open Questions do not become deferred commitments.
 
@@ -455,6 +521,6 @@ Use separate bullets without a deferred-work heading. Record the unfinished task
 
 <a id="c.pr-number"></a>**[C.pr-number](#c.pr-number). Append `(#PR)` to a single-commit PR's commit subject during authorized final cleanup.**
 
-*Policies [P.editorial-cleanup](CONTRIBUTING.md#p.editorial-cleanup), [P.single-commit-record](CONTRIBUTING.md#p.single-commit-record), [P.merge-method](CONTRIBUTING.md#p.merge-method).*
+*Default. Policies [P.final-cleanup](CONTRIBUTING.md#p.final-cleanup), [P.merge-method](CONTRIBUTING.md#p.merge-method).*
 
-Its commit message is the permanent landing record under [P.single-commit-record](CONTRIBUTING.md#p.single-commit-record). The [workflow guide](documentation/contributing-workflow.md#landing) contains amendment and integration commands.
+[P.merge-method](CONTRIBUTING.md#p.merge-method) requires the PR number in the permanent landing record. Appending `(#PR)` to the subject is the default format. The [workflow guide](documentation/contributing-workflow.md#landing) contains amendment and integration commands.

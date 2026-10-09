@@ -52,4 +52,4 @@ Extra steps should improve clarity, confidence, coordination, or traceability. O
 
 ## Applying the principles
 
-Policies apply these principles to recurring decisions and resolve tradeoffs. Conventions settle routine choices so contributors need not renegotiate them. Agree on exceptions explicitly so shared expectations remain predictable.
+Policies apply these principles to recurring decisions and resolve tradeoffs. Conventions settle routine choices so contributors need not renegotiate them. Agree on exceptions to requirements explicitly so shared expectations remain predictable.

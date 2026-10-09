@@ -1,6 +1,6 @@
 # Contribution workflow
 
-These recipes apply [CONTRIBUTING.md](../CONTRIBUTING.md). Message formats and routine choices belong in [CONVENTIONS.md](../CONVENTIONS.md). Commands that rewrite or publish history require the agreement described in P.reviewer-tasks or P.editorial-cleanup. These recipes do not themselves authorize a rewrite or publication.
+This optional reference gives command recipes for applying the [policy outline](../CONTRIBUTING.md#policy-outline). It adds no contribution requirements. Message formats and routine choices belong in [CONVENTIONS.md](../CONVENTIONS.md). History rewrites and publication require agreement under [P.reviewer-tasks](../CONTRIBUTING.md#p.reviewer-tasks) or permission under [P.final-cleanup](../CONTRIBUTING.md#p.final-cleanup). These recipes do not themselves authorize a rewrite or publication.
 
 ## Build and checks
 
@@ -8,7 +8,7 @@ Run commands from the repository root after following the [README setup instruct
 
 | Command | Purpose |
 | --- | --- |
-| `make fmt` | Format OCaml with ocamlformat 0.27.0, pinned in [spectec/.ocamlformat](../spectec/.ocamlformat). Run before committing OCaml changes. |
+| `make fmt` | Format OCaml with ocamlformat 0.27.0, pinned in [spectec/.ocamlformat](../spectec/.ocamlformat). Use to format OCaml changes before committing. |
 | `make fmt-check` | Check OCaml formatting without applying edits. |
 | `make check` | Type-check libraries and executables without building the final executable. |
 | `make exe` | Build the executable with the release profile. |
@@ -48,7 +48,7 @@ git rebase -i --exec 'make exe' <review-base>
 
 Use the opam switch available in the chosen environment and substitute a more relevant check when appropriate. A failure stops the rebase so the commit can be repaired or folded. This recipe does not imply that every review update needs a rebase or an expensive rerun.
 
-Publish a rewritten branch within the agreement under [P.reviewer-tasks](../CONTRIBUTING.md#p.reviewer-tasks) or the maintainer's editorial permission under [P.editorial-cleanup](../CONTRIBUTING.md#p.editorial-cleanup). Use a lease against the remote tip you reviewed so another contributor's intervening push prevents replacement. For an example branch named `topic`, capture the tip before rewriting.
+Publish a rewritten branch within the agreement under [P.reviewer-tasks](../CONTRIBUTING.md#p.reviewer-tasks) or the maintainer's final-cleanup permission under [P.final-cleanup](../CONTRIBUTING.md#p.final-cleanup). Use a lease against the remote tip you reviewed so another contributor's intervening push prevents replacement. For an example branch named `topic`, capture the tip before rewriting.
 
 ```bash
 git fetch origin
@@ -121,4 +121,4 @@ Reports a syntax diagnostic at the declaration and adds a negative test
 for the missing field type.
 ```
 
-Its PR can contain a short Motivation explaining the same problem and result. It needs no separate Core Concepts, Scope, or Commit Log. If the maintainer corrects a comment or commit wording within the standing editorial permission, the merge notice can say what was corrected. After final cleanup adds the PR number, this single commit is fast-forwarded and its message carries the landing record.
+Its PR can contain a short Motivation explaining the same problem and result. It needs no separate Core Concepts, Scope, or Commit Log. If the maintainer performs cleanup within [P.final-cleanup](../CONTRIBUTING.md#p.final-cleanup), the merge notice can say what was corrected. After final cleanup adds the PR number, this single commit is fast-forwarded and its message carries the landing record.

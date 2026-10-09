@@ -1,67 +1,112 @@
 # Contributing
 
-These policies apply the [principles](PRINCIPLES.md) to contribution decisions. Each policy links to its supporting principles. Policy IDs name topics and stay stable when rules move or their wording changes. `↔` marks a tradeoff. See [CONVENTIONS.md](CONVENTIONS.md) for code and prose conventions and message formats. See the [workflow guide](documentation/contributing-workflow.md) for command recipes. See [README.md](README.md) for setup and use.
+Read [PRINCIPLES.md](PRINCIPLES.md) and the policy outline below before contributing. The outline states all shared requirements and permissions. The remaining sections, [CONVENTIONS.md](CONVENTIONS.md), and the [workflow guide](documentation/contributing-workflow.md) are optional references. They explain rationale, defaults, preferences, and procedures without adding requirements.
 
 ## Policy outline
 
-The outline lists policies by workflow. Each policy ID links to its rule, rationale, and application details.
+Each policy ID links to its optional explanation.
 
-**[Working together](#working-together)**
+**Working together**
 
-- [P.rules](#p.rules). Follow the rules in this guide and CONVENTIONS.md.
+- [P.rules](#p.rules). Follow the requirements in this outline and agree exceptions with the core maintainer before proceeding.
+
+  Discuss departures from project defaults when they affect shared interfaces, meaning, compatibility, or another contributor’s work. Preferences alone do not block merging.
+
 - [P.responsibility](#p.responsibility). Take responsibility for the work you submit, regardless of tools or assistance.
-- [P.reviewer-tasks](#p.reviewer-tasks). Announce the review tasks you will take on and let the contributor take them instead.
-- [P.editorial-cleanup](#p.editorial-cleanup). The maintainer may polish comments and commit messages during final integration.
 
-**[Shaping the work](#shaping-the-work)**
+  Understand your changes well enough to explain them. Disclose tool use when needed to explain a research method, result, or limitation. Routine AI disclosures are not required.
+
+- [P.final-cleanup](#p.final-cleanup). The core maintainer may polish existing comments and commit messages and prepare reviewed commits during final integration.
+
+  Without separate approval, this permits meaning-preserving wording and formatting corrections, formatting existing source trailers, adding a single-commit PR number, and folding, combining, or reordering reviewed commits for coherence and buildability. Combining or reordering must preserve final file contents on the same base. All cleanup must preserve motivation, sources, and author credit. Keep independent changes distinguishable. The maintainer may amend, rebase, and publish with a lease after coordinating dependent branches, and must report the cleanup at merge. New explanations, factual corrections, changed assumptions or motivation, ambiguous intent, attribution changes, and PR metadata changes need discussion. Executable-code changes and substantive conflict resolutions return to review.
+
+**Shaping the work**
 
 - [P.change-scope](#p.change-scope). Each commit should express one idea, and each PR should develop one main topic.
-- [P.port-scope](#p.port-scope). Limit each Port to one upstream PR and its local adaptations.
-- [P.established-forms](#p.established-forms). Prefer established forms when alternatives offer no clear benefit.
-- [P.abstractions](#p.abstractions). Give each abstraction a responsibility that current callers need.
-- [P.invariants](#p.invariants). Keep invariant enforcement with the data and operations it governs.
-- [P.renames](#p.renames). Rename declarations and callers together unless a consumer cannot migrate.
-- [P.comments](#p.comments). Use comments for constraints and reasons absent from the code.
-- [P.documentation](#p.documentation). Document the current system and keep change history in change records.
 
-**[Presenting the change](#presenting-the-change)**
+  Incidental commits may accompany the main topic when a separate PR adds little value. Keep them distinct, explain their inclusion, and keep the topic stable during review. Limit each Port to one upstream PR and necessary local adaptations.
 
-- [P.change-summaries](#p.change-summaries). Commit subjects and PR titles should summarize the conceptual change.
-- [P.commit-intent](#p.commit-intent). Classify each commit by its intent, including specification work.
+- [P.invariants](#p.invariants). Preserve the guarantees callers rely on.
+
+  Construction must establish those guarantees, and exposed updates must preserve them.
+
+- [P.renames](#p.renames). Agree when a temporary compatibility alias will be removed.
+
+  Record the consumer’s migration obstacle and agree the removal point with the core maintainer.
+
+- [P.documentation](#p.documentation). Keep comments and documentation accurate to the current system.
+
+  Put accounts of what changed and why in change records.
+
+**Presenting the change**
+
 - [P.commit-explanations](#p.commit-explanations). Each final commit message should explain the motivation and resulting change.
+
+  For refactors, identify the structural limitation and how the new structure addresses it. A sufficient subject needs no body. Identify a regression’s introducing commit when known.
+
 - [P.pr-explanations](#p.pr-explanations). Each PR body should explain its motivation, result, and scope.
-- [P.single-commit-record](#p.single-commit-record). A single-commit PR's message must explain the PR's motivation, result, and scope.
+
+  One short description may cover all three.
+
 - [P.source-credit](#p.source-credit). Commits containing copied or adapted work must cite its source and preserve author credit.
-- [P.regression-origin](#p.regression-origin). Identify a regression's introducing commit when known.
-- [P.imported-work](#p.imported-work). Port and Sync PRs must distinguish imported work, adaptations, omissions, and local changes.
-- [P.upstream-explanations](#p.upstream-explanations). Reuse upstream explanations only when they cover the adopted design and its local assumptions.
 
-**[Reviewing and revising](#reviewing-and-revising)**
+  Identify the source revision and explain local differences. Preserve all references and author attribution when rewriting or folding commits. Coauthor credit is optional and limited to actual human joint authorship. Do not credit tools as coauthors.
 
-- [P.review-blockers](#p.review-blockers). Explain why a requested change is needed before merging.
+- [P.imported-work](#p.imported-work). Distinguish imported work from local changes and explain omissions.
+
+  Identify the sources and explain adaptations and conflict resolutions.
+
+**Reviewing and revising**
+
+- [P.reviewer-tasks](#p.reviewer-tasks). Announce review tasks and coordinate edits with the contributor.
+
+  Let the contributor take announced tasks instead, except final editorial polish. Discuss behavior, design, or stated reasoning changes before making them. Agree history rewrites and PR metadata edits unless covered by P.final-cleanup.
+
+- [P.review-blockers](#p.review-blockers). Ground review blockers in required rules or concrete problems.
+
+  Identify the required rule or explain what would go wrong if merged. Present preferences as suggestions and ask for clarification when a rule is unclear.
+
 - [P.follow-ups](#p.follow-ups). Do not delay a ready contribution for independent follow-up work.
 
-**[Landing the change](#landing-the-change)**
+  Record deliberately postponed tasks and their reasons, and preserve the record when landing. Possible improvements are not deferred commitments.
+
+**Landing the change**
 
 - [P.commit-buildability](#p.commit-buildability). Finalize each commit as a buildable unit.
-- [P.rebase-timing](#p.rebase-timing). Rebase during final integration by default.
+
+  Fold review fixups into the commits they complete. Combine commits when separation would require placeholders or break the build.
+
 - [P.conflict-resolution](#p.conflict-resolution). Resolve integration conflicts on the PR branch before landing.
-- [P.merge-method](#p.merge-method). Use merge commits for multi-commit PRs and default to fast-forwards for single-commit PRs.
+
+  Return substantive resolutions to review. The landing merge must introduce no further conflict-resolution edits.
+
+- [P.merge-method](#p.merge-method). Preserve final commits and record the contribution when landing.
+
+  Land multi-commit PRs with a merge commit explaining the whole contribution. Count commits after cleanup and preserve them without squashing during landing. A single-commit PR’s message must carry its motivation, result, and scope. Add its PR number through authorized cleanup.
+
 - [P.direct-pushes](#p.direct-pushes). The maintainer may push bounded repairs and current-state documentation directly to `main`.
 
-## Working together
+  Repairs must address an identified fault with known expected behavior and affected callers. Documentation edits must describe existing behavior or clarify existing rules. New designs or interfaces, multiple independent behaviors, uncertain impact, and changes to contribution rules need a PR. Other contributors use PRs by default. Direct changes must meet the same requirements.
+
+## Rationale and application details (optional)
+
+These sections explain the outline and link to ways of applying it. Policy IDs stay stable when wording or placement changes. Each policy links to its supporting principles. `↔` marks a tradeoff.
+
+### Working together
 
 <a id="p.rules"></a>
 
-**[P.rules](#p.rules). Follow the rules in this guide and CONVENTIONS.md.**
+**[P.rules](#p.rules). Follow the requirements in this outline and agree exceptions with the core maintainer before proceeding.**
 
-*[Responsibility][responsibility], [Coordination][coordination]*
+*Requirement. [Responsibility][responsibility], [Coordination][coordination]*
 
-Contributors are expected to follow the rules in this guide and CONVENTIONS.md, including the component guides linked from them.
+Shared requirements protect contributors and the project. Defaults and preferences settle routine choices without requiring discussion of every difference.
 
-Rules marked as guidance, preferences, or defaults describe the recommended approach and should normally be followed. Contributors who take a different approach must let the reviewer know and explain why. All other rules are requirements. Contributors need to agree on exceptions to requirements with the core maintainer before proceeding. Steps marked optional may be skipped.
+The outline is the source of shared contribution requirements and permissions. Exceptions need agreement with the core maintainer before proceeding. Conventions and component guides supply recommended forms and procedures.
 
-Reviewers should refer to these documents or their linked guides when asking contributors to follow a rule. They may also raise concrete problems under [P.review-blockers](#p.review-blockers).
+Follow project defaults unless another approach better serves the work. Discuss departures when they affect shared interfaces, meaning, compatibility, or another contributor’s work. Guidance and editorial preferences help contributors write and organize their work. They do not require an explanation for every departure. Optional steps may be skipped.
+
+Reviewers should distinguish requirements from recommendations when requesting changes. Differences in editorial preference alone should not block merging. Concrete problems can still be raised under [P.review-blockers](#p.review-blockers).
 
 Contributors are welcome to raise issues with this guide or CONVENTIONS.md when they have ideas for improving the contribution process.
 
@@ -69,29 +114,21 @@ Contributors are welcome to raise issues with this guide or CONVENTIONS.md when 
 
 **[P.responsibility](#p.responsibility). Take responsibility for the work you submit, regardless of tools or assistance.**
 
-*[Verification][verification], [Responsibility][responsibility]*
+*Requirement. [Verification][verification], [Responsibility][responsibility]*
 
 Contributors are responsible for the work they submit, and reviewers are responsible for the edits they make. Contributors must understand their changes well enough to explain them and answer review questions. AI tools, code generators, and other assistance do not change these responsibilities or the contribution requirements.
 
 Routine AI-use disclosures are not required. Explain tool use when it is part of the research method or necessary to understand a result or its limits. Contributors remain responsible for submitted work, including work copied or adapted from others.
 
-<a id="p.reviewer-tasks"></a>
+<a id="p.final-cleanup"></a>
 
-**[P.reviewer-tasks](#p.reviewer-tasks). Announce the review tasks you will take on and let the contributor take them instead.**
+**[P.final-cleanup](#p.final-cleanup). The core maintainer may polish existing comments and commit messages and prepare reviewed commits during final integration.**
 
-*[Responsibility][responsibility], [Coordination][coordination]*
+*Permission. [Coherence][coherence], [Provenance][provenance], [Responsibility][responsibility] ↔ [Coordination][coordination]*
 
-Reviewers should tell the contributor which tasks they plan to take on, including edits, commits, pushes, history rewrites, and PR metadata changes. This lets the contributor avoid duplicate work or take on those tasks themselves. Final editorial polish remains the maintainer's responsibility under [P.editorial-cleanup](#p.editorial-cleanup).
+The core maintainer bears most of the lasting cost of unclear prose and fragmented history. During final integration, the maintainer may perform the routine cleanup below without asking for separate approval.
 
-Before changing behavior, design, or the contributor's stated reasoning, the reviewer should discuss the change with the contributor. History rewrites and PR metadata edits also need agreement unless they fall within P.editorial-cleanup.
-
-<a id="p.editorial-cleanup"></a>
-
-**[P.editorial-cleanup](#p.editorial-cleanup). The maintainer may polish comments and commit messages during final integration.**
-
-*[Provenance][provenance], [Responsibility][responsibility] ↔ [Coordination][coordination]*
-
-The core maintainer bears most of the lasting cost of unclear documentation. During final integration, the maintainer may make the editorial corrections below without asking for separate approval.
+**Editorial corrections**
 
 - Correct spelling, grammar, formatting, and wording in existing comments while preserving their facts, constraints, and reasons.
 - Correct spelling, grammar, and wording in commit subjects and bodies without changing their meaning or motivation.
@@ -99,177 +136,114 @@ The core maintainer bears most of the lasting cost of unclear documentation. Dur
 - Format existing source and attribution trailers without changing their facts or credit.
 - Add the PR number to a single-commit PR's commit subject.
 
-The maintainer may amend commits, rebase their descendants, and push the rewritten PR branch with `--force-with-lease` to publish these corrections. File edits are limited to comments, and executable code, behavior, commit order, and author attribution must stay unchanged. Before rewriting, the maintainer should coordinate with contributors whose branches depend on the affected commits. When merging the PR, the maintainer should tell the contributor what was edited.
+**Commit preparation**
 
-An edit that adds an explanation, corrects a factual claim, changes an assumption, or resolves ambiguous intent needs discussion under [P.reviewer-tasks](#p.reviewer-tasks). Changes to motivation, attribution, or PR metadata also follow P.reviewer-tasks.
+- Fold review fixups into the commits they complete.
+- Combine or reorder reviewed commits when needed to make them coherent and buildable under [P.commit-buildability](#p.commit-buildability).
 
-## Shaping the work
+Combining or reordering commits must preserve the branch's final file contents on the same base. Rebasing onto a new base follows [P.conflict-resolution](#p.conflict-resolution). Editorial edits are limited to the prose and record corrections above. Preserve each change's motivation, source references, and author credit. Keep independent changes distinguishable under [P.change-scope](#p.change-scope).
+
+The maintainer may amend commits, rebase them, and publish the rewritten PR branch using a lease for this cleanup. The [workflow guide](documentation/contributing-workflow.md#revising-reviewed-commits) gives the commands. Before rewriting, coordinate with contributors whose branches depend on the affected commits. When merging, tell the contributor what was edited and how the commits were reorganized.
+
+New explanations, factual corrections, changes to assumptions or motivation, and resolving ambiguous intent need discussion under [P.reviewer-tasks](#p.reviewer-tasks). Changes to attribution or PR metadata also follow P.reviewer-tasks. Executable-code changes and substantive conflict resolutions return to review under [P.conflict-resolution](#p.conflict-resolution).
+
+### Shaping the work
 
 <a id="p.change-scope"></a>
 
 **[P.change-scope](#p.change-scope). Each commit should express one idea, and each PR should develop one main topic.**
 
-*[Coherence][coherence] ↔ [Proportionality][proportionality]*
+*Requirement. [Coherence][coherence] ↔ [Proportionality][proportionality]*
 
 Edits that implement, test, or explain the same idea belong together. Unrelated ideas should have separate commits so readers can understand and review each change on its own.
 
-A PR may include commits outside its main topic when a separate PR would add review and landing overhead without enough practical benefit. Those commits should remain distinct, and the PR body should explain why they belong. Ports still follow the narrower boundary in [P.port-scope](#p.port-scope).
+A PR may include commits outside its main topic when a separate PR would add review and landing overhead without enough practical benefit. Those commits should remain distinct, and the PR body should explain why they belong. A Port is limited to one upstream PR and its necessary local adaptations. The [porting conventions](CONVENTIONS.md#c.ports-syncs.scope) explain this scope.
 
 While a PR is under review, its planned topic should remain stable. Newly discovered independent work normally belongs in another PR, unless the same grouping exception applies. Once the contribution is ready, [P.follow-ups](#p.follow-ups) explains how to handle follow-up work. Final commit preparation follows [P.commit-buildability](#p.commit-buildability).
 
-<a id="p.port-scope"></a>
-
-**[P.port-scope](#p.port-scope). Limit each Port to one upstream PR and its local adaptations.**
-
-*[Coherence][coherence], [Provenance][provenance]*
-
-A Port follows one upstream PR so reviewers can compare the original work with its local adaptations. It may include the local edits needed to make that work function here. Independent local changes belong in another PR. A Sync can cover broader upstream changes and related local work.
-
-<a id="p.established-forms"></a>
-
-**[P.established-forms](#p.established-forms). Prefer established forms when alternatives offer no clear benefit.**
-
-*[Coherence][coherence], [Proportionality][proportionality]*
-
-Familiar forms let readers focus on meaning and avoid repeated decisions about routine choices. When several forms express the same idea equally clearly, follow the established form in the surrounding code or prose. Use a different form when it makes a specific operation, dependency, or relationship clearer. Project-wide conventions settle choices shared across components and documents. Exceptions to required conventions still follow [P.rules](#p.rules).
-
-<a id="p.abstractions"></a>
-
-**[P.abstractions](#p.abstractions). Give each abstraction a responsibility that current callers need.**
-
-*[Coherence][coherence]*
-
-An abstraction adds a concept readers must learn. Its justification should identify an operation current callers need or logic they need to share. Hypothetical future uses alone do not justify generic options or extension points. This applies [YAGNI](https://martinfowler.com/bliki/Yagni.html) to abstractions.
-
-Names and interfaces should express the abstraction's responsibility. Callers should be able to use its operations without knowing their internal steps. Interfaces should show what callers supply and what they can rely on. Inputs that affect results should be explicit by default.
-
 <a id="p.invariants"></a>
 
-**[P.invariants](#p.invariants). Keep invariant enforcement with the data and operations it governs.**
+**[P.invariants](#p.invariants). Preserve the guarantees callers rely on.**
 
-*[Coherence][coherence], [Verification][verification]*
+*Requirement. [Coherence][coherence], [Verification][verification]*
 
-Callers need to know which guarantees they can rely on. The component that owns a value must establish those guarantees when constructing it and preserve them through every exposed update. Keep shared mutable state with the operations responsible for maintaining its constraints. Identify the state's owner and lifetime.
+Callers need to know which guarantees hold when they use a value or operation. Construction must establish those guarantees, and exposed updates must preserve them. The [type and data conventions](CONVENTIONS.md#types-and-data) describe ways to enforce them.
 
 <a id="p.renames"></a>
 
-**[P.renames](#p.renames). Rename declarations and callers together unless a consumer cannot migrate.**
+**[P.renames](#p.renames). Agree when a temporary compatibility alias will be removed.**
 
-*[Coherence][coherence] ↔ [Coordination][coordination]*
+*Requirement. [Coherence][coherence] ↔ [Coordination][coordination]*
 
-A rename normally updates the declaration and all its callers in the same change. Keeping a compatibility alias can suggest that the two names mean different things, so aliases should not be retained by default.
-
-A temporary alias is acceptable when an identified consumer cannot migrate in the same change. The contributor should record the migration obstacle and agree with the core maintainer on when the alias will be removed.
-
-<a id="p.comments"></a>
-
-**[P.comments](#p.comments). Use comments for constraints and reasons absent from the code.**
-
-*[Coherence][coherence]*
-
-A comment should explain a constraint or reason that names, types, and implementation do not show. Information already evident from the code does not need another explanation in a comment. What changed and why belongs in the change record.
+A compatibility alias creates a migration obligation that can outlast the contribution. When a consumer cannot migrate in the same change, record the obstacle and agree with the core maintainer on when the alias will be removed. Complete renames are the default under [C.names.renames](CONVENTIONS.md#c.names.renames).
 
 <a id="p.documentation"></a>
 
-**[P.documentation](#p.documentation). Document the current system and keep change history in change records.**
+**[P.documentation](#p.documentation). Keep comments and documentation accurate to the current system.**
 
-*[Coherence][coherence]*
+*Requirement. [Coherence][coherence], [Verification][verification]*
 
-Project documentation describes the system's current organization, use, and constraints. Readers should be able to follow it without knowing an earlier implementation. The history of a change belongs in change records, where its motivation and result can be explained together.
+Readers should be able to rely on descriptions of the system without knowing an earlier implementation. Describe current behavior, constraints, and lasting reasons. Put accounts of what changed and why in change records. Placement and duplication follow the [documentation conventions](CONVENTIONS.md#c.documentation.locations).
 
-Give each explanation an authoritative home. Other documents should link to that explanation instead of maintaining competing copies.
-
-## Presenting the change
-
-<a id="p.change-summaries"></a>
-
-**[P.change-summaries](#p.change-summaries). Commit subjects and PR titles should summarize the conceptual change.**
-
-*[Coherence][coherence]*
-
-A commit subject or PR title should name the action and affected concept so readers can identify the change before opening its details. The commit subject describes that commit's idea, and the PR title names the contribution's main topic. The PR body accounts for accompanying work.
-
-<a id="p.commit-intent"></a>
-
-**[P.commit-intent](#p.commit-intent). Classify each commit by its intent, including specification work.**
-
-*[Coherence][coherence]*
-
-Commit types describe the intent of the work, so specification changes use the same categories as other changes. The message should distinguish changes in modeled behavior from changes in notation or organization. Classify structural or behavioral changes by their own intent, even when they accompany reorganization or formatting. Explain that work separately. Type and scope syntax is described in [CONVENTIONS.md](CONVENTIONS.md#commit-messages).
+### Presenting the change
 
 <a id="p.commit-explanations"></a>
 
 **[P.commit-explanations](#p.commit-explanations). Each final commit message should explain the motivation and resulting change.**
 
-*[Motivation][motivation], [Coherence][coherence]*
+*Requirement. [Motivation][motivation], [Coherence][coherence]*
 
 A commit message should let readers understand why the change was needed and what it accomplishes without having seen the original discussion. Motivation explains the prior problem, limitation, or research goal. Solution describes the resulting change that addresses it. For a refactor, the explanation must identify the structural limitation and show why the new structure addresses it.
 
-When the subject already conveys the required explanation, the message does not need a body. Source records still follow [P.source-credit](#p.source-credit) and [P.regression-origin](#p.regression-origin).
+When the subject already conveys the required explanation, the message does not need a body. Source records still follow [P.source-credit](#p.source-credit). Identify a known regression’s introducing commit. The [regression-record convention](CONVENTIONS.md#c.sources.regressions) supplies a recommended format.
 
 <a id="p.pr-explanations"></a>
 
 **[P.pr-explanations](#p.pr-explanations). Each PR body should explain its motivation, result, and scope.**
 
-*[Motivation][motivation], [Coherence][coherence], [Verification][verification], [Proportionality][proportionality]*
+*Requirement. [Motivation][motivation], [Coherence][coherence], [Verification][verification], [Proportionality][proportionality]*
 
 The PR body should give reviewers enough context to assess the contribution as a whole. It explains the problem or research goal, the resulting change, and the affected components and kinds of change. One short description may cover all three.
 
 The PR body should identify commits outside the main topic and explain their inclusion. Section formats are described in [CONVENTIONS.md](CONVENTIONS.md#pr-titles-and-descriptions).
 
-<a id="p.single-commit-record"></a>
-
-**[P.single-commit-record](#p.single-commit-record). A single-commit PR's message must explain the PR's motivation, result, and scope.**
-
-*[Motivation][motivation], [Coherence][coherence], [Provenance][provenance], [Proportionality][proportionality]*
-
-When a single-commit PR is fast-forwarded, there is no merge message to preserve its overview. The commit message must therefore include the PR's motivation, result, and scope, along with source records when applicable.
-
 <a id="p.source-credit"></a>
 
 **[P.source-credit](#p.source-credit). Commits containing copied or adapted work must cite its source and preserve author credit.**
 
-*[Provenance][provenance]*
+*Requirement. [Provenance][provenance]*
 
 Source references let readers trace inherited work and preserve its contributors' credit. A commit containing copied or adapted work should identify the source revision and explain local differences in behavior or design. When several commits are folded together, all their source references should remain in the resulting message.
 
-Rewrites must preserve source references and author attribution. Coauthor credit is optional and reserved for actual human joint authorship. Do not add coauthor credit for AI tools or other generators. Credit records do not change responsibility under [P.responsibility](#p.responsibility). Source-trailer formats are described in [CONVENTIONS.md](CONVENTIONS.md#sources-and-credit).
-
-<a id="p.regression-origin"></a>
-
-**[P.regression-origin](#p.regression-origin). Identify a regression's introducing commit when known.**
-
-*[Verification][verification], [Provenance][provenance]*
-
-When a regression's introducing commit is known, the message should identify it with the `Fixes:` record described in [CONVENTIONS.md](CONVENTIONS.md#sources-and-credit). This lets readers trace the regression to its cause. If the introducing commit cannot be established, omit that record.
+Rewrites must preserve source references and author attribution. Credit records do not change responsibility under [P.responsibility](#p.responsibility). Coauthor credit is optional and limited to actual human joint authorship. Tools are not coauthors. Recommended source-trailer formats are described in [CONVENTIONS.md](CONVENTIONS.md#sources-and-credit).
 
 <a id="p.imported-work"></a>
 
-**[P.imported-work](#p.imported-work). Port and Sync PRs must distinguish imported work, adaptations, omissions, and local changes.**
+**[P.imported-work](#p.imported-work). Distinguish imported work from local changes and explain omissions.**
 
-*[Coherence][coherence], [Provenance][provenance], [Proportionality][proportionality]*
+*Requirement. [Coherence][coherence], [Provenance][provenance], [Proportionality][proportionality]*
 
-A Port or Sync description should identify the source PRs or revisions and explain how the local result differs. That includes adaptations, conflict resolutions, omissions, and any local work, so reviewers can compare the upstream and local changes. Independent local work in a Port still follows [P.port-scope](#p.port-scope). Scope-group formats are described in [CONVENTIONS.md](CONVENTIONS.md#ports-and-syncs).
+Reviewers need to compare the source work with the local result. Identify the sources and explain adaptations, omissions, and independent local changes, including conflict resolutions. The [Port and Sync conventions](CONVENTIONS.md#ports-and-syncs) recommend description groups and explain when upstream explanations can be reused.
 
-<a id="p.upstream-explanations"></a>
-
-**[P.upstream-explanations](#p.upstream-explanations). Reuse upstream explanations only when they cover the adopted design and its local assumptions.**
-
-*[Motivation][motivation], [Coherence][coherence], [Provenance][provenance], [Proportionality][proportionality]*
-
-A Port or Sync may refer readers to an upstream explanation when it explains the adopted design and its assumptions still hold locally. This avoids duplicating the reasoning and keeps it attached to the original work.
-
-The local PR should link the explanation and summarize why the work is needed here and what result it brings. Any missing reasoning or local design differences still need an explanation in the local PR.
-
-## Reviewing and revising
+### Reviewing and revising
 
 Resolve questions about the contribution's behavior, design, and readiness.
 
+<a id="p.reviewer-tasks"></a>
+
+**[P.reviewer-tasks](#p.reviewer-tasks). Announce review tasks and coordinate edits with the contributor.**
+
+*Requirement. [Responsibility][responsibility], [Coordination][coordination]*
+
+Reviewers should tell the contributor which tasks they plan to take on, including edits, commits, pushes, history rewrites, and PR metadata changes. This lets the contributor avoid duplicate work or take on those tasks themselves. Final editorial polish remains the maintainer's responsibility under [P.final-cleanup](#p.final-cleanup).
+
+Before changing behavior, design, or the contributor's stated reasoning, the reviewer should discuss the change with the contributor. History rewrites and PR metadata edits also need agreement unless they fall within P.final-cleanup.
+
 <a id="p.review-blockers"></a>
 
-**[P.review-blockers](#p.review-blockers). Explain why a requested change is needed before merging.**
+**[P.review-blockers](#p.review-blockers). Ground review blockers in required rules or concrete problems.**
 
-*[Responsibility][responsibility], [Coordination][coordination]*
+*Requirement. [Responsibility][responsibility], [Coordination][coordination]*
 
 A reviewer who asks for a change that must be made before merging should explain why it is necessary. The explanation should identify a required rule under [P.rules](#p.rules) that the contribution does not follow, or describe what would go wrong if the contribution were merged as written. For concerns about correctness, usability, documentation, or maintenance, the reviewer should explain the specific consequences.
 
@@ -279,13 +253,13 @@ Reviewers should present preferences as suggestions. If a rule's meaning is uncl
 
 **[P.follow-ups](#p.follow-ups). Do not delay a ready contribution for independent follow-up work.**
 
-*[Coherence][coherence], [Proportionality][proportionality]*
+*Requirement. [Coherence][coherence], [Proportionality][proportionality]*
 
 Once review blockers are resolved, the contribution can proceed towards landing. Newly discovered work belongs in another PR unless it is needed to implement or verify the current contribution. Independent follow-up work should not hold up a ready contribution or other work that depends on it.
 
 The PR should identify work explicitly postponed from the contribution and explain why it was postponed. Preserve that record when landing. Possible future improvements are not deferred commitments.
 
-## Landing the change
+### Landing the change
 
 Prepare the reviewed contribution for `main` and record its integration. Substantive changes made during preparation return to review.
 
@@ -293,49 +267,39 @@ Prepare the reviewed contribution for `main` and record its integration. Substan
 
 **[P.commit-buildability](#p.commit-buildability). Finalize each commit as a buildable unit.**
 
-*[Coherence][coherence], [Verification][verification], [Proportionality][proportionality]*
+*Requirement. [Coherence][coherence], [Verification][verification], [Proportionality][proportionality]*
 
 Each final commit should express one idea under [P.change-scope](#p.change-scope) and leave the project buildable, so maintainers can investigate regressions without first repairing intermediate states. If separating commits would require placeholders or break the build, they should be combined.
 
-Review fixups are folded into the commits they complete before landing. Their messages may remain brief until that cleanup. Final editorial polish follows [P.editorial-cleanup](#p.editorial-cleanup).
-
-<a id="p.rebase-timing"></a>
-
-**[P.rebase-timing](#p.rebase-timing). Rebase during final integration by default.**
-
-*[Coordination][coordination], [Proportionality][proportionality]*
-
-While work is under review, a branch needs an update when dependencies or conflicts require it. Contributors are not expected to rebase every open branch after each merge. Final integration normally includes a rebase onto current `main`.
-
-The person rebasing should coordinate the rewrite under [P.reviewer-tasks](#p.reviewer-tasks), including with contributors whose branches depend on the replaced commits. If rebasing would disrupt shared work, the contributors and maintainer should agree on another integration method.
+Review fixups are folded into the commits they complete before landing. Their messages may remain brief until that cleanup. The maintainer may perform this preparation under [P.final-cleanup](#p.final-cleanup).
 
 <a id="p.conflict-resolution"></a>
 
 **[P.conflict-resolution](#p.conflict-resolution). Resolve integration conflicts on the PR branch before landing.**
 
-*[Coherence][coherence], [Coordination][coordination]*
+*Requirement. [Coherence][coherence], [Coordination][coordination]*
 
 Integration conflicts are resolved on the PR branch, where reviewers can inspect the resolutions. Those resolutions can change behavior, so substantive changes need an explanation and a return to review before landing. The landing merge must introduce no further conflict-resolution edits.
 
 <a id="p.merge-method"></a>
 
-**[P.merge-method](#p.merge-method). Use merge commits for multi-commit PRs and default to fast-forwards for single-commit PRs.**
+**[P.merge-method](#p.merge-method). Preserve final commits and record the contribution when landing.**
 
-*[Coherence][coherence], [Provenance][provenance], [Proportionality][proportionality]*
+*Requirement. [Coherence][coherence], [Provenance][provenance], [Proportionality][proportionality]*
 
-The number of commits after final cleanup determines how the PR lands. A multi-commit PR uses a merge commit whose message explains the contribution as a whole. A single-commit PR is fast-forwarded by default because its commit message already provides that record.
+The history should preserve reviewed units of work and explain their integration. Land multi-commit PRs with a merge commit that explains the contribution as a whole. Count commits after cleanup and preserve the resulting commits without squashing during landing.
 
-The final commits are preserved without squashing. For a single-commit PR, the PR number is added to the subject through an authorized amendment under [P.editorial-cleanup](#p.editorial-cleanup). Message formats are described in the [landing conventions](CONVENTIONS.md#landing), and commands are in the [workflow guide](documentation/contributing-workflow.md#landing).
+For single-commit PRs, the [integration default](CONVENTIONS.md#c.integration.method) is a fast-forward. Their commit message supplies the permanent record under [C.single-commit-record](CONVENTIONS.md#c.single-commit-record). Add the PR number through authorized final cleanup under [P.final-cleanup](#p.final-cleanup).
 
 <a id="p.direct-pushes"></a>
 
 **[P.direct-pushes](#p.direct-pushes). The maintainer may push bounded repairs and current-state documentation directly to `main`.**
 
-*[Responsibility][responsibility], [Coordination][coordination] ↔ [Proportionality][proportionality]*
+*Permission. [Responsibility][responsibility], [Coordination][coordination] ↔ [Proportionality][proportionality]*
 
 The core maintainer may push a fix directly to `main` when it addresses an identified fault with known expected behavior and affected callers. Documentation edits may also go directly to `main` when they describe existing behavior or clarify existing rules. This keeps routine corrections from waiting for a separate PR that would add little value.
 
-New design or interfaces, multiple independent behaviors, uncertain impact, and changes to contribution rules need a PR. Other contributors use PRs by default. The same motivation and [component checking instructions](CONVENTIONS.md#build-and-checks) still apply to direct commits.
+New design or interfaces, multiple independent behaviors, uncertain impact, and changes to contribution rules need a PR. Other contributors use PRs by default. Direct commits must meet the same outline requirements. The [workflow guide](documentation/contributing-workflow.md#build-and-checks) describes available checks.
 
 [motivation]: PRINCIPLES.md#motivation
 [coherence]: PRINCIPLES.md#coherence
