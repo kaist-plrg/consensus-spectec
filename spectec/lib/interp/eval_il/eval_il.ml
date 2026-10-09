@@ -31,7 +31,8 @@ let run (module T : Target.S) (spec : spec) (rid : string) (values : value list)
   | Error.BacktrackError failtraces -> Error (Backtrack failtraces)
 
 let error_to_diagnostic = function
-  | Plain (at, msg) -> Diag.error ~source:"il-interp" at msg
+  | Plain (at, msg) ->
+      Diag.error ~code:"il-interp/fault" ~source:"il-interp" at msg
   | Backtrack failtraces ->
       Diag.of_failtraces ~source:"il-interp" ~fallback:"evaluation failed"
         (prune_failtraces failtraces)
