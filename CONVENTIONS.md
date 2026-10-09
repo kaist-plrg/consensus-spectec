@@ -481,7 +481,7 @@ A fast-forward creates no merge message, so the commit message is the permanent 
 
 *Default. Policies [P.commit-explanations](CONTRIBUTING.md#p.commit-explanations), [P.merge-method](CONTRIBUTING.md#p.merge-method).*
 
-The summary uses the PR title with ordinary words in lowercase. Preserve proper names and acronyms. A framing paragraph explains the PR's motivation and resulting change. Summary bullets follow when useful under [C.merge-summary](#c.merge-summary).
+The summary uses the PR title with ordinary words in lowercase. Preserve proper names and acronyms. A framing paragraph explains the PR's motivation and overall result. Typed summary bullets describe the affected work under [C.merge-summary](#c.merge-summary).
 
 <a id="c.merge-summary"></a>
 
@@ -489,9 +489,9 @@ The summary uses the PR title with ordinary words in lowercase. Preserve proper 
 
 *Default. Policies [P.pr-explanations](CONTRIBUTING.md#p.pr-explanations), [P.merge-method](CONTRIBUTING.md#p.merge-method).*
 
-<a id="c.merge-summary.overview"></a>**[C.merge-summary.overview](#c.merge-summary.overview). Summarize the PR as a whole.** A framing paragraph can suffice when it explains the motivation, result, and affected work. Add thematic bullets when they make the affected work easier to scan. Choose scopes for the merged result, not for each individual commit. Use `type: Description.` when a narrower scope adds no useful distinction. Commit subjects still follow [C.commit-format](#c.commit-format).
+<a id="c.merge-summary.overview"></a>**[C.merge-summary.overview](#c.merge-summary.overview). Use a framing paragraph followed by typed summary bullets.** The paragraph explains the motivation and overall result. The bullets summarize the affected work by area and theme. A bullet can summarize several commits. Choose types and scopes for the contribution as a whole under [C.commit-format](#c.commit-format). Use `type: Description.` when a narrower scope adds no useful distinction. One broad bullet can suffice.
 
-<a id="c.merge-summary.reuse"></a>**[C.merge-summary.reuse](#c.merge-summary.reuse). Reuse Scope and Minor Changes bullets when the PR includes them.** Preserve their prefixes, descriptions, grouping, and order. Remove prefix bolding and keep identifier backticks. Render Markdown links as their labels followed by URLs in parentheses. Wrap the text under [C.commit-display](#c.commit-display). When incidental work is included, separate the main and incidental work under `Changes:` and `Minor Changes:`. Otherwise, one list needs no heading. If the PR has no Scope list, write the overview under [C.merge-summary.overview](#c.merge-summary.overview).
+<a id="c.merge-summary.reuse"></a>**[C.merge-summary.reuse](#c.merge-summary.reuse). Reuse Scope and Minor Changes bullets when the PR includes them.** Preserve their prefixes, descriptions, grouping, and order. Remove prefix bolding and keep identifier backticks. Render Markdown links as their labels followed by URLs in parentheses. Wrap the text under [C.commit-display](#c.commit-display). When incidental work is included, separate the main and incidental work under `Changes:` and `Minor Changes:`. Otherwise, one list needs no heading. If the PR has no Scope list, compose summary bullets from its motivation, result, and affected work under [C.merge-summary.overview](#c.merge-summary.overview). The PR does not need a Scope section solely to supply these bullets.
 
 ```text
 Merge: <lowercase summary> (#PR)
