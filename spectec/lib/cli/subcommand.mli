@@ -8,7 +8,10 @@
     happens inside the callback — [--spec] overrides and the instrumentation
     lifecycle then behave correctly. *)
 
+(** [setup] parses target-wide flags and applies them before the task runs; the
+    Ethereum target uses it to select the SSZ schema. *)
 val make_task :
+  ?setup:unit Core.Command.Param.t ->
   (module Spectec.Target.S) ->
   name:string ->
   summary:string ->
@@ -23,6 +26,7 @@ val make_parse :
   string * Core.Command.t
 
 val make_batch :
+  ?setup:unit Core.Command.Param.t ->
   ?on_no_validate:(unit -> unit) ->
   ?slot_gap_filter:(max_slot_gap:int -> string -> bool) ->
   (module Spectec.Target.S) ->

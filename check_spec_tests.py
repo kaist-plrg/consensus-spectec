@@ -88,7 +88,7 @@ def check(case):
             out = tmp / "out.json"
             out.unlink(missing_ok=True)
 
-            p = subprocess.run([str(ROOT / "spectecx"), "ethereum", "run", *args,
+            p = subprocess.run([str(ROOT / "spectecx"), "ethereum", "run", *args, "--fork", fork,
                                 "--spec-dir", str(ROOT / f"spec/spec_{fork}"), "--output", str(out)],
                                capture_output=True, text=True)
 

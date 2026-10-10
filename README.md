@@ -154,10 +154,10 @@ Ethereum commands are grouped under `ethereum`:
 
 ```bash
 # Run one state transition and export the validated post-state
-./spectecx ethereum run state-transition --pre pre.json --block block.json --output post.json
+./spectecx ethereum run state-transition --fork capella --pre pre.json --block block.json --output post.json
 
 # Collect premise coverage and save a resumable checkpoint
-./spectecx ethereum coverage --batch-dir eth-tests --premise-coverage.level summary --checkpoint coverage.ckpt
+./spectecx ethereum coverage --fork capella --batch-dir eth-tests --premise-coverage.level summary --checkpoint coverage.ckpt
 
 # Generate mutations for selected uncovered premise UIDs
 ./spectecx ethereum testgen --coverage coverage.ckpt --premises-file targets.txt --test-dir eth-tests --output testgen_output
