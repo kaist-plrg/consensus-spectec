@@ -117,80 +117,20 @@ rule ProcessRewardsAndPenalties/main:
   ;; 5: apply rewards and penalties to each validator
   -- ApplyRewardsAndPenalties_over_deltas: state '.' BALANCES `[ vid* `] '+' reward** '-' penalty** ~>* state_out
 
-;; [Phase 0]
-;; Modified in [Deneb]
+;; [Phase 0 -> Deneb -> Electra]
 ;; process_registry_updates
-;;  mutates: .VALIDATORS[](.ACTIVATION_ELIGIBILITY_EPOCH, .EXIT_EPOCH, .WITHDRAWABLE_EPOCH, .ACTIVATION_EPOCH)
+;;  mutates: .VALIDATORS[](.ACTIVATION_ELIGIBILITY_EPOCH, .EXIT_EPOCH, .WITHDRAWABLE_EPOCH, .ACTIVATION_EPOCH),
+;;           EXIT_BALANCE_TO_CONSUME, EARLIEST_EXIT_EPOCH
 
 relation ProcessRegistryUpdates:
   beaconState ~> beaconState
   hint(input %0)
 
-;; TODO(electra): functions `process_registry_updates` changed upstream in specs/electra/beacon-chain.md
-;; body commented out below: uncomment it and apply the diff above
-;; --- old
-;; +++ new
-;; @@ -1,27 +1,17 @@
-;;  def process_registry_updates(state: BeaconState) -> None:
-;; -    # Process activation eligibility and ejections
-;; +    current_epoch = get_current_epoch(state)
-;; +    activation_epoch = compute_activation_exit_epoch(current_epoch)
-;; +
-;; +    # Process activation eligibility, ejections, and activations
-;;      for index, validator in enumerate(state.validators):
-;; +        # [Modified in Electra:EIP7251]
-;;          if is_eligible_for_activation_queue(validator):
-;; -            validator.activation_eligibility_epoch = get_current_epoch(state) + 1
-;; -
-;; -        if (
-;; -            is_active_validator(validator, get_current_epoch(state))
-;; +            validator.activation_eligibility_epoch = current_epoch + 1
-;; +        elif (
-;; +            is_active_validator(validator, current_epoch)
-;;              and validator.effective_balance <= EJECTION_BALANCE
-;;          ):
-;; +            # [Modified in Electra:EIP7251]
-;;              initiate_validator_exit(state, ValidatorIndex(index))
-;; -
-;; -    # Queue validators eligible for activation and not yet dequeued for activation
-;; -    activation_queue = sorted(
-;; -        [
-;; -            index
-;; -            for index, validator in enumerate(state.validators)
-;; -            if is_eligible_for_activation(state, validator)
-;; -        ],
-;; -        # Order by the sequence of activation_eligibility_epoch setting and then index
-;; -        key=lambda index: (state.validators[index].activation_eligibility_epoch, index),
-;; -    )
-;; -    # Dequeued validators for activation up to activation churn limit
-;; -    # [Modified in Deneb:EIP7514]
-;; -    for index in activation_queue[: get_validator_activation_churn_limit(state)]:
-;; -        validator = state.validators[index]
-;; -        validator.activation_epoch = compute_activation_exit_epoch(get_current_epoch(state))
-;; +        elif is_eligible_for_activation(state, validator):
-;; +            validator.activation_epoch = activation_epoch
-
-;; rule ProcessRegistryUpdates:
-;;   state ~> state_out
-;;   ;; 1. process eligibility and ejections for each validator
-;;   -- if $range(|state.VALIDATORS|) = vid*
-;;   -- ProcessEligibilityAndEjection_over_vids:
-;;       state '.' VALIDATORS `[ vid* `] ~> state_1
-;;   ;; queue validators eligible for activation and not yet dequeued for activattion
-;;   -- if $enumerate_<validator>(state_1.VALIDATORS) = (vid_1, validator)*
-;;   -- if $filter_list_2_<(nat, validator), beaconState>(
-;;          (vid_1, validator)*,
-;;          state_1,
-;;          def $is_eligible_activation_en
-;;        ) = (vid_elg, validator_elg)*
-;;   -- if (validator_elg.ACTIVATION_ELIGIBILITY_EPOCH = epoch_elg)*
-;;   -- if $sort_<(epoch, validatorIndex)>((epoch_elg, vid_elg)*) =
-;;          (_, vid_activation_queue)*
-;;   ;; 3. dequeue validators up to the churn limit for activation
-;;   ;; Modified in [Deneb], changed get_validator_churn_limit -> get_validator_activation_churn_limit
-;;   -- if $take_prefix_<validatorIndex>(vid_activation_queue*, $get_validator_activation_churn_limit(state_1)) = vid_dequeued*
-;;   -- ApplyActivations:
-;;       state_1 '.' VALIDATORS `[ vid_dequeued* `] '.' ACTIVATION_EPOCH ~>* state_out
+;; [Modified in Electra:EIP7251] one pass: eligibility, ejections and activations
+rule ProcessRegistryUpdates:
+  state ~> state_out
+  -- if $range(|state.VALIDATORS|) = vid*
+  -- ProcessRegistryUpdate_over_vids: state '.' VALIDATORS `[ vid* `] ~> state_out
 
 ;; [Phase 0] -> [Altair] -> [Bellatrix]
 ;; process_slashings
@@ -200,64 +140,30 @@ relation ProcessSlashings:
   beaconState ~> beaconState
   hint(input %0)
 
-;; TODO(electra): functions `process_slashings` changed upstream in specs/electra/beacon-chain.md
-;; body commented out below: uncomment it and apply the diff above
-;; --- old
-;; +++ new
-;; @@ -3,8 +3,11 @@
-;;      total_balance = get_total_active_balance(state)
-;;      adjusted_total_slashing_balance = min(
-;; -        Gwei(sum(state.slashings))
-;; -        # [Modified in Bellatrix]
-;; -        * PROPORTIONAL_SLASHING_MULTIPLIER_BELLATRIX,
-;; -        total_balance,
-;; +        Gwei(sum(state.slashings)) * PROPORTIONAL_SLASHING_MULTIPLIER_BELLATRIX, total_balance
-;; +    )
-;; +    increment = (
-;; +        EFFECTIVE_BALANCE_INCREMENT  # Factored out from total balance to avoid Uint64 overflow
-;; +    )
-;; +    penalty_per_effective_balance_increment = adjusted_total_slashing_balance // (
-;; +        total_balance // increment
-;;      )
-;;      for index, validator in enumerate(state.validators):
-;; @@ -13,8 +16,6 @@
-;;              and epoch + EPOCHS_PER_SLASHINGS_VECTOR // 2 == validator.withdrawable_epoch
-;;          ):
-;; -            increment = EFFECTIVE_BALANCE_INCREMENT  # Factored out from penalty numerator to avoid Uint64 overflow
-;; -            penalty_numerator = (
-;; -                validator.effective_balance // increment * adjusted_total_slashing_balance
-;; -            )
-;; -            penalty = penalty_numerator // total_balance * increment
-;; +            effective_balance_increments = validator.effective_balance // increment
-;; +            # [Modified in Electra:EIP7251]
-;; +            penalty = penalty_per_effective_balance_increment * effective_balance_increments
-;;              decrease_balance(state, ValidatorIndex(index), penalty)
-
-;; rule ProcessSlashings:
-;;   state ~> state_out
-;;   -- if $get_current_epoch(state) = epoch_cur
-;;   -- if $get_total_active_balance(state) = balance_total
-;;   ;; inserted overflow check
-;;   -- if $( $sum_<gwei>(state.SLASHINGS) <= $UINT64_MAX / $PROPORTIONAL_SLASHING_MULTIPLIER_BELLATRIX )
-;;   -- if $min_uint64(
-;;         $( $sum_<gwei>(state.SLASHINGS) * $PROPORTIONAL_SLASHING_MULTIPLIER_BELLATRIX ),
-;;         balance_total
-;;       ) = balance_adjusted_total_slashing
-;;   -- if $enumerate_<validator>(state.VALIDATORS) = (vid, validator)*
-;;   -- if $filter_list_2_<(validatorIndex, validator), epoch>(
-;;          (vid, validator)*,
-;;          epoch_cur,
-;;          def $is_due_slashing_en
-;;        ) = (vid_due, validator_due)*
-;;   ;; 3. get penalties
-;;   -- if gwei_increment = $EFFECTIVE_BALANCE_INCREMENT
-;;   -- if ($( (validator_due.EFFECTIVE_BALANCE / gwei_increment) * balance_adjusted_total_slashing )
-;;       = penalty_numerator)*
-;;   ;; inserted overflow check
-;;   -- if ($(penalty_numerator <= $UINT64_MAX))*
-;;   -- if ($( (penalty_numerator / balance_total) * gwei_increment ) = penalty)*
-;;   ;; 4. apply penalties
-;;   -- DecreaseBalances: state '.' BALANCES `[ vid_due* `] '-' penalty* ~> state_out
+;; [Modified in Electra:EIP7251] penalty per effective balance increment
+rule ProcessSlashings:
+  state ~> state_out
+  -- if $get_current_epoch(state) = epoch_cur
+  -- if $get_total_active_balance(state) = balance_total
+  ;; inserted overflow check
+  -- if $( $sum_<gwei>(state.SLASHINGS) <= $UINT64_MAX / $PROPORTIONAL_SLASHING_MULTIPLIER_BELLATRIX )
+  -- if $min_uint64(
+        $( $sum_<gwei>(state.SLASHINGS) * $PROPORTIONAL_SLASHING_MULTIPLIER_BELLATRIX ),
+        balance_total
+      ) = balance_adjusted_total_slashing
+  ;; Factored out from total balance to avoid Uint64 overflow
+  -- if gwei_increment = $EFFECTIVE_BALANCE_INCREMENT
+  -- if $( balance_adjusted_total_slashing / (balance_total / gwei_increment) ) = penalty_per_increment
+  -- if $enumerate_<validator>(state.VALIDATORS) = (vid, validator)*
+  -- if $filter_list_2_<(validatorIndex, validator), epoch>(
+         (vid, validator)*,
+         epoch_cur,
+         def $is_due_slashing_en
+       ) = (vid_due, validator_due)*
+  -- if ($( penalty_per_increment * (validator_due.EFFECTIVE_BALANCE / gwei_increment) ) = penalty)*
+  ;; inserted overflow check
+  -- if ($(penalty <= $UINT64_MAX))*
+  -- DecreaseBalances: state '.' BALANCES `[ vid_due* `] '-' penalty* ~> state_out
 
 ;; [Phase 0]
 ;; process_eth1_data_reset
@@ -280,6 +186,53 @@ rule ProcessEth1DataReset/main:
   ;; ;; branch-complete
   ;; -- if $(epoch_next \ $EPOCHS_PER_ETH1_VOTING_PERIOD) = 0
 
+;; [Electra]
+;; process_pending_deposits
+;;  mutates: PENDING_DEPOSITS, DEPOSIT_BALANCE_TO_CONSUME (+ ApplyPendingDeposit fields)
+
+relation ProcessPendingDeposits:
+  beaconState ~> beaconState
+  hint(input %0)
+
+;; Accumulate churn only if the churn limit has been hit.
+rule ProcessPendingDeposits/churn_reached:
+  state ~> state_1[.PENDING_DEPOSITS = pendingDeposit_rest* ++ pendingDepositsAcc_out.POSTPONE]
+                  [.DEPOSIT_BALANCE_TO_CONSUME = $(pendingDepositsAcc_out.AVAILABLE - pendingDepositsAcc_out.PROCESSED)]
+  -- ProcessPendingDeposits_loop:
+       state WITH $pending_deposits_acc0(state) OVER `[ state.PENDING_DEPOSITS `]
+       ~> state_1 WITH pendingDepositsAcc_out
+  -- if pendingDepositsAcc_out.CHURN_REACHED = true
+  ;; python slice [n:], SpecTec slice is [start : length]
+  -- if state_1.PENDING_DEPOSITS = pendingDeposit*
+  -- if $(|pendingDeposit*| - pendingDepositsAcc_out.NEXT_INDEX) = n_rest
+  -- if pendingDeposit*[pendingDepositsAcc_out.NEXT_INDEX : n_rest] = pendingDeposit_rest*
+
+rule ProcessPendingDeposits/churn_not_reached:
+  state ~> state_1[.PENDING_DEPOSITS = pendingDeposit_rest* ++ pendingDepositsAcc_out.POSTPONE]
+                  [.DEPOSIT_BALANCE_TO_CONSUME = 0]
+  -- ProcessPendingDeposits_loop:
+       state WITH $pending_deposits_acc0(state) OVER `[ state.PENDING_DEPOSITS `]
+       ~> state_1 WITH pendingDepositsAcc_out
+  -- if pendingDepositsAcc_out.CHURN_REACHED = false
+  -- if state_1.PENDING_DEPOSITS = pendingDeposit*
+  -- if $(|pendingDeposit*| - pendingDepositsAcc_out.NEXT_INDEX) = n_rest
+  -- if pendingDeposit*[pendingDepositsAcc_out.NEXT_INDEX : n_rest] = pendingDeposit_rest*
+
+;; [Electra]
+;; process_pending_consolidations
+;;  mutates: PENDING_CONSOLIDATIONS, BALANCES
+
+relation ProcessPendingConsolidations:
+  beaconState ~> beaconState
+  hint(input %0)
+
+rule ProcessPendingConsolidations:
+  state ~> state_1[.PENDING_CONSOLIDATIONS = pendingConsolidation*[n_next : n_rest]]
+  -- ProcessPendingConsolidations_loop:
+       state WITH 0 OVER `[ state.PENDING_CONSOLIDATIONS `] ~> state_1 WITH n_next
+  -- if state_1.PENDING_CONSOLIDATIONS = pendingConsolidation*
+  -- if $(|pendingConsolidation*| - n_next) = n_rest
+
 ;; [Phase 0]
 ;; process_effective_balance_updates
 ;;  mutates: .VALIDATORS[].EFFECTIVE_BALANCE
@@ -288,33 +241,15 @@ relation ProcessEffectiveBalanceUpdates:
   beaconState ~> beaconState
   hint(input %0)
 
-;; TODO(electra): functions `process_effective_balance_updates` changed upstream in specs/electra/beacon-chain.md
-;; body commented out below: uncomment it and apply the diff above
-;; --- old
-;; +++ new
-;; @@ -6,4 +6,7 @@
-;;          DOWNWARD_THRESHOLD = HYSTERESIS_INCREMENT * HYSTERESIS_DOWNWARD_MULTIPLIER
-;;          UPWARD_THRESHOLD = HYSTERESIS_INCREMENT * HYSTERESIS_UPWARD_MULTIPLIER
-;; +        # [Modified in Electra:EIP7251]
-;; +        max_effective_balance = get_max_effective_balance(validator)
-;; +
-;;          if (
-;;              balance + DOWNWARD_THRESHOLD < validator.effective_balance
-;; @@ -11,4 +14,4 @@
-;;          ):
-;;              validator.effective_balance = min(
-;; -                balance - balance % EFFECTIVE_BALANCE_INCREMENT, MAX_EFFECTIVE_BALANCE
-;; +                balance - balance % EFFECTIVE_BALANCE_INCREMENT, max_effective_balance
-;;              )
-
-;; rule ProcessEffectiveBalanceUpdates:
-;;   state ~> state[.VALIDATORS = validator_updated*]
-;;   -- if $enumerate_<validator>(state.VALIDATORS) = (vid, validator)*
-;;   ;; inserted guard
-;;   -- if $(|state.VALIDATORS| <= |state.BALANCES|)
-;;   -- if (state.BALANCES[vid] = balance)*
-;;   -- (ApplyEffectiveBalance:
-;;       validator '.' EFFECTIVE_BALANCE balance ~> validator_updated)*
+;; [Modified in Electra:EIP7251] the cap is in ApplyEffectiveBalance
+rule ProcessEffectiveBalanceUpdates:
+  state ~> state[.VALIDATORS = validator_updated*]
+  -- if $enumerate_<validator>(state.VALIDATORS) = (vid, validator)*
+  ;; inserted guard
+  -- if $(|state.VALIDATORS| <= |state.BALANCES|)
+  -- if (state.BALANCES[vid] = balance)*
+  -- (ApplyEffectiveBalance:
+      validator '.' EFFECTIVE_BALANCE balance ~> validator_updated)*
 
 ;; [Phase 0]
 ;; process_slashings_reset

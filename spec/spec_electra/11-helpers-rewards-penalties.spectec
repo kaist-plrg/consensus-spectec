@@ -23,7 +23,8 @@ def $get_base_reward(state, vid) = reward
   -- if $( state.VALIDATORS[vid].EFFECTIVE_BALANCE / $EFFECTIVE_BALANCE_INCREMENT ) = uint64_increments
   -- if $( uint64_increments * $get_base_reward_per_increment(state) ) = reward
 
-;; [Custom | loop : ProcessInactivityUpdates]
+;; [Custom | loop : ProcessEffectiveBalanceUpdates]
+;;  [Modified in Electra:EIP7251] cap is get_max_effective_balance(validator)
 relation ApplyEffectiveBalance:
   validator '.' EFFECTIVE_BALANCE gwei ~> validator
   hint(input %0 %1)
@@ -34,7 +35,7 @@ rule ApplyEffectiveBalance/main:
       [.EFFECTIVE_BALANCE =
         $min_uint64(
           $( balance - balance \ $EFFECTIVE_BALANCE_INCREMENT ), 
-          $MAX_EFFECTIVE_BALANCE
+          $get_max_effective_balance(validator)
         )
       ]
   -- if $( $EFFECTIVE_BALANCE_INCREMENT / $HYSTERESIS_QUOTIENT ) = uint64_hyst_inc

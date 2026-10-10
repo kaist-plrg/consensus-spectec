@@ -6,58 +6,37 @@ relation ProcessEpoch:
   beaconState ~> beaconState
   hint(input %0)
 
-;; TODO(electra): functions `process_epoch` changed upstream in specs/electra/beacon-chain.md
-;; body commented out below: uncomment it and apply the diff above
-;; --- old
-;; +++ new
-;; @@ -3,13 +3,17 @@
-;;      process_inactivity_updates(state)
-;;      process_rewards_and_penalties(state)
-;; +    # [Modified in Electra:EIP7251]
-;;      process_registry_updates(state)
-;; +    # [Modified in Electra:EIP7251]
-;;      process_slashings(state)
-;;      process_eth1_data_reset(state)
-;; +    # [New in Electra:EIP7251]
-;; +    process_pending_deposits(state)
-;; +    # [New in Electra:EIP7251]
-;; +    process_pending_consolidations(state)
-;; +    # [Modified in Electra:EIP7251]
-;;      process_effective_balance_updates(state)
-;;      process_slashings_reset(state)
-;;      process_randao_mixes_reset(state)
-;; -    # [Modified in Capella]
-;; -    # Removed `process_historical_roots_update`
-;; -    # [New in Capella]
-;;      process_historical_summaries_update(state)
-;;      process_participation_flag_updates(state)
-
-;; rule ProcessEpoch:
-;;   state ~> state_11
-;;   ;; Phase0 -> Altair
-;;   -- ProcessJustificationAndFinalization:  state ~> state_0
-;;   ;; Altair
-;;   -- ProcessInactivityUpdates:              state_0           ~> state_1
-;;   ;; Phase0 -> Altair
-;;   -- ProcessRewardsAndPenalties:            state_1           ~> state_2
-;;   ;; Phase0
-;;   -- ProcessRegistryUpdates:                state_2           ~> state_3
-;;   ;; Phase0 -> Altair -> Bellatrix
-;;   -- ProcessSlashings:                       state_3           ~> state_4
-;;   ;; Phase0
-;;   -- ProcessEth1DataReset:                 state_4           ~> state_5
-;;   ;; Phase0
-;;   -- ProcessEffectiveBalanceUpdates:       state_5           ~> state_6
-;;   ;; Phase0
-;;   -- ProcessSlashingsReset:                 state_6           ~> state_7
-;;   ;; Phase0
-;;   -- ProcessRandaoMixesReset:              state_7           ~> state_8
-;;   ;; Capella
-;;   -- ProcessHistoricalSummariesUpdate:     state_8           ~> state_9
-;;   ;; Altair
-;;   -- ProcessParticipationFlagUpdates:      state_9           ~> state_10
-;;   ;; Altair
-;;   -- ProcessSyncCommitteeUpdates:          state_10          ~> state_11
+;; [Modified in Electra:EIP7251] pending deposits and pending consolidations
+rule ProcessEpoch:
+  state ~> state_13
+  ;; Phase0 -> Altair
+  -- ProcessJustificationAndFinalization:  state             ~> state_0
+  ;; Altair
+  -- ProcessInactivityUpdates:              state_0           ~> state_1
+  ;; Phase0 -> Altair
+  -- ProcessRewardsAndPenalties:            state_1           ~> state_2
+  ;; Phase0 -> Electra
+  -- ProcessRegistryUpdates:                state_2           ~> state_3
+  ;; Phase0 -> Altair -> Bellatrix -> Electra
+  -- ProcessSlashings:                      state_3           ~> state_4
+  ;; Phase0
+  -- ProcessEth1DataReset:                  state_4           ~> state_5
+  ;; Electra
+  -- ProcessPendingDeposits:                state_5           ~> state_6
+  ;; Electra
+  -- ProcessPendingConsolidations:          state_6           ~> state_7
+  ;; Phase0 -> Electra
+  -- ProcessEffectiveBalanceUpdates:        state_7           ~> state_8
+  ;; Phase0
+  -- ProcessSlashingsReset:                 state_8           ~> state_9
+  ;; Phase0
+  -- ProcessRandaoMixesReset:               state_9           ~> state_10
+  ;; Capella
+  -- ProcessHistoricalSummariesUpdate:      state_10          ~> state_11
+  ;; Altair
+  -- ProcessParticipationFlagUpdates:       state_11          ~> state_12
+  ;; Altair
+  -- ProcessSyncCommitteeUpdates:          state_12          ~> state_13
 
 ;;
 ;; process_slots

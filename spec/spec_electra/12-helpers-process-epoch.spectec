@@ -417,84 +417,253 @@ rule WeighJustificationAndFinalization/justify_cur_finalize_neither:
 
 ;; === ProcessRegistryUpdates ===
 
-relation ProcessEligibilityAndEjection:
+;; [Custom | loop body : process_registry_updates] [Modified in Electra:EIP7251]
+;;  if eligible for the queue / elif ejectable / elif eligible for activation
+;;  mutates: .VALIDATORS[](.ACTIVATION_ELIGIBILITY_EPOCH, .ACTIVATION_EPOCH)
+;;           (+ InitiateValidatorExit fields)
+relation ProcessRegistryUpdate:
   beaconState '.' VALIDATORS `[ validatorIndex `] ~> beaconState
   hint(input %0 %1)
 
-rule ProcessEligibilityAndEjection/eligible_and_eject:
-  state '.' VALIDATORS `[ vid `] ~> state_updated
-  -- if state.VALIDATORS[vid] = validator
-  -- if $get_current_epoch(state) = epoch_cur
-  -- if $is_eligible_for_activation_queue(validator)
-  -- if $is_active_validator(validator, epoch_cur)
-     /\ $(validator.EFFECTIVE_BALANCE <= $EJECTION_BALANCE)
-  -- InitiateValidatorExit: 
-       state [.VALIDATORS[vid].ACTIVATION_ELIGIBILITY_EPOCH 
-              = $(epoch_cur + 1)]
-         '.' VALIDATORS `[ vid `] ~> state_updated
-
-rule ProcessEligibilityAndEjection/eligible:
+rule ProcessRegistryUpdate/eligible:
   state '.' VALIDATORS `[ vid `] ~>
-    state [.VALIDATORS[vid].ACTIVATION_ELIGIBILITY_EPOCH 
-          = $(epoch_cur + 1)]
+    state[.VALIDATORS[vid].ACTIVATION_ELIGIBILITY_EPOCH = $(epoch_cur + 1)]
+  ;; inserted guard
+  -- if $(vid < |state.VALIDATORS|)
   -- if state.VALIDATORS[vid] = validator
   -- if $get_current_epoch(state) = epoch_cur
-  -- if $is_eligible_for_activation_queue(validator)
-  -- if ~( $is_active_validator(validator, epoch_cur)
-        /\ $(validator.EFFECTIVE_BALANCE <= $EJECTION_BALANCE))
+  -- if $is_eligible_for_activation_queue(validator) = true
 
-rule ProcessEligibilityAndEjection/eject:
-  state '.' VALIDATORS `[ vid `] ~> state_updated
+rule ProcessRegistryUpdate/eject:
+  state '.' VALIDATORS `[ vid `] ~> state_out
+  -- if $(vid < |state.VALIDATORS|)
   -- if state.VALIDATORS[vid] = validator
   -- if $get_current_epoch(state) = epoch_cur
-  -- if ~$is_eligible_for_activation_queue(validator)
+  -- if $is_eligible_for_activation_queue(validator) = false
   -- if $is_active_validator(validator, epoch_cur)
      /\ $(validator.EFFECTIVE_BALANCE <= $EJECTION_BALANCE)
-  -- InitiateValidatorExit: 
-       state '.' VALIDATORS `[ vid `] ~> state_updated
+  -- InitiateValidatorExit: state '.' VALIDATORS `[ vid `] ~> state_out
 
-rule ProcessEligibilityAndEjection/skip:
-  state '.' VALIDATORS `[ vid `] ~> state
+rule ProcessRegistryUpdate/activate:
+  state '.' VALIDATORS `[ vid `] ~>
+    state[.VALIDATORS[vid].ACTIVATION_EPOCH = $compute_activation_exit_epoch(epoch_cur)]
+  -- if $(vid < |state.VALIDATORS|)
   -- if state.VALIDATORS[vid] = validator
   -- if $get_current_epoch(state) = epoch_cur
-  -- if ~$is_eligible_for_activation_queue(validator)
+  -- if $is_eligible_for_activation_queue(validator) = false
   -- if ~( $is_active_validator(validator, epoch_cur)
-        /\ $(validator.EFFECTIVE_BALANCE <= $EJECTION_BALANCE))
+        /\ $(validator.EFFECTIVE_BALANCE <= $EJECTION_BALANCE) )
+  -- if $is_eligible_for_activation(state, validator) = true
 
-relation ProcessEligibilityAndEjection_over_vids:
+rule ProcessRegistryUpdate/skip:
+  state '.' VALIDATORS `[ vid `] ~> state
+  -- if $(vid < |state.VALIDATORS|)
+  -- if state.VALIDATORS[vid] = validator
+  -- if $get_current_epoch(state) = epoch_cur
+  -- if $is_eligible_for_activation_queue(validator) = false
+  -- if ~( $is_active_validator(validator, epoch_cur)
+        /\ $(validator.EFFECTIVE_BALANCE <= $EJECTION_BALANCE) )
+  -- if $is_eligible_for_activation(state, validator) = false
+
+relation ProcessRegistryUpdate_over_vids:
   beaconState '.' VALIDATORS `[ validatorIndex* `] ~> beaconState
   hint(input %0 %1)
 
-rule ProcessEligibilityAndEjection_over_vids/fold:
+rule ProcessRegistryUpdate_over_vids/fold:
   state '.' VALIDATORS `[ vid* `] ~> state_out
-  -- (ProcessEligibilityAndEjection: state_cur '.' VALIDATORS `[ vid `] ~> state_next)*{
+  -- (ProcessRegistryUpdate: state_cur '.' VALIDATORS `[ vid `] ~> state_next)*{
        state -> state_cur ... state_next -> state_out
      }
 
-;; filter predicate
-dec $is_eligible_activation_en((nat, validator), beaconState) : boolean
-def $is_eligible_activation_en((_, validator), state)
-  = $is_eligible_for_activation(state, validator)
+;; === ProcessPendingDeposits ===
 
-;; [Custom]
-;; mutates: .VALIDATORS[].ACTIVATION_EPOCH
-relation ApplyActivation:
-  beaconState '.' VALIDATORS `[ validatorIndex `] '.' ACTIVATION_EPOCH ~> beaconState
+;; [Electra] apply_pending_deposit(state, deposit)
+;;  mutates: VALIDATORS, BALANCES, PREVIOUS/CURRENT_EPOCH_PARTICIPATION, INACTIVITY_SCORES
+relation ApplyPendingDeposit:
+  beaconState APPLY_PENDING pendingDeposit ~> beaconState
   hint(input %0 %1)
 
-rule ApplyActivation:
-  state '.' VALIDATORS `[ vid `] '.' ACTIVATION_EPOCH ~>
-    state[.VALIDATORS[vid].ACTIVATION_EPOCH
-          = $compute_activation_exit_epoch($get_current_epoch(state))]
+;; new pubkey with a valid signature
+rule ApplyPendingDeposit/new_valid_sig:
+  state APPLY_PENDING pendingDeposit ~> state_out
+  -- if ~( pendingDeposit.PUBKEY <- $validator_pubkeys(state) )
+  -- if $is_valid_deposit_signature(
+         pendingDeposit.PUBKEY, pendingDeposit.WITHDRAWAL_CREDENTIALS,
+         pendingDeposit.AMOUNT, pendingDeposit.SIGNATURE) = true
+  -- AddValidatorToRegistry:
+       state '.' VALIDATORS '++' `{ pendingDeposit.PUBKEY pendingDeposit.WITHDRAWAL_CREDENTIALS pendingDeposit.AMOUNT `}
+       ~> state_out
 
-relation ApplyActivations:
-  beaconState 
-    '.' VALIDATORS `[ validatorIndex* `] '.' ACTIVATION_EPOCH
-    ~>* beaconState
-  hint(input %0 %1)
+;; new pubkey with an invalid signature: no change
+rule ApplyPendingDeposit/new_invalid_sig:
+  state APPLY_PENDING pendingDeposit ~> state
+  -- if ~( pendingDeposit.PUBKEY <- $validator_pubkeys(state) )
+  -- if $is_valid_deposit_signature(
+         pendingDeposit.PUBKEY, pendingDeposit.WITHDRAWAL_CREDENTIALS,
+         pendingDeposit.AMOUNT, pendingDeposit.SIGNATURE) = false
 
-rule ApplyActivations/fold:
-  state '.' VALIDATORS `[ vid* `] '.' ACTIVATION_EPOCH ~>* state_out
-  -- (ApplyActivation: state_cur '.' VALIDATORS `[ vid `] '.' ACTIVATION_EPOCH ~> state_next)*{
-       state -> state_cur ... state_next -> state_out
-     }
+;; existing pubkey: increase its balance
+rule ApplyPendingDeposit/existing:
+  state APPLY_PENDING pendingDeposit ~> state_out
+  -- if $validator_pubkeys(state) = blsPubkey*
+  -- if ( pendingDeposit.PUBKEY <- blsPubkey* )
+  -- if $index_of_<blsPubkey>(blsPubkey*, pendingDeposit.PUBKEY) = vid
+  -- IncreaseBalance: state '.' BALANCES `[ vid `] '+' pendingDeposit.AMOUNT ~> state_out
+
+;; [Custom | loop : process_pending_deposits]
+;;  loop-carried: next_deposit_index, processed_amount, deposits_to_postpone, is_churn_limit_reached
+;;  loop-invariant: available_for_processing, finalized_slot, next_epoch
+syntax pendingDepositsAcc =
+  { NEXT_INDEX uint64,
+    PROCESSED gwei,
+    POSTPONE pendingDeposit*,
+    CHURN_REACHED bool,
+    AVAILABLE gwei,
+    FINALIZED_SLOT slot,
+    NEXT_EPOCH epoch }
+
+;; [Custom | branch : process_pending_deposits] the three `break`s at the top of the loop body
+dec $pending_deposit_stops(beaconState, pendingDepositsAcc, pendingDeposit) : bool
+;; a deposit request while Eth1 bridge deposits are pending
+def $pending_deposit_stops(state, pendingDepositsAcc, pendingDeposit) = true
+  -- if $(pendingDeposit.SLOT > $GENESIS_SLOT)
+  -- if $(state.ETH1_DEPOSIT_INDEX < state.DEPOSIT_REQUESTS_START_INDEX)
+;; not finalized
+def $pending_deposit_stops(state, pendingDepositsAcc, pendingDeposit) = true
+  -- if $(pendingDeposit.SLOT > pendingDepositsAcc.FINALIZED_SLOT)
+;; per-epoch limit
+def $pending_deposit_stops(state, pendingDepositsAcc, pendingDeposit) = true
+  -- if $(pendingDepositsAcc.NEXT_INDEX >= $MAX_PENDING_DEPOSITS_PER_EPOCH)
+def $pending_deposit_stops(state, pendingDepositsAcc, pendingDeposit) = false
+  -- otherwise
+
+;; [Custom | branch : process_pending_deposits] validator status of the deposit's pubkey
+;;  0 = unknown or not exited, 1 = exited, 2 = withdrawn
+dec $pending_deposit_status(beaconState, pendingDeposit, epoch) : nat
+def $pending_deposit_status(state, pendingDeposit, epoch_next) = 2
+  -- if $validator_pubkeys(state) = blsPubkey*
+  -- if ( pendingDeposit.PUBKEY <- blsPubkey* )
+  -- if state.VALIDATORS[$index_of_<blsPubkey>(blsPubkey*, pendingDeposit.PUBKEY)] = validator
+  -- if $(validator.WITHDRAWABLE_EPOCH < epoch_next)
+def $pending_deposit_status(state, pendingDeposit, epoch_next) = 1
+  -- if $validator_pubkeys(state) = blsPubkey*
+  -- if ( pendingDeposit.PUBKEY <- blsPubkey* )
+  -- if state.VALIDATORS[$index_of_<blsPubkey>(blsPubkey*, pendingDeposit.PUBKEY)] = validator
+  -- if $(validator.WITHDRAWABLE_EPOCH >= epoch_next)
+  -- if $(validator.EXIT_EPOCH < $FAR_FUTURE_EPOCH)
+def $pending_deposit_status(state, pendingDeposit, epoch_next) = 0
+  -- otherwise
+
+dec $pending_deposits_acc0(beaconState) : pendingDepositsAcc
+def $pending_deposits_acc0(state)
+  = { NEXT_INDEX 0,
+      PROCESSED 0,
+      POSTPONE eps,
+      CHURN_REACHED false,
+      AVAILABLE $(state.DEPOSIT_BALANCE_TO_CONSUME + $get_activation_exit_churn_limit(state)),
+      FINALIZED_SLOT $compute_start_slot_at_epoch(state.FINALIZED_CHECKPOINT.EPOCH),
+      NEXT_EPOCH $($get_current_epoch(state) + 1) }
+
+relation ProcessPendingDeposits_loop:
+  beaconState WITH pendingDepositsAcc OVER `[ pendingDeposit* `] ~> beaconState WITH pendingDepositsAcc
+  hint(input %0 %1 %2)
+
+;; loop exhausted
+rule ProcessPendingDeposits_loop/nil:
+  state WITH pendingDepositsAcc OVER `[ eps `] ~> state WITH pendingDepositsAcc
+
+;; break before reading the validator
+rule ProcessPendingDeposits_loop/stop:
+  state WITH pendingDepositsAcc OVER `[ pendingDeposit_h :: pendingDeposit_t* `] ~> state WITH pendingDepositsAcc
+  -- if $pending_deposit_stops(state, pendingDepositsAcc, pendingDeposit_h) = true
+
+;; withdrawn: apply without consuming churn
+rule ProcessPendingDeposits_loop/withdrawn:
+  state WITH pendingDepositsAcc OVER `[ pendingDeposit_h :: pendingDeposit_t* `] ~> state_out WITH pendingDepositsAcc_out
+  -- if $pending_deposit_stops(state, pendingDepositsAcc, pendingDeposit_h) = false
+  -- if $pending_deposit_status(state, pendingDeposit_h, pendingDepositsAcc.NEXT_EPOCH) = 2
+  -- ApplyPendingDeposit: state APPLY_PENDING pendingDeposit_h ~> state_1
+  -- ProcessPendingDeposits_loop:
+       state_1 WITH pendingDepositsAcc[.NEXT_INDEX = $(pendingDepositsAcc.NEXT_INDEX + 1)] OVER `[ pendingDeposit_t* `]
+       ~> state_out WITH pendingDepositsAcc_out
+
+;; exited: postpone
+rule ProcessPendingDeposits_loop/exited:
+  state WITH pendingDepositsAcc OVER `[ pendingDeposit_h :: pendingDeposit_t* `] ~> state_out WITH pendingDepositsAcc_out
+  -- if $pending_deposit_stops(state, pendingDepositsAcc, pendingDeposit_h) = false
+  -- if $pending_deposit_status(state, pendingDeposit_h, pendingDepositsAcc.NEXT_EPOCH) = 1
+  -- ProcessPendingDeposits_loop:
+       state WITH pendingDepositsAcc[.NEXT_INDEX = $(pendingDepositsAcc.NEXT_INDEX + 1)]
+                                    [.POSTPONE = pendingDepositsAcc.POSTPONE ++ [pendingDeposit_h]]
+             OVER `[ pendingDeposit_t* `]
+       ~> state_out WITH pendingDepositsAcc_out
+
+;; churn limit reached: break with the flag set
+rule ProcessPendingDeposits_loop/churn_reached:
+  state WITH pendingDepositsAcc OVER `[ pendingDeposit_h :: pendingDeposit_t* `]
+  ~> state WITH pendingDepositsAcc[.CHURN_REACHED = true]
+  -- if $pending_deposit_stops(state, pendingDepositsAcc, pendingDeposit_h) = false
+  -- if $pending_deposit_status(state, pendingDeposit_h, pendingDepositsAcc.NEXT_EPOCH) = 0
+  -- if $(pendingDepositsAcc.PROCESSED + pendingDeposit_h.AMOUNT > pendingDepositsAcc.AVAILABLE)
+
+;; within churn: consume and apply
+rule ProcessPendingDeposits_loop/apply:
+  state WITH pendingDepositsAcc OVER `[ pendingDeposit_h :: pendingDeposit_t* `] ~> state_out WITH pendingDepositsAcc_out
+  -- if $pending_deposit_stops(state, pendingDepositsAcc, pendingDeposit_h) = false
+  -- if $pending_deposit_status(state, pendingDeposit_h, pendingDepositsAcc.NEXT_EPOCH) = 0
+  -- if $(pendingDepositsAcc.PROCESSED + pendingDeposit_h.AMOUNT <= pendingDepositsAcc.AVAILABLE)
+  -- ApplyPendingDeposit: state APPLY_PENDING pendingDeposit_h ~> state_1
+  -- ProcessPendingDeposits_loop:
+       state_1 WITH pendingDepositsAcc[.NEXT_INDEX = $(pendingDepositsAcc.NEXT_INDEX + 1)]
+                                      [.PROCESSED = $(pendingDepositsAcc.PROCESSED + pendingDeposit_h.AMOUNT)]
+               OVER `[ pendingDeposit_t* `]
+       ~> state_out WITH pendingDepositsAcc_out
+
+;; === ProcessPendingConsolidations ===
+
+;; [Custom | loop : process_pending_consolidations]
+;;  loop-carried: next_pending_consolidation
+relation ProcessPendingConsolidations_loop:
+  beaconState WITH nat OVER `[ pendingConsolidation* `] ~> beaconState WITH nat
+  hint(input %0 %1 %2)
+
+;; loop exhausted
+rule ProcessPendingConsolidations_loop/nil:
+  state WITH n OVER `[ eps `] ~> state WITH n
+
+;; slashed source: skip it
+rule ProcessPendingConsolidations_loop/slashed:
+  state WITH n OVER `[ pendingConsolidation_h :: pendingConsolidation_t* `] ~> state_out WITH n_out
+  ;; inserted guard (python raises IndexError)
+  -- if $(pendingConsolidation_h.SOURCE_INDEX < |state.VALIDATORS|)
+  -- if state.VALIDATORS[pendingConsolidation_h.SOURCE_INDEX] = validator_source
+  -- if validator_source.SLASHED = true
+  -- ProcessPendingConsolidations_loop:
+       state WITH $(n + 1) OVER `[ pendingConsolidation_t* `] ~> state_out WITH n_out
+
+;; source not yet withdrawable: break
+rule ProcessPendingConsolidations_loop/stop:
+  state WITH n OVER `[ pendingConsolidation_h :: pendingConsolidation_t* `] ~> state WITH n
+  -- if $(pendingConsolidation_h.SOURCE_INDEX < |state.VALIDATORS|)
+  -- if state.VALIDATORS[pendingConsolidation_h.SOURCE_INDEX] = validator_source
+  -- if validator_source.SLASHED = false
+  -- if $(validator_source.WITHDRAWABLE_EPOCH > $get_current_epoch(state) + 1)
+
+;; move the active balance of the source to the target
+rule ProcessPendingConsolidations_loop/apply:
+  state WITH n OVER `[ pendingConsolidation_h :: pendingConsolidation_t* `] ~> state_out WITH n_out
+  -- if $(pendingConsolidation_h.SOURCE_INDEX < |state.VALIDATORS|)
+  -- if state.VALIDATORS[pendingConsolidation_h.SOURCE_INDEX] = validator_source
+  -- if validator_source.SLASHED = false
+  -- if $(validator_source.WITHDRAWABLE_EPOCH <= $get_current_epoch(state) + 1)
+  ;; Calculate the consolidated balance
+  -- if $(pendingConsolidation_h.SOURCE_INDEX < |state.BALANCES|)
+  -- if $min_uint64(state.BALANCES[pendingConsolidation_h.SOURCE_INDEX],
+                    validator_source.EFFECTIVE_BALANCE) = balance_source_effective
+  ;; Move active balance to target. Excess balance is withdrawable.
+  -- DecreaseBalance:
+       state '.' BALANCES `[ pendingConsolidation_h.SOURCE_INDEX `] '-' balance_source_effective ~> state_1
+  -- IncreaseBalance:
+       state_1 '.' BALANCES `[ pendingConsolidation_h.TARGET_INDEX `] '+' balance_source_effective ~> state_2
+  -- ProcessPendingConsolidations_loop:
+       state_2 WITH $(n + 1) OVER `[ pendingConsolidation_t* `] ~> state_out WITH n_out
