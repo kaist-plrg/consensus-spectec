@@ -98,7 +98,44 @@ let num (v : Value.t) =
 let elements (v : Value.t) =
   match v.it with ListV vs | TupleV vs -> vs | _ -> shape "expected a list"
 
+(* Root cache. SpecTec values are immutable, so a value object keeps its root
+   for a given SSZ type. A state update shares the unchanged parts of the old
+   value, so the next hash_tree_root of the state reuses their roots. The key is
+   the value object itself (physical equality), held weakly; vhash only spreads
+   the table. *)
+module Roots = Ephemeron.K1.Make (struct
+  type t = Value.t
+
+  let equal = ( == )
+  let hash (v : Value.t) = v.note.vhash
+end)
+
+let roots : (Ssz.typ * string) list Roots.t = Roots.create 4096
+
+(* Composite values, the nodes worth a cache entry. *)
+let cached (t : Ssz.typ) (v : Value.t) =
+  match (t, v.it) with
+  | ( ( Vector _ | List _ | Progressive_list _ | Container _
+      | Progressive_container _ ),
+      (StructV _ | ListV _ | TupleV _) ) ->
+      true
+  | _ -> false
+
 let rec to_ssz (t : Ssz.typ) (v : Value.t) : Ssz.value =
+  if not (cached t v) then node t v
+  else
+    let entries = Option.value (Roots.find_opt roots v) ~default:[] in
+    match List.assq_opt t entries with
+    | Some r -> Root r
+    | None -> (
+        match Ssz.hash_tree_root t (node t v) with
+        | Ok r ->
+            Roots.replace roots v ((t, r) :: entries);
+            Root r
+        | Error m -> shape "%s" m)
+
+(* One level of conversion; [to_ssz] converts the children. *)
+and node (t : Ssz.typ) (v : Value.t) : Ssz.value =
   match (t, v.it) with
   | Uint size, _ -> Uint (le_bytes ~size (num v))
   | Boolean, BoolV b -> Bool b
