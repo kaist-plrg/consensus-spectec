@@ -352,6 +352,22 @@ rule ProcessSyncCommitteeUpdates/main:
   ;; ;; branch-complete
   ;; -- if $(epoch_next \ $EPOCHS_PER_SYNC_COMMITTEE_PERIOD) = 0
 
+;; [Fulu:EIP7917]
+;; process_proposer_lookahead:
+;;  shift out the proposers of the first epoch, append the proposers of the last epoch
+;;  mutates: .PROPOSER_LOOKAHEAD
+
+relation ProcessProposerLookahead:
+  beaconState ~> beaconState
+  hint(input %0)
+
+rule ProcessProposerLookahead:
+  state ~> state[.PROPOSER_LOOKAHEAD = vid_shifted* ++ vid_last*]
+  ;; inserted guard
+  -- if $(|state.PROPOSER_LOOKAHEAD| >= $SLOTS_PER_EPOCH)
+  -- if $drop_prefix_<validatorIndex>(state.PROPOSER_LOOKAHEAD, $SLOTS_PER_EPOCH) = vid_shifted*
+  -- if $get_beacon_proposer_indices(state, $($get_current_epoch(state) + $MIN_SEED_LOOKAHEAD + 1)) = vid_last*
+
 ;; [Gloas:EIP7732]
 ;; process_builder_pending_payments
 ;;  mutates: .BUILDER_PENDING_WITHDRAWALS, .BUILDER_PENDING_PAYMENTS

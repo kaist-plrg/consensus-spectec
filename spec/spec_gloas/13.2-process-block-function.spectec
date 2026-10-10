@@ -139,14 +139,6 @@ rule ProcessEth1Data/accumulate:
   ;; branch-complete
   -- if $(n_occ * 2 <= $EPOCHS_PER_ETH1_VOTING_PERIOD * $SLOTS_PER_EPOCH)
 
-;; [Custom | branch : process_operations] [Electra:EIP6110]
-;;  the number of Eth1 bridge deposits a block must hold
-dec $expected_deposit_count(beaconState) : nat
-def $expected_deposit_count(state) = $min_uint64($MAX_DEPOSITS, $(uint64_limit - state.ETH1_DEPOSIT_INDEX))
-  -- if $min_uint64(state.ETH1_DATA.DEPOSIT_COUNT, state.DEPOSIT_REQUESTS_START_INDEX) = uint64_limit
-  -- if $(state.ETH1_DEPOSIT_INDEX < uint64_limit)
-def $expected_deposit_count(state) = 0
-  -- otherwise
 
 ;; [Phase0 -> Altair -> Capella -> Electra -> Fulu -> Gloas]
 ;; process_operations(state, body, parent_slot)

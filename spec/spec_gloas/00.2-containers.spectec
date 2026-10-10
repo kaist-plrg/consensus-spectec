@@ -410,4 +410,9 @@ syntax expectedWithdrawals =
     ;; [Gloas:EIP7732]
     PROCESSED_BUILDERS_SWEEP_COUNT uint64 }
 
+;; [Fulu:EIP7892] dataclass BlobParameters, not an SSZ container
+syntax blobParameters =
+  { EPOCH epoch,
+    MAX_BLOBS_PER_BLOCK uint64 }
+
 syntax enumerated_<X> = (nat, X)
