@@ -528,3 +528,13 @@ def $MAX_PER_EPOCH_ACTIVATION_EXIT_CHURN_LIMIT = 256000000000
 ;; not defined in eth2spec but needed
 dec $MAX_RANDOM_VALUE : uint64
 def $MAX_RANDOM_VALUE = 65535
+
+;; [Fulu] configuration (mainnet)
+
+dec $ELECTRA_FORK_EPOCH : epoch
+def $ELECTRA_FORK_EPOCH = 364032
+
+dec $FULU_FORK_EPOCH : epoch
+def $FULU_FORK_EPOCH = 411392
+
+;; [Fulu:EIP7892] BLOB_SCHEDULE is in 05-helpers-domain-fork.spectec, after its record type

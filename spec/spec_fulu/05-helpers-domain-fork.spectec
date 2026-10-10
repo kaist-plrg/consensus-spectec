@@ -55,3 +55,38 @@ def $verify_block_signature(state, signedBeaconBlock) = true
 
 def $verify_block_signature(state, signedBeaconBlock) = false
   -- otherwise
+
+;; =========================
+;; [Fulu:EIP7892] blob schedule
+;; =========================
+
+;; config BLOB_SCHEDULE: entries { EPOCH, MAX_BLOBS_PER_BLOCK }
+dec $BLOB_SCHEDULE : blobParameters*
+def $BLOB_SCHEDULE =
+  [ { EPOCH 412672, MAX_BLOBS_PER_BLOCK 15 },
+    { EPOCH 419072, MAX_BLOBS_PER_BLOCK 21 } ]
+
+;; [Custom | loop : get_blob_parameters]
+;;  python takes the first entry of the schedule sorted by EPOCH (descending) with epoch >= EPOCH.
+;;  Epochs are unique, so that is the entry with the largest EPOCH <= epoch.
+;;  The loop carries the best entry so far.
+dec $blob_parameters_loop(blobParameters*, epoch, blobParameters) : blobParameters
+def $blob_parameters_loop(eps, epoch, blobParameters_best) = blobParameters_best
+def $blob_parameters_loop(blobParameters_h :: blobParameters_t*, epoch, blobParameters_best)
+  = $blob_parameters_loop(blobParameters_t*, epoch, blobParameters_h)
+  -- if $(blobParameters_h.EPOCH <= epoch)
+  -- if $(blobParameters_h.EPOCH >= blobParameters_best.EPOCH)
+def $blob_parameters_loop(blobParameters_h :: blobParameters_t*, epoch, blobParameters_best)
+  = $blob_parameters_loop(blobParameters_t*, epoch, blobParameters_best)
+  -- otherwise
+
+;; [Fulu] get_blob_parameters(Epoch) -> BlobParameters
+;;  the default entry is the Electra limit
+dec $get_blob_parameters(epoch) : blobParameters
+def $get_blob_parameters(epoch)
+  = $blob_parameters_loop(
+      $BLOB_SCHEDULE,
+      epoch,
+      { EPOCH $ELECTRA_FORK_EPOCH, MAX_BLOBS_PER_BLOCK $MAX_BLOBS_PER_BLOCK_ELECTRA }
+    )
+
