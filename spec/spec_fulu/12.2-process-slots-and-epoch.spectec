@@ -6,63 +6,40 @@ relation ProcessEpoch:
   beaconState ~> beaconState
   hint(input %0)
 
-;; TODO(fulu): functions `process_epoch` changed upstream in specs/fulu/beacon-chain.md
-;; body commented out below: uncomment it and apply the diff above
-;; --- old
-;; +++ new
-;; @@ -3,14 +3,9 @@
-;;      process_inactivity_updates(state)
-;;      process_rewards_and_penalties(state)
-;; -    # [Modified in Electra:EIP7251]
-;;      process_registry_updates(state)
-;; -    # [Modified in Electra:EIP7251]
-;;      process_slashings(state)
-;;      process_eth1_data_reset(state)
-;; -    # [New in Electra:EIP7251]
-;;      process_pending_deposits(state)
-;; -    # [New in Electra:EIP7251]
-;;      process_pending_consolidations(state)
-;; -    # [Modified in Electra:EIP7251]
-;;      process_effective_balance_updates(state)
-;;      process_slashings_reset(state)
-;; @@ -19,2 +14,4 @@
-;;      process_participation_flag_updates(state)
-;;      process_sync_committee_updates(state)
-;; +    # [New in Fulu:EIP7917]
-;; +    process_proposer_lookahead(state)
+;; [Modified in Fulu:EIP7917] proposer lookahead last
+rule ProcessEpoch:
+  state ~> state_14
+  ;; Phase0 -> Altair
+  -- ProcessJustificationAndFinalization:  state             ~> state_0
+  ;; Altair
+  -- ProcessInactivityUpdates:              state_0           ~> state_1
+  ;; Phase0 -> Altair
+  -- ProcessRewardsAndPenalties:            state_1           ~> state_2
+  ;; Phase0 -> Electra
+  -- ProcessRegistryUpdates:                state_2           ~> state_3
+  ;; Phase0 -> Altair -> Bellatrix -> Electra
+  -- ProcessSlashings:                      state_3           ~> state_4
+  ;; Phase0
+  -- ProcessEth1DataReset:                  state_4           ~> state_5
+  ;; Electra -> Fulu
+  -- ProcessPendingDeposits:                state_5           ~> state_6
+  ;; Electra
+  -- ProcessPendingConsolidations:          state_6           ~> state_7
+  ;; Phase0 -> Electra
+  -- ProcessEffectiveBalanceUpdates:        state_7           ~> state_8
+  ;; Phase0
+  -- ProcessSlashingsReset:                 state_8           ~> state_9
+  ;; Phase0
+  -- ProcessRandaoMixesReset:               state_9           ~> state_10
+  ;; Capella
+  -- ProcessHistoricalSummariesUpdate:      state_10          ~> state_11
+  ;; Altair
+  -- ProcessParticipationFlagUpdates:       state_11          ~> state_12
+  ;; Altair
+  -- ProcessSyncCommitteeUpdates:          state_12          ~> state_13
+  ;; Fulu
+  -- ProcessProposerLookahead:              state_13          ~> state_14
 
-;; rule ProcessEpoch:
-;;   state ~> state_13
-;;   ;; Phase0 -> Altair
-;;   -- ProcessJustificationAndFinalization:  state             ~> state_0
-;;   ;; Altair
-;;   -- ProcessInactivityUpdates:              state_0           ~> state_1
-;;   ;; Phase0 -> Altair
-;;   -- ProcessRewardsAndPenalties:            state_1           ~> state_2
-;;   ;; Phase0 -> Electra
-;;   -- ProcessRegistryUpdates:                state_2           ~> state_3
-;;   ;; Phase0 -> Altair -> Bellatrix -> Electra
-;;   -- ProcessSlashings:                      state_3           ~> state_4
-;;   ;; Phase0
-;;   -- ProcessEth1DataReset:                  state_4           ~> state_5
-;;   ;; Electra
-;;   -- ProcessPendingDeposits:                state_5           ~> state_6
-;;   ;; Electra
-;;   -- ProcessPendingConsolidations:          state_6           ~> state_7
-;;   ;; Phase0 -> Electra
-;;   -- ProcessEffectiveBalanceUpdates:        state_7           ~> state_8
-;;   ;; Phase0
-;;   -- ProcessSlashingsReset:                 state_8           ~> state_9
-;;   ;; Phase0
-;;   -- ProcessRandaoMixesReset:               state_9           ~> state_10
-;;   ;; Capella
-;;   -- ProcessHistoricalSummariesUpdate:      state_10          ~> state_11
-;;   ;; Altair
-;;   -- ProcessParticipationFlagUpdates:       state_11          ~> state_12
-;;   ;; Altair
-;;   -- ProcessSyncCommitteeUpdates:          state_12          ~> state_13
-
-;; [Modified in Electra:EIP7251] pending deposits and pending consolidations
 ;;
 ;; process_slots
 ;;

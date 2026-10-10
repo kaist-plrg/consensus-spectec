@@ -194,50 +194,32 @@ relation ProcessPendingDeposits:
   beaconState ~> beaconState
   hint(input %0)
 
-;; TODO(fulu): functions `process_pending_deposits` changed upstream in specs/fulu/beacon-chain.md
-;; body commented out below: uncomment it and apply the diff above
-;; --- old
-;; +++ new
-;; @@ -11,14 +11,4 @@
-;;
-;;      for deposit in state.pending_deposits:
-;; -        # Do not process deposit requests if Eth1 bridge deposits are not yet applied.
-;; -        if (
-;; -            # Is deposit request
-;; -            deposit.slot > GENESIS_SLOT
-;; -            and
-;; -            # There are pending Eth1 bridge deposits
-;; -            state.eth1_deposit_index < state.deposit_requests_start_index
-;; -        ):
-;; -            break
-;; -
-;;          # Check if deposit has been finalized, otherwise, stop processing.
-;;          if deposit.slot > finalized_slot:
-
-;; rule ProcessPendingDeposits/churn_reached:
-;;   state ~> state_1[.PENDING_DEPOSITS = pendingDeposit_rest* ++ pendingDepositsAcc_out.POSTPONE]
-;;                   [.DEPOSIT_BALANCE_TO_CONSUME = $(pendingDepositsAcc_out.AVAILABLE - pendingDepositsAcc_out.PROCESSED)]
-;;   -- ProcessPendingDeposits_loop:
-;;        state WITH $pending_deposits_acc0(state) OVER `[ state.PENDING_DEPOSITS `]
-;;        ~> state_1 WITH pendingDepositsAcc_out
-;;   -- if pendingDepositsAcc_out.CHURN_REACHED = true
-;;   ;; python slice [n:], SpecTec slice is [start : length]
-;;   -- if state_1.PENDING_DEPOSITS = pendingDeposit*
-;;   -- if $(|pendingDeposit*| - pendingDepositsAcc_out.NEXT_INDEX) = n_rest
-;;   -- if pendingDeposit*[pendingDepositsAcc_out.NEXT_INDEX : n_rest] = pendingDeposit_rest*
-;;
-;; rule ProcessPendingDeposits/churn_not_reached:
-;;   state ~> state_1[.PENDING_DEPOSITS = pendingDeposit_rest* ++ pendingDepositsAcc_out.POSTPONE]
-;;                   [.DEPOSIT_BALANCE_TO_CONSUME = 0]
-;;   -- ProcessPendingDeposits_loop:
-;;        state WITH $pending_deposits_acc0(state) OVER `[ state.PENDING_DEPOSITS `]
-;;        ~> state_1 WITH pendingDepositsAcc_out
-;;   -- if pendingDepositsAcc_out.CHURN_REACHED = false
-;;   -- if state_1.PENDING_DEPOSITS = pendingDeposit*
-;;   -- if $(|pendingDeposit*| - pendingDepositsAcc_out.NEXT_INDEX) = n_rest
-;;   -- if pendingDeposit*[pendingDepositsAcc_out.NEXT_INDEX : n_rest] = pendingDeposit_rest*
+;; [Modified in Fulu] only the loop changes, in $pending_deposit_stops
 
 ;; Accumulate churn only if the churn limit has been hit.
+rule ProcessPendingDeposits/churn_reached:
+  state ~> state_1[.PENDING_DEPOSITS = pendingDeposit_rest* ++ pendingDepositsAcc_out.POSTPONE]
+                  [.DEPOSIT_BALANCE_TO_CONSUME = $(pendingDepositsAcc_out.AVAILABLE - pendingDepositsAcc_out.PROCESSED)]
+  -- ProcessPendingDeposits_loop:
+       state WITH $pending_deposits_acc0(state) OVER `[ state.PENDING_DEPOSITS `]
+       ~> state_1 WITH pendingDepositsAcc_out
+  -- if pendingDepositsAcc_out.CHURN_REACHED = true
+  ;; python slice [n:], SpecTec slice is [start : length]
+  -- if state_1.PENDING_DEPOSITS = pendingDeposit*
+  -- if $(|pendingDeposit*| - pendingDepositsAcc_out.NEXT_INDEX) = n_rest
+  -- if pendingDeposit*[pendingDepositsAcc_out.NEXT_INDEX : n_rest] = pendingDeposit_rest*
+
+rule ProcessPendingDeposits/churn_not_reached:
+  state ~> state_1[.PENDING_DEPOSITS = pendingDeposit_rest* ++ pendingDepositsAcc_out.POSTPONE]
+                  [.DEPOSIT_BALANCE_TO_CONSUME = 0]
+  -- ProcessPendingDeposits_loop:
+       state WITH $pending_deposits_acc0(state) OVER `[ state.PENDING_DEPOSITS `]
+       ~> state_1 WITH pendingDepositsAcc_out
+  -- if pendingDepositsAcc_out.CHURN_REACHED = false
+  -- if state_1.PENDING_DEPOSITS = pendingDeposit*
+  -- if $(|pendingDeposit*| - pendingDepositsAcc_out.NEXT_INDEX) = n_rest
+  -- if pendingDeposit*[pendingDepositsAcc_out.NEXT_INDEX : n_rest] = pendingDeposit_rest*
+
 ;; [Electra]
 ;; process_pending_consolidations
 ;;  mutates: PENDING_CONSOLIDATIONS, BALANCES
@@ -366,3 +348,20 @@ rule ProcessSyncCommitteeUpdates/main:
   ;; -- if $($get_current_epoch(state) + 1) = epoch_next
   ;; ;; branch-complete
   ;; -- if $(epoch_next \ $EPOCHS_PER_SYNC_COMMITTEE_PERIOD) = 0
+
+;; [Fulu:EIP7917]
+;; process_proposer_lookahead:
+;;  shift out the proposers of the first epoch, append the proposers of the last epoch
+;;  mutates: .PROPOSER_LOOKAHEAD
+
+relation ProcessProposerLookahead:
+  beaconState ~> beaconState
+  hint(input %0)
+
+rule ProcessProposerLookahead:
+  state ~> state[.PROPOSER_LOOKAHEAD = vid_shifted* ++ vid_last*]
+  ;; inserted guard
+  -- if $(|state.PROPOSER_LOOKAHEAD| >= $SLOTS_PER_EPOCH)
+  -- if $drop_prefix_<validatorIndex>(state.PROPOSER_LOOKAHEAD, $SLOTS_PER_EPOCH) = vid_shifted*
+  -- if $get_beacon_proposer_indices(state, $($get_current_epoch(state) + $MIN_SEED_LOOKAHEAD + 1)) = vid_last*
+
