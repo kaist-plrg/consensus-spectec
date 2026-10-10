@@ -13,7 +13,7 @@ git submodule update --init consensus-specs        # once; the default upstream 
 uv tool install -e tools                           # once; puts `forkdiff` on PATH
 forkdiff diff capella deneb -o build/forkdiff/capella-deneb.json
 forkdiff plan build/forkdiff/capella-deneb.json --from spec/spec_capella --to build/spec_deneb
-./spectec-core elab build/spec_deneb/*.spectec     # warnings = remaining TODOs
+./spectecx elab build/spec_deneb/*.spectec     # warnings = remaining TODOs
 ```
 
 - Without installing: `uv run --project tools forkdiff ...`. Needs Python >= 3.10,
@@ -21,7 +21,7 @@ forkdiff plan build/forkdiff/capella-deneb.json --from spec/spec_capella --to bu
 - `diff` re-executes itself under the checkout's `.venv` if it has one, otherwise
   under `uv run` with the checkout's pinned `marko` and `ruamel.yaml`.
 - `diff --specs <dir>` uses another checkout. Removals are only reported by
-  checkouts newer than the submodule pin (v1.6.0), which lacks the `deprecate_*` hooks.
+  checkouts that have the `deprecate_*` hooks (after v1.6.0). The submodule pin has them.
 - `plan --docs` limits the work to upstream docs by basename (default
   `beacon-chain.md`, or `all`). `plan --force` overwrites a non-empty `--to`.
 

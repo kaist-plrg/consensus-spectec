@@ -145,7 +145,7 @@ def normalize(cat: str, src: Source) -> str:
 
 def ensure_pysetup_python(specs: Path) -> None:
     """
-    Re-exec under an interpreter that can import pysetup: the checkout's own .venv if it1
+    Re-exec under an interpreter that can import pysetup: the checkout's own .venv if it
     has one, otherwise an ephemeral `uv run` env with the deps pinned in its pyproject.
     """
 

@@ -4,7 +4,7 @@ Line-based model of .spectec files: top-level blocks, declaration index, referen
 Why not the real SpecTec parser:
 - `plan` edits the previous fork's files and hands them to a human, so the output must
   keep every comment and the original layout. The only way the OCaml toolchain prints
-  source back is `spectec-core unparse`, which drops comments and reformats everything.
+  source back is `spectecx unparse`, which drops comments and reformats everything.
   Here the blocks join back to the exact input, so only the touched blocks show in a diff.
 - The parser is OCaml with no Python interface; using it would mean adding an AST dump
   command and an opam build to a tool that otherwise runs from `uv run` alone.

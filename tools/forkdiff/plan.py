@@ -225,7 +225,7 @@ def cmd_plan(a: argparse.Namespace) -> None:
     )
     print(", ".join(f"{k.replace('_', '-')} {len(rep[k])}" for k in sections))
     print(
-        f"next: ./spectec-core elab {dest}/*.spectec   "
+        f"next: ./spectecx elab {dest}/*.spectec   "
         "(warnings Dec_missing_clauses / Relation_missing_rules are the TODOs)"
     )
 
@@ -315,7 +315,7 @@ def render_plan(
         [
             "## Next",
             "",
-            f"    ./spectec-core elab {a.to}/*.spectec",
+            f"    ./spectecx elab {a.to}/*.spectec",
             "",
             "Warnings `Dec_missing_clauses` / `Relation_missing_rules` are the open TODOs.",
             "",
