@@ -17,7 +17,7 @@ def render_src(src: Source | None) -> list[str]:
         return []
     if isinstance(src, str):
         return src.splitlines()
-    return [f"{src['type']} = {src['value']}"]
+    return f"{src['type']} = {src['value']}".splitlines()
 
 
 def todo(tag: str, ch: Change, note: str) -> str:
