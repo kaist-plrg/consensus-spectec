@@ -1,54 +1,47 @@
 ;; === SLOT PROCESSING ===
 
-;; [Phase 0]
+;; [Phase 0 -> Gloas]
 ;; process_slot
 
 relation ProcessSlot:
   beaconState ~> beaconState
   hint(input %0)
 
-;; TODO(gloas): functions `process_slot` changed upstream in specs/gloas/beacon-chain.md
-;; body commented out below: uncomment it and apply the diff above
-;; --- old
-;; +++ new
-;; @@ -10,2 +10,6 @@
-;;      previous_block_root = hash_tree_root(state.latest_block_header)
-;;      state.block_roots[slot_index] = previous_block_root
-;; +    # [New in Gloas:EIP7732]
-;; +    # Unset the next payload availability
-;; +    next_slot_index = (state.slot + 1) % SLOTS_PER_HISTORICAL_ROOT
-;; +    state.execution_payload_availability[next_slot_index] = Boolean(False)
-
-;; rule ProcessSlot/header_root_empty:
-;;   state ~>
-;;     state[.STATE_ROOTS[i] = root_state_prev]
-;;          [.LATEST_BLOCK_HEADER = beaconBlockHeader]
-;;          [.BLOCK_ROOTS[i] = root_block_prev]
-;;   -- if $( state.SLOT \ $SLOTS_PER_HISTORICAL_ROOT ) = i
-;;   ;; branch-complete
-;;   -- if state.LATEST_BLOCK_HEADER.STATE_ROOT = $ZERO_ROOT
-;;   ;; save state root
-;;   -- if $hash_tree_root_beaconState(state) = root_state_prev
-;;   ;; save latest block header state root
-;;   -- if state.LATEST_BLOCK_HEADER[.STATE_ROOT = $hash_tree_root_beaconState(state)]
-;;       = beaconBlockHeader
-;;   ;; save block root
-;;   -- if $hash_tree_root_beaconBlockHeader(beaconBlockHeader) = root_block_prev
-;;
-;; rule ProcessSlot/header_root_not_empty:
-;;   state ~>
-;;     state[.STATE_ROOTS[i] = root_state_prev]
-;;          [.BLOCK_ROOTS[i] = root_block_prev]
-;;   -- if $( state.SLOT \ $SLOTS_PER_HISTORICAL_ROOT ) = i
-;;   ;; branch-complete
-;;   -- if state.LATEST_BLOCK_HEADER.STATE_ROOT =/= $ZERO_ROOT
-;;   ;; save state root
-;;   -- if $hash_tree_root_beaconState(state) = root_state_prev
-;;   ;; save block root
-;;   -- if $hash_tree_root_beaconBlockHeader(state.LATEST_BLOCK_HEADER) = root_block_prev
-
 ;; branch1: cache state root, header state root and block root
+;;  [New in Gloas:EIP7732] unset the next payload availability
+rule ProcessSlot/header_root_empty:
+  state ~>
+    state[.STATE_ROOTS[i] = root_state_prev]
+         [.LATEST_BLOCK_HEADER = beaconBlockHeader]
+         [.BLOCK_ROOTS[i] = root_block_prev]
+         [.EXECUTION_PAYLOAD_AVAILABILITY[j] = false]
+  -- if $( state.SLOT \ $SLOTS_PER_HISTORICAL_ROOT ) = i
+  -- if $( (state.SLOT + 1) \ $SLOTS_PER_HISTORICAL_ROOT ) = j
+  ;; branch-complete
+  -- if state.LATEST_BLOCK_HEADER.STATE_ROOT = $ZERO_ROOT
+  ;; save state root
+  -- if $hash_tree_root_beaconState(state) = root_state_prev
+  ;; save latest block header state root
+  -- if state.LATEST_BLOCK_HEADER[.STATE_ROOT = root_state_prev] = beaconBlockHeader
+  ;; save block root
+  -- if $hash_tree_root_beaconBlockHeader(beaconBlockHeader) = root_block_prev
+
 ;; branch2: cache state root and block root
+;;  [New in Gloas:EIP7732] unset the next payload availability
+rule ProcessSlot/header_root_not_empty:
+  state ~>
+    state[.STATE_ROOTS[i] = root_state_prev]
+         [.BLOCK_ROOTS[i] = root_block_prev]
+         [.EXECUTION_PAYLOAD_AVAILABILITY[j] = false]
+  -- if $( state.SLOT \ $SLOTS_PER_HISTORICAL_ROOT ) = i
+  -- if $( (state.SLOT + 1) \ $SLOTS_PER_HISTORICAL_ROOT ) = j
+  ;; branch-complete
+  -- if state.LATEST_BLOCK_HEADER.STATE_ROOT =/= $ZERO_ROOT
+  ;; save state root
+  -- if $hash_tree_root_beaconState(state) = root_state_prev
+  ;; save block root
+  -- if $hash_tree_root_beaconBlockHeader(state.LATEST_BLOCK_HEADER) = root_block_prev
+
 ;; === EPOCH PROCESSING ===
 
 ;; [Phase0 -> Altair]
@@ -198,7 +191,7 @@ rule ProcessEth1DataReset/main:
   ;; ;; branch-complete
   ;; -- if $(epoch_next \ $EPOCHS_PER_ETH1_VOTING_PERIOD) = 0
 
-;; [Electra]
+;; [Electra -> Fulu -> Gloas:EIP8061]
 ;; process_pending_deposits
 ;;  mutates: PENDING_DEPOSITS, DEPOSIT_BALANCE_TO_CONSUME (+ ApplyPendingDeposit fields)
 
@@ -206,67 +199,30 @@ relation ProcessPendingDeposits:
   beaconState ~> beaconState
   hint(input %0)
 
-;; TODO(gloas): functions `process_pending_deposits` changed upstream in specs/gloas/beacon-chain.md
-;; body commented out below: uncomment it and apply the diff above
-;; --- old
-;; +++ new
-;; @@ -1,7 +1,7 @@
-;;  def process_pending_deposits(state: BeaconState) -> None:
-;;      next_epoch = get_current_epoch(state) + 1
-;; -    available_for_processing = state.deposit_balance_to_consume + get_activation_exit_churn_limit(
-;; -        state
-;; -    )
-;; +    # [Modified in Gloas:EIP8061]
-;; +    # Deposits still consume the activation-only churn budget in Gloas.
-;; +    available_for_processing = state.deposit_balance_to_consume + get_activation_churn_limit(state)
-;;      processed_amount = 0
-;;      next_deposit_index = 0
-
-
-;; TODO(fulu): functions `process_pending_deposits` changed upstream in specs/fulu/beacon-chain.md
-;; body commented out below: uncomment it and apply the diff above
-;; --- old
-;; +++ new
-;; @@ -11,14 +11,4 @@
-;;
-;;      for deposit in state.pending_deposits:
-;; -        # Do not process deposit requests if Eth1 bridge deposits are not yet applied.
-;; -        if (
-;; -            # Is deposit request
-;; -            deposit.slot > GENESIS_SLOT
-;; -            and
-;; -            # There are pending Eth1 bridge deposits
-;; -            state.eth1_deposit_index < state.deposit_requests_start_index
-;; -        ):
-;; -            break
-;; -
-;;          # Check if deposit has been finalized, otherwise, stop processing.
-;;          if deposit.slot > finalized_slot:
-
-;; rule ProcessPendingDeposits/churn_reached:
-;;   state ~> state_1[.PENDING_DEPOSITS = pendingDeposit_rest* ++ pendingDepositsAcc_out.POSTPONE]
-;;                   [.DEPOSIT_BALANCE_TO_CONSUME = $(pendingDepositsAcc_out.AVAILABLE - pendingDepositsAcc_out.PROCESSED)]
-;;   -- ProcessPendingDeposits_loop:
-;;        state WITH $pending_deposits_acc0(state) OVER `[ state.PENDING_DEPOSITS `]
-;;        ~> state_1 WITH pendingDepositsAcc_out
-;;   -- if pendingDepositsAcc_out.CHURN_REACHED = true
-;;   ;; python slice [n:], SpecTec slice is [start : length]
-;;   -- if state_1.PENDING_DEPOSITS = pendingDeposit*
-;;   -- if $(|pendingDeposit*| - pendingDepositsAcc_out.NEXT_INDEX) = n_rest
-;;   -- if pendingDeposit*[pendingDepositsAcc_out.NEXT_INDEX : n_rest] = pendingDeposit_rest*
-;;
-;; rule ProcessPendingDeposits/churn_not_reached:
-;;   state ~> state_1[.PENDING_DEPOSITS = pendingDeposit_rest* ++ pendingDepositsAcc_out.POSTPONE]
-;;                   [.DEPOSIT_BALANCE_TO_CONSUME = 0]
-;;   -- ProcessPendingDeposits_loop:
-;;        state WITH $pending_deposits_acc0(state) OVER `[ state.PENDING_DEPOSITS `]
-;;        ~> state_1 WITH pendingDepositsAcc_out
-;;   -- if pendingDepositsAcc_out.CHURN_REACHED = false
-;;   -- if state_1.PENDING_DEPOSITS = pendingDeposit*
-;;   -- if $(|pendingDeposit*| - pendingDepositsAcc_out.NEXT_INDEX) = n_rest
-;;   -- if pendingDeposit*[pendingDepositsAcc_out.NEXT_INDEX : n_rest] = pendingDeposit_rest*
-
 ;; Accumulate churn only if the churn limit has been hit.
+rule ProcessPendingDeposits/churn_reached:
+  state ~> state_1[.PENDING_DEPOSITS = pendingDeposit_rest* ++ pendingDepositsAcc_out.POSTPONE]
+                  [.DEPOSIT_BALANCE_TO_CONSUME = $(pendingDepositsAcc_out.AVAILABLE - pendingDepositsAcc_out.PROCESSED)]
+  -- ProcessPendingDeposits_loop:
+       state WITH $pending_deposits_acc0(state) OVER `[ state.PENDING_DEPOSITS `]
+       ~> state_1 WITH pendingDepositsAcc_out
+  -- if pendingDepositsAcc_out.CHURN_REACHED = true
+  ;; python slice [n:], SpecTec slice is [start : length]
+  -- if state_1.PENDING_DEPOSITS = pendingDeposit*
+  -- if $(|pendingDeposit*| - pendingDepositsAcc_out.NEXT_INDEX) = n_rest
+  -- if pendingDeposit*[pendingDepositsAcc_out.NEXT_INDEX : n_rest] = pendingDeposit_rest*
+
+rule ProcessPendingDeposits/churn_not_reached:
+  state ~> state_1[.PENDING_DEPOSITS = pendingDeposit_rest* ++ pendingDepositsAcc_out.POSTPONE]
+                  [.DEPOSIT_BALANCE_TO_CONSUME = 0]
+  -- ProcessPendingDeposits_loop:
+       state WITH $pending_deposits_acc0(state) OVER `[ state.PENDING_DEPOSITS `]
+       ~> state_1 WITH pendingDepositsAcc_out
+  -- if pendingDepositsAcc_out.CHURN_REACHED = false
+  -- if state_1.PENDING_DEPOSITS = pendingDeposit*
+  -- if $(|pendingDeposit*| - pendingDepositsAcc_out.NEXT_INDEX) = n_rest
+  -- if pendingDeposit*[pendingDepositsAcc_out.NEXT_INDEX : n_rest] = pendingDeposit_rest*
+
 ;; [Electra]
 ;; process_pending_consolidations
 ;;  mutates: PENDING_CONSOLIDATIONS, BALANCES
@@ -395,3 +351,47 @@ rule ProcessSyncCommitteeUpdates/main:
   ;; -- if $($get_current_epoch(state) + 1) = epoch_next
   ;; ;; branch-complete
   ;; -- if $(epoch_next \ $EPOCHS_PER_SYNC_COMMITTEE_PERIOD) = 0
+
+;; [Gloas:EIP7732]
+;; process_builder_pending_payments
+;;  mutates: .BUILDER_PENDING_WITHDRAWALS, .BUILDER_PENDING_PAYMENTS
+
+;; [Custom | filter : process_builder_pending_payments]
+dec $payment_meets_quorum(builderPendingPayment, gwei) : bool
+def $payment_meets_quorum(builderPendingPayment, gwei_quorum) = $(builderPendingPayment.WEIGHT >= gwei_quorum)
+
+relation ProcessBuilderPendingPayments:
+  beaconState ~> beaconState
+  hint(input %0)
+
+rule ProcessBuilderPendingPayments:
+  state ~>
+    state[.BUILDER_PENDING_WITHDRAWALS = state.BUILDER_PENDING_WITHDRAWALS ++ builderPendingWithdrawal*]
+         [.BUILDER_PENDING_PAYMENTS = builderPendingPayment_old*
+                                      ++ $repeat_<builderPendingPayment>($empty_builder_pending_payment, $SLOTS_PER_EPOCH)]
+  -- if $get_builder_payment_quorum_threshold(state) = gwei_quorum
+  -- if $filter_list_2_<builderPendingPayment, gwei>(
+         $take_prefix_<builderPendingPayment>(state.BUILDER_PENDING_PAYMENTS, $SLOTS_PER_EPOCH),
+         gwei_quorum, def $payment_meets_quorum
+       ) = builderPendingPayment_quorum*
+  -- if (builderPendingPayment_quorum.WITHDRAWAL = builderPendingWithdrawal)*
+  -- if $drop_prefix_<builderPendingPayment>(state.BUILDER_PENDING_PAYMENTS, $SLOTS_PER_EPOCH)
+       = builderPendingPayment_old*
+
+;; [Gloas:EIP7732]
+;; process_ptc_window
+;;  mutates: .PTC_WINDOW
+;;  Shift all epochs forward by one, then compute the PTCs of the last epoch.
+
+relation ProcessPtcWindow:
+  beaconState ~> beaconState
+  hint(input %0)
+
+rule ProcessPtcWindow:
+  state ~> state[.PTC_WINDOW = vid_kept** ++ vid_new**]
+  -- if $SLOTS_PER_EPOCH = n_start
+  -- if $(|state.PTC_WINDOW| - n_start) = n_rest
+  -- if state.PTC_WINDOW[n_start : n_rest] = vid_kept**
+  -- if $compute_start_slot_at_epoch($($get_current_epoch(state) + $MIN_SEED_LOOKAHEAD + 1)) = slot_start
+  -- if $range($SLOTS_PER_EPOCH) = n*
+  -- if ($compute_ptc(state, $(slot_start + n)) = vid_new*)*
