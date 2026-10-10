@@ -23,7 +23,9 @@
   (:capella_minimal %{project_root}/spec/ssz/capella-minimal.json)
   (:capella_mainnet %{project_root}/spec/ssz/capella-mainnet.json)
   (:deneb_minimal %{project_root}/spec/ssz/deneb-minimal.json)
-  (:deneb_mainnet %{project_root}/spec/ssz/deneb-mainnet.json))
+  (:deneb_mainnet %{project_root}/spec/ssz/deneb-mainnet.json)
+  (:electra_minimal %{project_root}/spec/ssz/electra-minimal.json)
+  (:electra_mainnet %{project_root}/spec/ssz/electra-mainnet.json))
  (action
   (with-stdout-to
    %{target}
@@ -36,4 +38,8 @@
     (cat %{deneb_minimal})
     (echo "|json}\nlet deneb_mainnet = {json|")
     (cat %{deneb_mainnet})
+    (echo "|json}\nlet electra_minimal = {json|")
+    (cat %{electra_minimal})
+    (echo "|json}\nlet electra_mainnet = {json|")
+    (cat %{electra_mainnet})
     (echo "|json}\n")))))

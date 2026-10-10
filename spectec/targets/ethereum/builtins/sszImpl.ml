@@ -21,6 +21,8 @@ let schemas =
     (("capella", "mainnet"), Ssz_schemas.capella_mainnet);
     (("deneb", "minimal"), Ssz_schemas.deneb_minimal);
     (("deneb", "mainnet"), Ssz_schemas.deneb_mainnet);
+    (("electra", "minimal"), Ssz_schemas.electra_minimal);
+    (("electra", "mainnet"), Ssz_schemas.electra_mainnet);
   ]
 
 let schema : Ssz_schema.t option ref = ref None
