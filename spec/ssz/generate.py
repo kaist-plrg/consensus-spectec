@@ -22,7 +22,7 @@ from ssz.layout import field_names  # noqa: E402
 from ssz_specs_schema import Schema  # noqa: E402
 
 FORKS = ["capella", "deneb"]
-PRESETS = ["mainnet"]
+PRESETS = ["minimal", "mainnet"]
 
 
 def spectec_structs(fork):
