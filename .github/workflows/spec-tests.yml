@@ -23,7 +23,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        fork: [capella, deneb]
+        fork: [capella, deneb, electra, fulu, gloas]
         suites: ["operations epoch_processing", "sanity/blocks random", "finality"]
         # Pull requests skip finality because it is the slowest suite.
         exclude:
@@ -109,9 +109,10 @@ jobs:
       - name: Check SSZ roots against the ssz_static vectors
         run: |
           for preset in minimal mainnet; do
-            make download-fixture SPEC_TESTS_PRESET=$preset SPEC_TESTS_SUITES=ssz_static
+            make download-fixture SPEC_TESTS_PRESET=$preset SPEC_TESTS_SUITES=ssz_static \
+              SPEC_TESTS_FORKS="capella deneb electra fulu gloas"
             uv run --project consensus-specs --no-sync python spec/ssz/build_static.py Converter/OfficialTestSuite $preset "$RUNNER_TEMP/ssz_static"
-            for fork in capella deneb; do
+            for fork in capella deneb electra fulu gloas; do
               opam exec -- dune exec ./ssz/test/run_vectors.exe -- spec/ssz/$fork-$preset.json "$RUNNER_TEMP/ssz_static/$fork-$preset.jsonl"
               opam exec -- dune exec ./spectec/test/ssz_static/main.exe -- $fork $preset "$RUNNER_TEMP/ssz_static/$fork-$preset.jsonl"
             done
