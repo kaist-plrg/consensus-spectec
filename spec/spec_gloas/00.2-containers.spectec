@@ -400,6 +400,7 @@ syntax seedInput =
     MIX bytes32 }
 
 ;; [Electra] dataclass ExpectedWithdrawals, not an SSZ container
+;;  processed_sweep_withdrawals_count is omitted: no Gloas caller reads it
 
 syntax expectedWithdrawals =
   { WITHDRAWALS withdrawal*,
@@ -407,7 +408,6 @@ syntax expectedWithdrawals =
     PROCESSED_BUILDER_WITHDRAWALS_COUNT uint64,
     PROCESSED_PARTIAL_WITHDRAWALS_COUNT uint64,
     ;; [Gloas:EIP7732]
-    PROCESSED_BUILDERS_SWEEP_COUNT uint64,
-    PROCESSED_SWEEP_WITHDRAWALS_COUNT uint64 }
+    PROCESSED_BUILDERS_SWEEP_COUNT uint64 }
 
 syntax enumerated_<X> = (nat, X)

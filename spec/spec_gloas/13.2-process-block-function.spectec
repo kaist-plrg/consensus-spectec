@@ -30,235 +30,69 @@ rule ProcessBlockHeader:
   -- if ~state.VALIDATORS[block.PROPOSER_INDEX].SLASHED
 
 
-;; [Capella -> Electra]
-;; process_withdrawals
-;;  mutates: BALANCES, NEXT_WITHDRAWAL_INDEX, PENDING_PARTIAL_WITHDRAWALS, NEXT_WITHDRAWAL_VALIDATOR_INDEX
+;; [Capella -> Electra -> Gloas]
+;; process_withdrawals(state)
+;;  mutates: .BALANCES, .BUILDERS, .NEXT_WITHDRAWAL_INDEX, .PAYLOAD_EXPECTED_WITHDRAWALS,
+;;    .BUILDER_PENDING_WITHDRAWALS, .PENDING_PARTIAL_WITHDRAWALS,
+;;    .NEXT_WITHDRAWAL_BUILDER_INDEX, .NEXT_WITHDRAWAL_VALIDATOR_INDEX
+
+;; [Capella] update_next_withdrawal_index: the index after the latest withdrawal, if any
+dec $next_withdrawal_index_after(beaconState, withdrawal*) : withdrawalIndex
+def $next_withdrawal_index_after(state, eps) = state.NEXT_WITHDRAWAL_INDEX
+def $next_withdrawal_index_after(state, withdrawal*) = $(withdrawal_latest.INDEX + 1)
+  -- if $(|withdrawal*| > 0)
+  -- if withdrawal*[|withdrawal*| - 1] = withdrawal_latest
+
+;; [Gloas:EIP7732] update_next_withdrawal_builder_index
+dec $next_withdrawal_builder_index_after(beaconState, uint64) : builderIndex
+def $next_withdrawal_builder_index_after(state, uint64_processed) = state.NEXT_WITHDRAWAL_BUILDER_INDEX
+  -- if |state.BUILDERS| = 0
+def $next_withdrawal_builder_index_after(state, uint64_processed)
+  = $((state.NEXT_WITHDRAWAL_BUILDER_INDEX + uint64_processed) \ |state.BUILDERS|)
+  -- if $(|state.BUILDERS| > 0)
+
+;; [Capella] update_next_withdrawal_validator_index
+dec $next_withdrawal_validator_index_after(beaconState, withdrawal*) : validatorIndex
+;; a full set: the sweep starts after the latest withdrawal's validator index
+def $next_withdrawal_validator_index_after(state, withdrawal*)
+  = $((withdrawal_latest.VALIDATOR_INDEX + 1) \ |state.VALIDATORS|)
+  -- if |withdrawal*| = $MAX_WITHDRAWALS_PER_PAYLOAD
+  -- if withdrawal*[|withdrawal*| - 1] = withdrawal_latest
+;; otherwise: advance by the max length of the sweep
+def $next_withdrawal_validator_index_after(state, withdrawal*)
+  = $((state.NEXT_WITHDRAWAL_VALIDATOR_INDEX + $MAX_VALIDATORS_PER_WITHDRAWALS_SWEEP) \ |state.VALIDATORS|)
+  -- if |withdrawal*| =/= $MAX_WITHDRAWALS_PER_PAYLOAD
+
 relation ProcessWithdrawals:
-  beaconState executionPayload ~> beaconState
-  hint(input %0 %1)
+  beaconState ~> beaconState
+  hint(input %0)
 
-;; TODO(gloas): functions `process_withdrawals` changed upstream in specs/gloas/beacon-chain.md
-;; body commented out below: uncomment it and apply the diff above
-;; --- old
-;; +++ new
-;; @@ -1,6 +1,14 @@
-;; -def process_withdrawals(state: BeaconState, payload: ExecutionPayload) -> None:
-;; +def process_withdrawals(
-;; +    state: BeaconState,
-;; +    # [Modified in Gloas:EIP7732]
-;; +    # Removed `payload`
-;; +) -> None:
-;; +    # [New in Gloas:EIP7732]
-;; +    # Return early if the parent block is empty
-;; +    if state.latest_block_hash != state.latest_execution_payload_bid.block_hash:
-;; +        return
-;; +
-;;      # Get expected withdrawals
-;;      expected = get_expected_withdrawals(state)
-;; -    assert list(payload.withdrawals) == expected.withdrawals
-;;
-;;      # Apply expected withdrawals
-;; @@ -9,5 +17,10 @@
-;;      # Update withdrawals fields in the state
-;;      update_next_withdrawal_index(state, expected.withdrawals)
-;; -    # [New in Electra:EIP7251]
-;; +    # [New in Gloas:EIP7732]
-;; +    update_payload_expected_withdrawals(state, expected.withdrawals)
-;; +    # [New in Gloas:EIP7732]
-;; +    update_builder_pending_withdrawals(state, expected.processed_builder_withdrawals_count)
-;;      update_pending_partial_withdrawals(state, expected.processed_partial_withdrawals_count)
-;; +    # [New in Gloas:EIP7732]
-;; +    update_next_withdrawal_builder_index(state, expected.processed_builders_sweep_count)
-;;      update_next_withdrawal_validator_index(state, expected.withdrawals)
+;; [New in Gloas:EIP7732] the parent block is empty: no withdrawals
+rule ProcessWithdrawals/parent_empty:
+  state ~> state
+  -- if state.LATEST_BLOCK_HASH =/= state.LATEST_EXECUTION_PAYLOAD_BID.BLOCK_HASH
 
-;; rule ProcessWithdrawals/len0:
-;;   state executionPayload ~>
-;;     state_after_debits
-;;       [.PENDING_PARTIAL_WITHDRAWALS = $drop_prefix_<pendingPartialWithdrawal>(
-;;           state_after_debits.PENDING_PARTIAL_WITHDRAWALS, expectedWithdrawals.PROCESSED_PARTIAL_WITHDRAWALS_COUNT)]
-;;       [.NEXT_WITHDRAWAL_VALIDATOR_INDEX = vid_next]
-;;   -- if $get_expected_withdrawals(state) = expectedWithdrawals
-;;   -- if expectedWithdrawals.WITHDRAWALS = withdrawal_expected*
-;;   ;; assert
-;;   -- if executionPayload.WITHDRAWALS = withdrawal_expected*
-;;   -- ApplyWithdrawals: state '.' BALANCES `{ withdrawal_expected* `} ~>* state_after_debits
-;;   ----
-;;   ;; branch-if
-;;   -- if |withdrawal_expected*| = 0
-;;   -- if $( (state_after_debits.NEXT_WITHDRAWAL_VALIDATOR_INDEX
-;;          + $MAX_VALIDATORS_PER_WITHDRAWALS_SWEEP) \ |state_after_debits.VALIDATORS| ) = vid_next
-;;
-;; rule ProcessWithdrawals/lenMax:
-;;   state executionPayload ~>
-;;     state_after_debits
-;;       [.NEXT_WITHDRAWAL_INDEX           = withdrawalIndex_next]
-;;       [.PENDING_PARTIAL_WITHDRAWALS = $drop_prefix_<pendingPartialWithdrawal>(
-;;           state_after_debits.PENDING_PARTIAL_WITHDRAWALS, expectedWithdrawals.PROCESSED_PARTIAL_WITHDRAWALS_COUNT)]
-;;       [.NEXT_WITHDRAWAL_VALIDATOR_INDEX = vid_next]
-;;   -- if $get_expected_withdrawals(state) = expectedWithdrawals
-;;   -- if expectedWithdrawals.WITHDRAWALS = withdrawal_expected*
-;;   ;; assert
-;;   -- if executionPayload.WITHDRAWALS = withdrawal_expected*
-;;   -- ApplyWithdrawals: state '.' BALANCES `{ withdrawal_expected* `} ~>* state_after_debits
-;;   ----
-;;   ;; branch-elseif
-;;   -- if |withdrawal_expected*| = $MAX_WITHDRAWALS_PER_PAYLOAD
-;;   -- if withdrawal_expected*[|withdrawal_expected*| - 1] = withdrawal_latest
-;;   -- if $(withdrawal_latest.INDEX + 1 ) = withdrawalIndex_next
-;;   -- if $(( withdrawal_latest.VALIDATOR_INDEX + 1 ) \ |state_after_debits.VALIDATORS|) = vid_next
-;;
-;; rule ProcessWithdrawals/lenPartial:
-;;   state executionPayload ~>
-;;     state_after_debits
-;;       [.NEXT_WITHDRAWAL_INDEX = withdrawalIndex_next]
-;;       [.PENDING_PARTIAL_WITHDRAWALS = $drop_prefix_<pendingPartialWithdrawal>(
-;;           state_after_debits.PENDING_PARTIAL_WITHDRAWALS, expectedWithdrawals.PROCESSED_PARTIAL_WITHDRAWALS_COUNT)]
-;;       [.NEXT_WITHDRAWAL_VALIDATOR_INDEX = vid_next]
-;;   -- if $get_expected_withdrawals(state) = expectedWithdrawals
-;;   -- if expectedWithdrawals.WITHDRAWALS = withdrawal_expected*
-;;   ;; assert
-;;   -- if executionPayload.WITHDRAWALS = withdrawal_expected*
-;;   -- ApplyWithdrawals: state '.' BALANCES `{ withdrawal_expected* `} ~>* state_after_debits
-;;   ----
-;;   ;; branch-else
-;;   -- if |withdrawal_expected*| =/= 0
-;;   -- if |withdrawal_expected*| =/= $MAX_WITHDRAWALS_PER_PAYLOAD
-;;   -- if withdrawal_expected*[|withdrawal_expected*| - 1] = withdrawal_latest
-;;   -- if $( withdrawal_latest.INDEX + 1 ) = withdrawalIndex_next
-;;   -- if $( (state_after_debits.NEXT_WITHDRAWAL_VALIDATOR_INDEX
-;;          + $MAX_VALIDATORS_PER_WITHDRAWALS_SWEEP) \ |state_after_debits.VALIDATORS| ) = vid_next
+rule ProcessWithdrawals/main:
+  state ~>
+    state_after_debits
+      [.NEXT_WITHDRAWAL_INDEX = $next_withdrawal_index_after(state_after_debits, withdrawal_expected*)]
+      [.PAYLOAD_EXPECTED_WITHDRAWALS = withdrawal_expected*]
+      [.BUILDER_PENDING_WITHDRAWALS = $drop_prefix_<builderPendingWithdrawal>(
+          state_after_debits.BUILDER_PENDING_WITHDRAWALS, expectedWithdrawals.PROCESSED_BUILDER_WITHDRAWALS_COUNT)]
+      [.PENDING_PARTIAL_WITHDRAWALS = $drop_prefix_<pendingPartialWithdrawal>(
+          state_after_debits.PENDING_PARTIAL_WITHDRAWALS, expectedWithdrawals.PROCESSED_PARTIAL_WITHDRAWALS_COUNT)]
+      [.NEXT_WITHDRAWAL_BUILDER_INDEX = $next_withdrawal_builder_index_after(
+          state_after_debits, expectedWithdrawals.PROCESSED_BUILDERS_SWEEP_COUNT)]
+      [.NEXT_WITHDRAWAL_VALIDATOR_INDEX = $next_withdrawal_validator_index_after(state_after_debits, withdrawal_expected*)]
+  -- if state.LATEST_BLOCK_HASH = state.LATEST_EXECUTION_PAYLOAD_BID.BLOCK_HASH
+  -- if $get_expected_withdrawals(state) = expectedWithdrawals
+  -- if expectedWithdrawals.WITHDRAWALS = withdrawal_expected*
+  -- ApplyWithdrawals: state '.' BALANCES `{ withdrawal_expected* `} ~>* state_after_debits
 
-;; [Modified in Electra:EIP7251] the expected withdrawals start with pending partial withdrawals,
-;;  and the processed ones leave the queue (update_pending_partial_withdrawals)
+;; [Removed in Gloas:EIP7732] process_execution_payload
+;;  verify_execution_payload_envelope (fork choice) checks the payload.
+;;  process_parent_execution_payload applies its requests in the next block.
 
-;; len(expected) = 0
-;; len(expected) = MAX_WITHDRAWALS_PER_PAYLOAD
-;; 0 < len(expected) < MAX_WITHDRAWALS_PER_PAYLOAD
-;; [Bellatrix -> Capella]
-;; process_execution_payload
-;;  mutates: LATEST_EXECUTION_PAYLOAD_HEADER
-;; [Capella -> Deneb]
-;; added assertion
-;; [Electra] blob limit
-relation ProcessExecutionPayload:
-  beaconState beaconBlockBody ~> beaconState
-  hint(input %0 %1)
-
-;; TODO(gloas): functions `process_execution_payload` removed upstream in specs/fulu/beacon-chain.md
-;; removed upstream: delete this declaration once nothing references it
-;; def process_execution_payload(
-;;     state: BeaconState, body: BeaconBlockBody, execution_engine: ExecutionEngine
-;; ) -> None:
-;;     payload = body.execution_payload
-;;
-;;     # Verify consistency of the parent hash with respect to the previous execution payload header
-;;     assert payload.parent_hash == state.latest_execution_payload_header.block_hash
-;;     # Verify prev_randao
-;;     assert payload.prev_randao == get_randao_mix(state, get_current_epoch(state))
-;;     # Verify timestamp
-;;     assert payload.timestamp == compute_time_at_slot(state.genesis_time, state.slot)
-;;     # [Modified in Fulu:EIP7892]
-;;     # Verify commitments are under limit
-;;     assert (
-;;         len(body.blob_kzg_commitments)
-;;         <= get_blob_parameters(get_current_epoch(state)).max_blobs_per_block
-;;     )
-;;
-;;     # Compute versioned hashes
-;;     versioned_hashes = VersionedHashes()
-;;     for commitment in body.blob_kzg_commitments:
-;;         versioned_hashes.append(kzg_commitment_to_versioned_hash(commitment))
-;;
-;;     # Verify the execution payload is valid
-;;     assert execution_engine.verify_and_notify_new_payload(
-;;         NewPayloadRequest(
-;;             execution_payload=payload,
-;;             versioned_hashes=versioned_hashes,
-;;             parent_beacon_block_root=state.latest_block_header.parent_root,
-;;             execution_requests=body.execution_requests,
-;;         )
-;;     )
-;;
-;;     # Cache execution payload header
-;;     state.latest_execution_payload_header = ExecutionPayloadHeader(
-;;         parent_hash=payload.parent_hash,
-;;         fee_recipient=payload.fee_recipient,
-;;         state_root=payload.state_root,
-;;         receipts_root=payload.receipts_root,
-;;         logs_bloom=payload.logs_bloom,
-;;         prev_randao=payload.prev_randao,
-;;         block_number=payload.block_number,
-;;         gas_limit=payload.gas_limit,
-;;         gas_used=payload.gas_used,
-;;         timestamp=payload.timestamp,
-;;         extra_data=payload.extra_data,
-;;         base_fee_per_gas=payload.base_fee_per_gas,
-;;         block_hash=payload.block_hash,
-;;         transactions_root=hash_tree_root(payload.transactions),
-;;         withdrawals_root=hash_tree_root(payload.withdrawals),
-;;         blob_gas_used=payload.blob_gas_used,
-;;         excess_blob_gas=payload.excess_blob_gas,
-;;     )
-
-;; TODO(fulu): functions `process_execution_payload` changed upstream in specs/fulu/beacon-chain.md
-;; body commented out below: uncomment it and apply the diff above
-;; --- old
-;; +++ new
-;; @@ -10,7 +10,10 @@
-;;      # Verify timestamp
-;;      assert payload.timestamp == compute_time_at_slot(state.genesis_time, state.slot)
-;; -    # [Modified in Electra:EIP7691]
-;; +    # [Modified in Fulu:EIP7892]
-;;      # Verify commitments are under limit
-;; -    assert len(body.blob_kzg_commitments) <= MAX_BLOBS_PER_BLOCK_ELECTRA
-;; +    assert (
-;; +        len(body.blob_kzg_commitments)
-;; +        <= get_blob_parameters(get_current_epoch(state)).max_blobs_per_block
-;; +    )
-;;
-;;      # Compute versioned hashes
-;; @@ -25,5 +28,4 @@
-;;              versioned_hashes=versioned_hashes,
-;;              parent_beacon_block_root=state.latest_block_header.parent_root,
-;; -            # [New in Electra]
-;;              execution_requests=body.execution_requests,
-;;          )
-
-;; rule ProcessExecutionPayload/main:
-;;   state body ~> state[ .LATEST_EXECUTION_PAYLOAD_HEADER = executionPayloadHeader ]
-;;   -- if executionPayload = body.EXECUTION_PAYLOAD
-;;   ;; assert 1
-;;   -- if executionPayload.PARENT_HASH = state.LATEST_EXECUTION_PAYLOAD_HEADER.BLOCK_HASH
-;;   ;; assert 2
-;;   -- if executionPayload.PREV_RANDAO = $get_randao_mix(state, $get_current_epoch(state))
-;;   ;; assert 3
-;;   -- if executionPayload.TIMESTAMP = $compute_time_at_slot(state, state.SLOT)
-;;   ;; assert 4 [Modified in Electra:EIP7691]
-;;   -- if $(|body.BLOB_KZG_COMMITMENTS| <= $MAX_BLOBS_PER_BLOCK_ELECTRA)
-;;   ;; assert 5
-;;   -- if $ee_verify_and_notify_new_payload(executionPayload)
-;;   -- if executionPayloadHeader =
-;;        { PARENT_HASH        executionPayload.PARENT_HASH,
-;;          FEE_RECIPIENT      executionPayload.FEE_RECIPIENT,
-;;          STATE_ROOT         executionPayload.STATE_ROOT,
-;;          RECEIPTS_ROOT      executionPayload.RECEIPTS_ROOT,
-;;          LOGS_BLOOM         executionPayload.LOGS_BLOOM,
-;;          PREV_RANDAO        executionPayload.PREV_RANDAO,
-;;          BLOCK_NUMBER       executionPayload.BLOCK_NUMBER,
-;;          GAS_LIMIT          executionPayload.GAS_LIMIT,
-;;          GAS_USED           executionPayload.GAS_USED,
-;;          TIMESTAMP          executionPayload.TIMESTAMP,
-;;          EXTRA_DATA         executionPayload.EXTRA_DATA,
-;;          BASE_FEE_PER_GAS   executionPayload.BASE_FEE_PER_GAS,
-;;          BLOCK_HASH         executionPayload.BLOCK_HASH,
-;;          TRANSACTIONS_ROOT  $hash_tree_root_tx(executionPayload.TRANSACTIONS),
-;;          WITHDRAWALS_ROOT   $hash_tree_root_withdrawals(executionPayload.WITHDRAWALS),
-;;          ;; added in [Deneb]
-;;          BLOB_GAS_USED      executionPayload.BLOB_GAS_USED,
-;;          EXCESS_BLOB_GAS    executionPayload.EXCESS_BLOB_GAS }
-
-;; [Modified in Electra] MAX_BLOBS_PER_BLOCK_ELECTRA (EIP7691)
-;;  the engine also gets body.EXECUTION_REQUESTS upstream; the mock engine ignores its input
 ;; [Phase0]
 ;; process_randao
 ;;  mutates: RANDAO_MIXES[epoch \ EPOCHS_PER_HISTORICAL_VECTOR]
@@ -314,123 +148,34 @@ def $expected_deposit_count(state) = $min_uint64($MAX_DEPOSITS, $(uint64_limit -
 def $expected_deposit_count(state) = 0
   -- otherwise
 
-;; [Phase0 -> Altair -> Capella -> Electra]
-;; process_operations
-
+;; [Phase0 -> Altair -> Capella -> Electra -> Fulu -> Gloas]
+;; process_operations(state, body, parent_slot)
 relation ProcessOperations:
-  beaconState beaconBlockBody ~> beaconState
-  hint(input %0 %1)
+  beaconState beaconBlockBody slot ~> beaconState
+  hint(input %0 %1 %2)
 
-;; TODO(gloas): functions `process_operations` changed upstream in specs/gloas/beacon-chain.md
-;; body commented out below: uncomment it and apply the diff above
-;; --- old
-;; +++ new
-;; @@ -1,18 +1,36 @@
-;; -def process_operations(state: BeaconState, body: BeaconBlockBody) -> None:
-;; -    # [Modified in Fulu]
-;; +def process_operations(
-;; +    state: BeaconState,
-;; +    body: BeaconBlockBody,
-;; +    # [New in Gloas:EIP7732]
-;; +    parent_slot: Slot,
-;; +) -> None:
-;;      assert len(body.deposits) == 0
-;;
-;; -    def for_ops(operations: Sequence[Any], fn: Callable[[BeaconState, Any], None]) -> None:
-;; +    # [Modified in Gloas:EIP7732]
-;; +    def for_ops(operations: Sequence[Any], fn: Callable[..., None], *args: Any) -> None:
-;;          for operation in operations:
-;; -            fn(state, operation)
-;; +            fn(state, operation, *args)
-;;
-;; +    # [New in Gloas:EIP7688]
-;; +    assert len(body.proposer_slashings) <= MAX_PROPOSER_SLASHINGS
-;; +    assert len(body.attester_slashings) <= MAX_ATTESTER_SLASHINGS_ELECTRA
-;; +    assert len(body.attestations) <= MAX_ATTESTATIONS_ELECTRA
-;; +    assert len(body.voluntary_exits) <= MAX_VOLUNTARY_EXITS
-;; +    assert len(body.bls_to_execution_changes) <= MAX_BLS_TO_EXECUTION_CHANGES
-;; +    assert len(body.payload_attestations) <= MAX_PAYLOAD_ATTESTATIONS
-;; +
-;; +    # [Modified in Gloas:EIP7732]
-;;      for_ops(body.proposer_slashings, process_proposer_slashing)
-;;      for_ops(body.attester_slashings, process_attester_slashing)
-;; -    for_ops(body.attestations, process_attestation)
-;; -    # [Modified in Fulu]
-;; -    # Removed `process_deposit`
-;; +    # [Modified in Gloas:EIP7732]
-;; +    for_ops(body.attestations, process_attestation, parent_slot)
-;;      for_ops(body.voluntary_exits, process_voluntary_exit)
-;;      for_ops(body.bls_to_execution_changes, process_bls_to_execution_change)
-;; -    for_ops(body.execution_requests.deposits, process_deposit_request)
-;; -    for_ops(body.execution_requests.withdrawals, process_withdrawal_request)
-;; -    for_ops(body.execution_requests.consolidations, process_consolidation_request)
-;; +    # [Modified in Gloas:EIP7732]
-;; +    # Removed `process_deposit_request`
-;; +    # [Modified in Gloas:EIP7732]
-;; +    # Removed `process_withdrawal_request`
-;; +    # [Modified in Gloas:EIP7732]
-;; +    # Removed `process_consolidation_request`
-;; +    # [New in Gloas:EIP7732]
-;; +    for_ops(body.payload_attestations, process_payload_attestation)
+;; [Modified in Fulu] no Eth1 bridge deposits
+;; [Modified in Gloas:EIP7732] no execution requests (process_parent_execution_payload has them),
+;;  attestations get parent_slot, payload attestations are new
+rule ProcessOperations:
+  state body slot_parent ~> state_out
+  ;; assert
+  -- if |body.DEPOSITS| = 0
+  ;; [New in Gloas:EIP7688] list limits
+  -- if $(|body.PROPOSER_SLASHINGS| <= $MAX_PROPOSER_SLASHINGS)
+  -- if $(|body.ATTESTER_SLASHINGS| <= $MAX_ATTESTER_SLASHINGS_ELECTRA)
+  -- if $(|body.ATTESTATIONS| <= $MAX_ATTESTATIONS_ELECTRA)
+  -- if $(|body.VOLUNTARY_EXITS| <= $MAX_VOLUNTARY_EXITS)
+  -- if $(|body.BLS_TO_EXECUTION_CHANGES| <= $MAX_BLS_TO_EXECUTION_CHANGES)
+  -- if $(|body.PAYLOAD_ATTESTATIONS| <= $MAX_PAYLOAD_ATTESTATIONS)
+  ;; proposer_slashings -> attester_slashings -> attestations -> voluntary_exits -> bls_to_execution_changes -> payload_attestations
+  -- ProcessProposerSlashings:      state     body.PROPOSER_SLASHINGS              ~> state_ps
+  -- ProcessAttesterSlashings:      state_ps  body.ATTESTER_SLASHINGS              ~> state_as
+  -- ProcessAttestations:           state_as  body.ATTESTATIONS slot_parent        ~> state_att
+  -- ProcessVoluntaryExits:         state_att body.VOLUNTARY_EXITS                 ~> state_ve
+  -- ProcessBlsToExecutionChanges:  state_ve  body.BLS_TO_EXECUTION_CHANGES        ~> state_bls
+  -- ProcessPayloadAttestations:    state_bls body.PAYLOAD_ATTESTATIONS            ~> state_out
 
-
-;; TODO(fulu): functions `process_operations` changed upstream in specs/fulu/beacon-chain.md
-;; body commented out below: uncomment it and apply the diff above
-;; --- old
-;; +++ new
-;; @@ -1,14 +1,5 @@
-;;  def process_operations(state: BeaconState, body: BeaconBlockBody) -> None:
-;; -    # [Modified in Electra:EIP6110]
-;; -    # Disable former deposit mechanism once all prior deposits are processed
-;; -    eth1_deposit_index_limit = min(
-;; -        state.eth1_data.deposit_count, state.deposit_requests_start_index
-;; -    )
-;; -    if state.eth1_deposit_index < eth1_deposit_index_limit:
-;; -        assert len(body.deposits) == min(
-;; -            MAX_DEPOSITS, eth1_deposit_index_limit - state.eth1_deposit_index
-;; -        )
-;; -    else:
-;; -        assert len(body.deposits) == 0
-;; +    # [Modified in Fulu]
-;; +    assert len(body.deposits) == 0
-;;
-;;      def for_ops(operations: Sequence[Any], fn: Callable[[BeaconState, Any], None]) -> None:
-;; @@ -18,14 +9,10 @@
-;;      for_ops(body.proposer_slashings, process_proposer_slashing)
-;;      for_ops(body.attester_slashings, process_attester_slashing)
-;; -    # [Modified in Electra:EIP7549]
-;;      for_ops(body.attestations, process_attestation)
-;; -    for_ops(body.deposits, process_deposit)
-;; -    # [Modified in Electra:EIP7251]
-;; +    # [Modified in Fulu]
-;; +    # Removed `process_deposit`
-;;      for_ops(body.voluntary_exits, process_voluntary_exit)
-;;      for_ops(body.bls_to_execution_changes, process_bls_to_execution_change)
-;; -    # [New in Electra:EIP6110]
-;;      for_ops(body.execution_requests.deposits, process_deposit_request)
-;; -    # [New in Electra:EIP7002:EIP7251]
-;;      for_ops(body.execution_requests.withdrawals, process_withdrawal_request)
-;; -    # [New in Electra:EIP7251]
-;;      for_ops(body.execution_requests.consolidations, process_consolidation_request)
-
-;; rule ProcessOperations:
-;;   state body ~> state_out
-;;   ;; assert 1
-;;   -- if |body.DEPOSITS| = $expected_deposit_count(state)
-;;   ;; proposer_slashings → attester_slashings → attestations → deposits → voluntary_exits → bls_to_execution_changes
-;;   -- ProcessProposerSlashings:        state     body.PROPOSER_SLASHINGS        ~> state_ps
-;;   -- ProcessAttesterSlashings:        state_ps  body.ATTESTER_SLASHINGS        ~> state_as
-;;   -- ProcessAttestations:             state_as  body.ATTESTATIONS              ~> state_att
-;;   -- ProcessDeposits:                 state_att body.DEPOSITS                  ~> state_dep
-;;   -- ProcessVoluntaryExits:           state_dep body.VOLUNTARY_EXITS           ~> state_ve
-;;   ;; Capella
-;;   -- ProcessBlsToExecutionChanges:    state_ve  body.BLS_TO_EXECUTION_CHANGES  ~> state_bls
-;;   ;; Electra: deposit → withdrawal → consolidation requests
-;;   -- ProcessDepositRequests:          state_bls body.EXECUTION_REQUESTS.DEPOSITS        ~> state_dr
-;;   -- ProcessWithdrawalRequests:       state_dr  body.EXECUTION_REQUESTS.WITHDRAWALS     ~> state_wr
-;;   -- ProcessConsolidationRequests:    state_wr  body.EXECUTION_REQUESTS.CONSOLIDATIONS  ~> state_out
-
-;; [Modified in Electra:EIP6110] Disable former deposit mechanism once all prior deposits are processed
 ;; [Altair]
 ;; process_sync_aggregate
 

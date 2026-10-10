@@ -6,67 +6,67 @@ relation ProcessProposerSlashing:
   beaconState proposerSlashing ~> beaconState
   hint(input %0 %1)
 
-;; TODO(gloas): functions `process_proposer_slashing` changed upstream in specs/gloas/beacon-chain.md
-;; body commented out below: uncomment it and apply the diff above
-;; --- old
-;; +++ new
-;; @@ -20,3 +20,21 @@
-;;          assert bls.Verify(proposer.pubkey, signing_root, signed_header.signature)
-;;
-;; +    # [New in Gloas:EIP7732]
-;; +    # Remove the BuilderPendingPayment corresponding to this proposal if it is
-;; +    # still in the 2-epoch window. Only clear it when the slashed validator is
-;; +    # the proposer associated with the payment; otherwise an unrelated same-slot
-;; +    # equivocation could grief an honest proposer's payment.
-;; +    slot = header_1.slot
-;; +    proposal_epoch = compute_epoch_at_slot(slot)
-;; +    if proposal_epoch == get_current_epoch(state):
-;; +        payment_index = SLOTS_PER_EPOCH + slot % SLOTS_PER_EPOCH
-;; +        payment = state.builder_pending_payments[payment_index]
-;; +        if payment.proposer_index == header_1.proposer_index:
-;; +            state.builder_pending_payments[payment_index] = BuilderPendingPayment.empty()
-;; +    elif proposal_epoch == get_previous_epoch(state):
-;; +        payment_index = slot % SLOTS_PER_EPOCH
-;; +        payment = state.builder_pending_payments[payment_index]
-;; +        if payment.proposer_index == header_1.proposer_index:
-;; +            state.builder_pending_payments[payment_index] = BuilderPendingPayment.empty()
-;; +
-;;      slash_validator(state, header_1.proposer_index)
+;; [Custom | Gloas] remove the builder payment of a slashed proposal
+;;  if it is still in the 2-epoch window and belongs to the slashed proposer
+dec $remove_proposal_payment(beaconState, slot, validatorIndex) : beaconState
+;; current epoch
+def $remove_proposal_payment(state, slot, vid)
+  = state[.BUILDER_PENDING_PAYMENTS[uint64_i] = $empty_builder_pending_payment]
+  -- if $compute_epoch_at_slot(slot) = $get_current_epoch(state)
+  -- if $(slot \ $SLOTS_PER_EPOCH) = uint64_s
+  -- if $($SLOTS_PER_EPOCH + uint64_s) = uint64_i
+  ;; inserted guard (python raises IndexError)
+  -- if $(uint64_i < |state.BUILDER_PENDING_PAYMENTS|)
+  -- if state.BUILDER_PENDING_PAYMENTS[uint64_i].PROPOSER_INDEX = vid
+;; previous epoch
+def $remove_proposal_payment(state, slot, vid)
+  = state[.BUILDER_PENDING_PAYMENTS[uint64_i] = $empty_builder_pending_payment]
+  -- if $compute_epoch_at_slot(slot) =/= $get_current_epoch(state)
+  -- if $compute_epoch_at_slot(slot) = $get_previous_epoch(state)
+  -- if $(slot \ $SLOTS_PER_EPOCH) = uint64_i
+  -- if $(uint64_i < |state.BUILDER_PENDING_PAYMENTS|)
+  -- if state.BUILDER_PENDING_PAYMENTS[uint64_i].PROPOSER_INDEX = vid
+;; older proposal, or a payment of another proposer
+def $remove_proposal_payment(state, slot, vid) = state
+  -- otherwise
 
-;; rule ProcessProposerSlashing:
-;;   state proposerSlashing ~> state_slashed
-;;   -- if beaconBlockHeader_1 = proposerSlashing.SIGNED_HEADER_1.MESSAGE
-;;   -- if beaconBlockHeader_2 = proposerSlashing.SIGNED_HEADER_2.MESSAGE
-;;   ;; assert 1
-;;   -- if beaconBlockHeader_1.SLOT = beaconBlockHeader_2.SLOT
-;;   ;; assert 2
-;;   -- if beaconBlockHeader_1.PROPOSER_INDEX = beaconBlockHeader_2.PROPOSER_INDEX
-;;   ;; assert 3
-;;   -- if beaconBlockHeader_1 =/= beaconBlockHeader_2
-;;   -- if vid_proposer = beaconBlockHeader_1.PROPOSER_INDEX
-;;   ;; inserted guard
-;;   -- if $(vid_proposer < |state.VALIDATORS|)
-;;   -- if state.VALIDATORS[vid_proposer] = validator_proposer
-;;   ;; assert 4
-;;   -- if $is_slashable_validator(validator_proposer, $get_current_epoch(state))
-;;   ----
-;;   ;; loop iter1
-;;   -- if signedBeaconBlockHeader_1 = proposerSlashing.SIGNED_HEADER_1
-;;   -- if $compute_epoch_at_slot(signedBeaconBlockHeader_1.MESSAGE.SLOT) = epoch_h1
-;;   -- if $get_domain(state, $DOMAIN_BEACON_PROPOSER, epoch_h1) = domain_h1
-;;   -- if $compute_signing_root_beaconBlockHeader(signedBeaconBlockHeader_1.MESSAGE, domain_h1) = root_sign_h1
-;;   ;; assert 5-1
-;;   -- if $bls_verify(validator_proposer.PUBKEY, root_sign_h1, signedBeaconBlockHeader_1.SIGNATURE)
-;;   ----
-;;   ;; loop iter 2
-;;   -- if signedBeaconBlockHeader_2 = proposerSlashing.SIGNED_HEADER_2
-;;   -- if $compute_epoch_at_slot(signedBeaconBlockHeader_2.MESSAGE.SLOT) = epoch_h2
-;;   -- if $get_domain(state, $DOMAIN_BEACON_PROPOSER, epoch_h2) = domain_h2
-;;   -- if $compute_signing_root_beaconBlockHeader(signedBeaconBlockHeader_2.MESSAGE, domain_h2) = root_sign_h2
-;;   ;; assert 5-2
-;;   -- if $bls_verify(validator_proposer.PUBKEY, root_sign_h2, signedBeaconBlockHeader_2.SIGNATURE)
-;;   ----
-;;   -- SlashValidator: state SLASH `[ vid_proposer `] BY eps ~> state_slashed
+;; [Modified in Gloas:EIP7732] clears the builder payment of the slashed proposal
+rule ProcessProposerSlashing:
+  state proposerSlashing ~> state_slashed
+  -- if beaconBlockHeader_1 = proposerSlashing.SIGNED_HEADER_1.MESSAGE
+  -- if beaconBlockHeader_2 = proposerSlashing.SIGNED_HEADER_2.MESSAGE
+  ;; assert 1
+  -- if beaconBlockHeader_1.SLOT = beaconBlockHeader_2.SLOT
+  ;; assert 2
+  -- if beaconBlockHeader_1.PROPOSER_INDEX = beaconBlockHeader_2.PROPOSER_INDEX
+  ;; assert 3
+  -- if beaconBlockHeader_1 =/= beaconBlockHeader_2
+  -- if vid_proposer = beaconBlockHeader_1.PROPOSER_INDEX
+  ;; inserted guard
+  -- if $(vid_proposer < |state.VALIDATORS|)
+  -- if state.VALIDATORS[vid_proposer] = validator_proposer
+  ;; assert 4
+  -- if $is_slashable_validator(validator_proposer, $get_current_epoch(state))
+  ----
+  ;; loop iter1
+  -- if signedBeaconBlockHeader_1 = proposerSlashing.SIGNED_HEADER_1
+  -- if $compute_epoch_at_slot(signedBeaconBlockHeader_1.MESSAGE.SLOT) = epoch_h1
+  -- if $get_domain(state, $DOMAIN_BEACON_PROPOSER, epoch_h1) = domain_h1
+  -- if $compute_signing_root_beaconBlockHeader(signedBeaconBlockHeader_1.MESSAGE, domain_h1) = root_sign_h1
+  ;; assert 5-1
+  -- if $bls_verify(validator_proposer.PUBKEY, root_sign_h1, signedBeaconBlockHeader_1.SIGNATURE)
+  ----
+  ;; loop iter 2
+  -- if signedBeaconBlockHeader_2 = proposerSlashing.SIGNED_HEADER_2
+  -- if $compute_epoch_at_slot(signedBeaconBlockHeader_2.MESSAGE.SLOT) = epoch_h2
+  -- if $get_domain(state, $DOMAIN_BEACON_PROPOSER, epoch_h2) = domain_h2
+  -- if $compute_signing_root_beaconBlockHeader(signedBeaconBlockHeader_2.MESSAGE, domain_h2) = root_sign_h2
+  ;; assert 5-2
+  -- if $bls_verify(validator_proposer.PUBKEY, root_sign_h2, signedBeaconBlockHeader_2.SIGNATURE)
+  ----
+  ;; [New in Gloas:EIP7732]
+  -- if $remove_proposal_payment(state, beaconBlockHeader_1.SLOT, vid_proposer) = state_1
+  -- SlashValidator: state_1 SLASH `[ vid_proposer `] BY eps ~> state_slashed
 
 relation ProcessProposerSlashings:
   beaconState proposerSlashing* ~> beaconState
@@ -133,172 +133,142 @@ def $attestation_committee_offset(state, attestationData, committeeIndex_h :: co
   ;; assert
   -- if $(|vid_attesting*| > 0)
 
-;; [Phase0 -> Altair -> Electra]
-;; process_attestation
-;;  modifies: .CURRENT_EPOCH_PARTICIPATION / .PREVIOUS_EPOCH_PARTICIPATION, .BALANCES
+;; [Custom | filter : process_attestation] the validator had no flag set in this epoch [Gloas:EIP7732]
+dec $had_no_participation(validatorIndex, participationFlags*) : bool
+def $had_no_participation(vid, participationFlags*) = (participationFlags*[vid] = 0)
+  ;; inserted guard
+  -- if $(vid < |participationFlags*|)
+
+;; [Custom | Gloas:EIP7732] the weight that an attestation adds to the builder payment of its slot.
+;;  A validator adds its effective balance if it had no flag and gets a new one.
+;;  With no flag before, it gets a new flag exactly when the flag list is not empty.
+dec $attestation_payment_weight(beaconState, attestationData, builderPendingPayment, participationFlags*, nat*, validatorIndex*) : gwei
+def $attestation_payment_weight(state, attestationData, builderPendingPayment, participationFlags*, nat_flag*, vid_attesting*)
+  = $sum_<gwei>(gwei_weight*)
+  -- if $(|nat_flag*| > 0)
+  -- if $is_attestation_same_slot(state, attestationData) = true
+  -- if $(builderPendingPayment.WITHDRAWAL.AMOUNT > 0)
+  -- if $filter_list_2_<validatorIndex, participationFlags*>(vid_attesting*, participationFlags*, def $had_no_participation)
+       = vid_new*
+  ;; inserted guard
+  -- if ($(vid_new < |state.VALIDATORS|))*
+  -- if (state.VALIDATORS[vid_new].EFFECTIVE_BALANCE = gwei_weight)*
+def $attestation_payment_weight(state, attestationData, builderPendingPayment, participationFlags*, nat_flag*, vid_attesting*) = 0
+  -- otherwise
+
+;; [Custom | branch : process_attestation] index of the builder payment for the attested slot
+dec $attestation_payment_index(beaconState, attestationData) : uint64
+def $attestation_payment_index(state, attestationData) = $($SLOTS_PER_EPOCH + uint64_s)
+  -- if attestationData.TARGET.EPOCH = $get_current_epoch(state)
+  -- if $(attestationData.SLOT \ $SLOTS_PER_EPOCH) = uint64_s
+def $attestation_payment_index(state, attestationData) = $(attestationData.SLOT \ $SLOTS_PER_EPOCH)
+  -- otherwise
+
+;; [Phase0 -> Altair -> Electra -> Gloas]
+;; process_attestation(state, attestation, parent_slot)
+;;  modifies: .CURRENT_EPOCH_PARTICIPATION / .PREVIOUS_EPOCH_PARTICIPATION, .BALANCES, .BUILDER_PENDING_PAYMENTS
 
 relation ProcessAttestation:
-  beaconState attestation ~> beaconState
-  hint(input %0 %1)
+  beaconState attestation slot ~> beaconState
+  hint(input %0 %1 %2)
 
-;; TODO(gloas): functions `process_attestation` changed upstream in specs/gloas/beacon-chain.md
-;; body commented out below: uncomment it and apply the diff above
-;; --- old
-;; +++ new
-;; @@ -1,3 +1,8 @@
-;; -def process_attestation(state: BeaconState, attestation: Attestation) -> None:
-;; +def process_attestation(
-;; +    state: BeaconState,
-;; +    attestation: Attestation,
-;; +    # [New in Gloas:EIP7732]
-;; +    parent_slot: Slot,
-;; +) -> None:
-;;      data = attestation.data
-;;      assert data.target.epoch in (get_previous_epoch(state), get_current_epoch(state))
-;; @@ -5,6 +10,6 @@
-;;      assert data.slot + MIN_ATTESTATION_INCLUSION_DELAY <= state.slot
-;;
-;; -    # [Modified in Electra:EIP7549]
-;; -    assert data.index == 0
-;; +    # [Modified in Gloas:EIP7732]
-;; +    assert data.index < 2
-;;      committee_indices = get_committee_indices(attestation.committee_bits)
-;;      committee_offset = 0
-;; @@ -24,6 +29,7 @@
-;;
-;;      # Participation flag indices
-;; +    # [Modified in Gloas:EIP7732]
-;;      participation_flag_indices = get_attestation_participation_flag_indices(
-;; -        state, data, state.slot - data.slot
-;; +        state, data, state.slot - data.slot, parent_slot
-;;      )
-;;
-;; @@ -31,12 +37,20 @@
-;;      assert is_valid_indexed_attestation(state, get_indexed_attestation(state, attestation))
-;;
-;; -    # Update epoch participation flags
-;; +    # [Modified in Gloas:EIP7732]
-;;      if data.target.epoch == get_current_epoch(state):
-;; +        current_epoch_target = True
-;;          epoch_participation = state.current_epoch_participation
-;; +        payment = state.builder_pending_payments[SLOTS_PER_EPOCH + data.slot % SLOTS_PER_EPOCH]
-;;      else:
-;; +        current_epoch_target = False
-;;          epoch_participation = state.previous_epoch_participation
-;; +        payment = state.builder_pending_payments[data.slot % SLOTS_PER_EPOCH]
-;;
-;;      proposer_reward_numerator = 0
-;;      for index in get_attesting_indices(state, attestation):
-;; +        # [New in Gloas:EIP7732]
-;; +        had_no_participation = epoch_participation[index] == 0b0000_0000
-;; +        will_set_new_flag = False
-;; +
-;;          for flag_index, weight in enumerate(PARTICIPATION_FLAG_WEIGHTS):
-;;              if flag_index in participation_flag_indices and not has_flag(
-;; @@ -45,4 +59,15 @@
-;;                  epoch_participation[index] = add_flag(epoch_participation[index], flag_index)
-;;                  proposer_reward_numerator += get_base_reward(state, index) * weight
-;; +                # [New in Gloas:EIP7732]
-;; +                will_set_new_flag = True
-;; +
-;; +        # [New in Gloas:EIP7732]
-;; +        if (
-;; +            will_set_new_flag
-;; +            and had_no_participation
-;; +            and is_attestation_same_slot(state, data)
-;; +            and payment.withdrawal.amount > 0
-;; +        ):
-;; +            payment.weight += state.validators[index].effective_balance
-;;
-;;      # Reward proposer
-;; @@ -52,2 +77,9 @@
-;;      proposer_reward = Gwei(proposer_reward_numerator // proposer_reward_denominator)
-;;      increase_balance(state, get_beacon_proposer_index(state), proposer_reward)
-;; +
-;; +    # [New in Gloas:EIP7732]
-;; +    # Update builder payment weight
-;; +    if current_epoch_target:
-;; +        state.builder_pending_payments[SLOTS_PER_EPOCH + data.slot % SLOTS_PER_EPOCH] = payment
-;; +    else:
-;; +        state.builder_pending_payments[data.slot % SLOTS_PER_EPOCH] = payment
+;; [Modified in Gloas:EIP7732] data.index signals the payload; the builder payment of the slot gains weight
+rule ProcessAttestation/current_epoch:
+  state attestation slot_parent ~> state_out
+  -- if attestationData = attestation.DATA
+  ----
+  ;; branch instead of assert 1
+  -- if attestationData.TARGET.EPOCH = $get_current_epoch(state)
+  ;; assert 2
+  -- if attestationData.TARGET.EPOCH = $compute_epoch_at_slot(attestationData.SLOT)
+  ;; assert 3
+  -- if $( attestationData.SLOT + $MIN_ATTESTATION_INCLUSION_DELAY <= state.SLOT )
+  ;; [Modified in Gloas:EIP7732] assert 4
+  -- if $(attestationData.INDEX < 2)
+  -- if $get_committee_indices(attestation.COMMITTEE_BITS) = committeeIndex*
+  -- if $attestation_committee_offset(state, attestationData, committeeIndex*, attestation.AGGREGATION_BITS, 0) = n_offset
+  ;; assert 5: Bitfield length matches total number of participants
+  -- if |attestation.AGGREGATION_BITS| = n_offset
+  ;; participation flag indices
+  -- if $get_attestation_participation_flag_indices(state, attestationData, $(state.SLOT - attestationData.SLOT), slot_parent)
+       = nat_flag*
+  ;; assert 6: verify signature
+  -- if $is_valid_indexed_attestation(state, $get_indexed_attestation(state, attestation))
+  ----
+  -- if $get_attesting_indices(state, attestation) = vid_attesting*
+  -- if $attestation_payment_index(state, attestationData) = uint64_payment
+  ;; inserted guard
+  -- if $(uint64_payment < |state.BUILDER_PENDING_PAYMENTS|)
+  -- if state.BUILDER_PENDING_PAYMENTS[uint64_payment] = builderPendingPayment
+  -- if $attestation_payment_weight(state, attestationData, builderPendingPayment,
+         state.CURRENT_EPOCH_PARTICIPATION, nat_flag*, vid_attesting*) = gwei_weight
+  ;; double loop
+  -- ProcessFlags_over_attesting:
+      state.CURRENT_EPOCH_PARTICIPATION `[ vid_attesting* `] '++' `{ nat_flag* `}
+        '#' state '#' SUM 0
+      ~> participationFlags_updated* '#' SUM reward_proposer_numerator
+  -- if state[.CURRENT_EPOCH_PARTICIPATION = participationFlags_updated*] = state_1
+  -- if $( ($WEIGHT_DENOMINATOR - $PROPOSER_WEIGHT) * $WEIGHT_DENOMINATOR / $PROPOSER_WEIGHT )
+      = reward_proposer_denominator
+  -- if $(reward_proposer_numerator / reward_proposer_denominator) = reward_proposer
+  -- IncreaseBalance: state_1 '.' BALANCES `[ $get_beacon_proposer_index(state_1) `] '+' reward_proposer ~> state_2
+  ;; [New in Gloas:EIP7732] update the builder payment weight
+  -- if state_2[.BUILDER_PENDING_PAYMENTS[uint64_payment]
+              = builderPendingPayment[.WEIGHT = $(builderPendingPayment.WEIGHT + gwei_weight)]] = state_out
 
-;; rule ProcessAttestation/current_epoch:
-;;   state attestation ~> state_out
-;;   -- if attestationData = attestation.DATA
-;;   ----
-;;   ;; branch instead of assert 1
-;;   -- if attestationData.TARGET.EPOCH = $get_current_epoch(state)
-;;   ;; assert 2
-;;   -- if attestationData.TARGET.EPOCH = $compute_epoch_at_slot(attestationData.SLOT)
-;;   ;; assert 3
-;;   -- if $( attestationData.SLOT + $MIN_ATTESTATION_INCLUSION_DELAY <= state.SLOT )
-;;   ;; Removed in [Deneb]
-;;   ;; -- if $( state.SLOT <= attestationData.SLOT + $SLOTS_PER_EPOCH )
-;;   ;; [Modified in Electra:EIP7549] assert 4: committees from committee_bits
-;;   -- if attestationData.INDEX = 0
-;;   -- if $get_committee_indices(attestation.COMMITTEE_BITS) = committeeIndex*
-;;   -- if $attestation_committee_offset(state, attestationData, committeeIndex*, attestation.AGGREGATION_BITS, 0) = n_offset
-;;   ;; assert 5: Bitfield length matches total number of participants
-;;   -- if |attestation.AGGREGATION_BITS| = n_offset
-;;   ;; participation flag indices
-;;   -- if $get_attestation_participation_flag_indices(state, attestationData, $(state.SLOT - attestationData.SLOT)) = vid_participation_flag*
-;;   ;; assert 6: verify signature
-;;   -- if $is_valid_indexed_attestation(state, $get_indexed_attestation(state, attestation))
-;;   ----
-;;   ;; double loop
-;;   -- ProcessFlags_over_attesting:
-;;       state.CURRENT_EPOCH_PARTICIPATION `[ $get_attesting_indices(state, attestation) `] '++' `{ vid_participation_flag* `}
-;;         '#' state '#' SUM 0
-;;       ~> participationFlags_updated* '#' SUM reward_proposer_numerator
-;;   -- if state[.CURRENT_EPOCH_PARTICIPATION = participationFlags_updated*] = state_1
-;;   -- if $( ($WEIGHT_DENOMINATOR - $PROPOSER_WEIGHT) * $WEIGHT_DENOMINATOR / $PROPOSER_WEIGHT )
-;;       = reward_proposer_denominator
-;;   -- if $(reward_proposer_numerator / reward_proposer_denominator) = reward_proposer
-;;   -- IncreaseBalance: state_1 '.' BALANCES `[ $get_beacon_proposer_index(state_1) `] '+' reward_proposer ~> state_out
-;;
-;; rule ProcessAttestation/previous_epoch:
-;;   state attestation ~> state_out
-;;   -- if attestationData = attestation.DATA
-;;   ----
-;;   ;; branch instead of assert 1
-;;   -- if attestationData.TARGET.EPOCH = $get_previous_epoch(state)
-;;   ;; assert 2
-;;   -- if attestationData.TARGET.EPOCH = $compute_epoch_at_slot(attestationData.SLOT)
-;;   ;; assert 3
-;;   -- if $( attestationData.SLOT + $MIN_ATTESTATION_INCLUSION_DELAY <= state.SLOT )
-;;   ;; Removed in [Deneb]
-;;   ;; -- if $( state.SLOT <= attestationData.SLOT + $SLOTS_PER_EPOCH )
-;;   ;; [Modified in Electra:EIP7549] assert 4: committees from committee_bits
-;;   -- if attestationData.INDEX = 0
-;;   -- if $get_committee_indices(attestation.COMMITTEE_BITS) = committeeIndex*
-;;   -- if $attestation_committee_offset(state, attestationData, committeeIndex*, attestation.AGGREGATION_BITS, 0) = n_offset
-;;   ;; assert 5: Bitfield length matches total number of participants
-;;   -- if |attestation.AGGREGATION_BITS| = n_offset
-;;   ;; participation flag indices
-;;   -- if $get_attestation_participation_flag_indices(state, attestationData, $(state.SLOT - attestationData.SLOT)) = vid_participation_flag*
-;;   ;; assert 6: verify signature
-;;   -- if $is_valid_indexed_attestation(state, $get_indexed_attestation(state, attestation))
-;;   ----
-;;   ;; double loop
-;;   -- ProcessFlags_over_attesting:
-;;       state.PREVIOUS_EPOCH_PARTICIPATION `[ $get_attesting_indices(state, attestation) `] '++' `{ vid_participation_flag* `}
-;;         '#' state '#' SUM 0
-;;       ~> participationFlags_updated* '#' SUM reward_proposer_numerator
-;;   -- if state[.PREVIOUS_EPOCH_PARTICIPATION = participationFlags_updated*] = state_1
-;;   -- if $( ($WEIGHT_DENOMINATOR - $PROPOSER_WEIGHT) * $WEIGHT_DENOMINATOR / $PROPOSER_WEIGHT )
-;;       = reward_proposer_denominator
-;;   -- if $(reward_proposer_numerator / reward_proposer_denominator) = reward_proposer
-;;   -- IncreaseBalance: state_1 '.' BALANCES `[ $get_beacon_proposer_index(state_1) `] '+' reward_proposer ~> state_out
+rule ProcessAttestation/previous_epoch:
+  state attestation slot_parent ~> state_out
+  -- if attestationData = attestation.DATA
+  ----
+  ;; branch instead of assert 1
+  -- if attestationData.TARGET.EPOCH =/= $get_current_epoch(state)
+  -- if attestationData.TARGET.EPOCH = $get_previous_epoch(state)
+  ;; assert 2
+  -- if attestationData.TARGET.EPOCH = $compute_epoch_at_slot(attestationData.SLOT)
+  ;; assert 3
+  -- if $( attestationData.SLOT + $MIN_ATTESTATION_INCLUSION_DELAY <= state.SLOT )
+  ;; [Modified in Gloas:EIP7732] assert 4
+  -- if $(attestationData.INDEX < 2)
+  -- if $get_committee_indices(attestation.COMMITTEE_BITS) = committeeIndex*
+  -- if $attestation_committee_offset(state, attestationData, committeeIndex*, attestation.AGGREGATION_BITS, 0) = n_offset
+  ;; assert 5: Bitfield length matches total number of participants
+  -- if |attestation.AGGREGATION_BITS| = n_offset
+  ;; participation flag indices
+  -- if $get_attestation_participation_flag_indices(state, attestationData, $(state.SLOT - attestationData.SLOT), slot_parent)
+       = nat_flag*
+  ;; assert 6: verify signature
+  -- if $is_valid_indexed_attestation(state, $get_indexed_attestation(state, attestation))
+  ----
+  -- if $get_attesting_indices(state, attestation) = vid_attesting*
+  -- if $attestation_payment_index(state, attestationData) = uint64_payment
+  ;; inserted guard
+  -- if $(uint64_payment < |state.BUILDER_PENDING_PAYMENTS|)
+  -- if state.BUILDER_PENDING_PAYMENTS[uint64_payment] = builderPendingPayment
+  -- if $attestation_payment_weight(state, attestationData, builderPendingPayment,
+         state.PREVIOUS_EPOCH_PARTICIPATION, nat_flag*, vid_attesting*) = gwei_weight
+  ;; double loop
+  -- ProcessFlags_over_attesting:
+      state.PREVIOUS_EPOCH_PARTICIPATION `[ vid_attesting* `] '++' `{ nat_flag* `}
+        '#' state '#' SUM 0
+      ~> participationFlags_updated* '#' SUM reward_proposer_numerator
+  -- if state[.PREVIOUS_EPOCH_PARTICIPATION = participationFlags_updated*] = state_1
+  -- if $( ($WEIGHT_DENOMINATOR - $PROPOSER_WEIGHT) * $WEIGHT_DENOMINATOR / $PROPOSER_WEIGHT )
+      = reward_proposer_denominator
+  -- if $(reward_proposer_numerator / reward_proposer_denominator) = reward_proposer
+  -- IncreaseBalance: state_1 '.' BALANCES `[ $get_beacon_proposer_index(state_1) `] '+' reward_proposer ~> state_2
+  ;; [New in Gloas:EIP7732] update the builder payment weight
+  -- if state_2[.BUILDER_PENDING_PAYMENTS[uint64_payment]
+              = builderPendingPayment[.WEIGHT = $(builderPendingPayment.WEIGHT + gwei_weight)]] = state_out
 
 ;; [Modified in Electra:EIP7549]
 ;; fold ProcessAttestation over attestation*
 relation ProcessAttestations:
-  beaconState attestation* ~> beaconState
-  hint(input %0 %1)
+  beaconState attestation* slot ~> beaconState
+  hint(input %0 %1 %2)
 
 rule ProcessAttestations/fold:
-  state attestation* ~> state_out
-  -- (ProcessAttestation: state_cur attestation ~> state_next)*{
+  state attestation* slot_parent ~> state_out
+  -- (ProcessAttestation: state_cur attestation slot_parent ~> state_next)*{
        state -> state_cur ... state_next -> state_out
      }
 

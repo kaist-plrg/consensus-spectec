@@ -175,99 +175,170 @@ def $expected_withdrawals_loop(state, epoch, withdrawalIndex, vid, uint64_bound,
   -- if ~ $is_fully_withdrawable_validator(validator, balance, epoch)
   -- if ~ $is_partially_withdrawable_validator(validator, balance)
 
-;; [Capella -> Electra] get_expected_withdrawals(BeaconState) -> ExpectedWithdrawals
+;; [Gloas:EIP7732 | loop : get_builder_withdrawals]
+;;  args: withdrawal index, limit, number of prior withdrawals, pending builder withdrawals, accumulator, processed count
+dec $builder_withdrawals_loop(withdrawalIndex, uint64, nat, builderPendingWithdrawal*, withdrawal*, uint64)
+  : (withdrawal*, withdrawalIndex, uint64)
+
+def $builder_withdrawals_loop(withdrawalIndex, uint64_limit, n_prior, eps, withdrawal_acc*, uint64_processed)
+  = (withdrawal_acc*, withdrawalIndex, uint64_processed)
+
+def $builder_withdrawals_loop(withdrawalIndex, uint64_limit, n_prior, builderPendingWithdrawal_h :: builderPendingWithdrawal_t*, withdrawal_acc*, uint64_processed)
+  = (withdrawal_acc*, withdrawalIndex, uint64_processed)
+  -- if $(n_prior + |withdrawal_acc*| >= uint64_limit)
+
+def $builder_withdrawals_loop(withdrawalIndex, uint64_limit, n_prior, builderPendingWithdrawal_h :: builderPendingWithdrawal_t*, withdrawal_acc*, uint64_processed)
+  = $builder_withdrawals_loop(
+      $(withdrawalIndex + 1), uint64_limit, n_prior, builderPendingWithdrawal_t*,
+      withdrawal_acc* ++ [ withdrawal ], $(uint64_processed + 1)
+    )
+  -- if $(n_prior + |withdrawal_acc*| < uint64_limit)
+  -- if withdrawal =
+       { INDEX           withdrawalIndex,
+         VALIDATOR_INDEX $convert_builder_index_to_validator_index(builderPendingWithdrawal_h.BUILDER_INDEX),
+         ADDRESS         builderPendingWithdrawal_h.FEE_RECIPIENT,
+         AMOUNT          builderPendingWithdrawal_h.AMOUNT }
+
+;; [Gloas:EIP7732] get_builder_withdrawals(BeaconState, WithdrawalIndex, Sequence[Withdrawal])
+;;   -> tuple[Sequence[Withdrawal], WithdrawalIndex, Uint64]
+dec $get_builder_withdrawals(beaconState, withdrawalIndex, withdrawal*) : (withdrawal*, withdrawalIndex, uint64)
+def $get_builder_withdrawals(state, withdrawalIndex, withdrawal_prior*)
+  = $builder_withdrawals_loop(withdrawalIndex, uint64_limit, |withdrawal_prior*|, state.BUILDER_PENDING_WITHDRAWALS, eps, 0)
+  -- if $($MAX_WITHDRAWALS_PER_PAYLOAD - 1) = uint64_limit
+  ;; assert
+  -- if $(|withdrawal_prior*| <= uint64_limit)
+
+;; [Gloas:EIP7732] get_builder_balance_after_withdrawals(BeaconState, BuilderIndex, Sequence[Withdrawal]) -> Gwei
+dec $get_builder_balance_after_withdrawals(beaconState, builderIndex, withdrawal*) : gwei
+def $get_builder_balance_after_withdrawals(state, builderIndex, withdrawal_prior*)
+  = $saturating_sub(state.BUILDERS[builderIndex].BALANCE, gwei_withdrawn)
+  ;; inserted guard (python raises IndexError)
+  -- if $(builderIndex < |state.BUILDERS|)
+  -- if $filter_list_2_<withdrawal, validatorIndex>(
+         withdrawal_prior*, $convert_builder_index_to_validator_index(builderIndex), def $is_withdrawal_of
+       ) = withdrawal_b*
+  -- if (withdrawal_b.AMOUNT = gwei_amount)*
+  -- if $sum_<gwei>(gwei_amount*) = gwei_withdrawn
+
+;; [Gloas:EIP7732 | loop : get_builders_sweep_withdrawals]
+;;  args: state, epoch, withdrawal index, builder index, iterations left, limit, prior withdrawals, accumulator, processed count
+dec $builders_sweep_loop(beaconState, epoch, withdrawalIndex, builderIndex, uint64, uint64, withdrawal*, withdrawal*, uint64)
+  : (withdrawal*, withdrawalIndex, uint64)
+
+;; range exhausted
+def $builders_sweep_loop(state, epoch, withdrawalIndex, builderIndex, uint64_left, uint64_limit, withdrawal_prior*, withdrawal_acc*, uint64_processed)
+  = (withdrawal_acc*, withdrawalIndex, uint64_processed)
+  -- if uint64_left = 0
+
+;; limit reached: break
+def $builders_sweep_loop(state, epoch, withdrawalIndex, builderIndex, uint64_left, uint64_limit, withdrawal_prior*, withdrawal_acc*, uint64_processed)
+  = (withdrawal_acc*, withdrawalIndex, uint64_processed)
+  -- if $(uint64_left > 0)
+  -- if $(|withdrawal_prior*| + |withdrawal_acc*| >= uint64_limit)
+
+;; withdrawable builder with a balance: withdraw it
+def $builders_sweep_loop(state, epoch, withdrawalIndex, builderIndex, uint64_left, uint64_limit, withdrawal_prior*, withdrawal_acc*, uint64_processed)
+  = $builders_sweep_loop(
+      state, epoch, $(withdrawalIndex + 1), $((builderIndex + 1) \ |state.BUILDERS|), $(uint64_left - 1), uint64_limit,
+      withdrawal_prior*, withdrawal_acc* ++ [ withdrawal ], $(uint64_processed + 1)
+    )
+  -- if $(uint64_left > 0)
+  -- if $(|withdrawal_prior*| + |withdrawal_acc*| < uint64_limit)
+  ;; inserted guard (python raises IndexError)
+  -- if $(builderIndex < |state.BUILDERS|)
+  -- if state.BUILDERS[builderIndex] = builder
+  -- if $get_builder_balance_after_withdrawals(state, builderIndex, withdrawal_prior* ++ withdrawal_acc*) = balance
+  -- if $(builder.WITHDRAWABLE_EPOCH <= epoch)
+  -- if $(balance > 0)
+  -- if withdrawal =
+       { INDEX           withdrawalIndex,
+         VALIDATOR_INDEX $convert_builder_index_to_validator_index(builderIndex),
+         ADDRESS         builder.EXECUTION_ADDRESS,
+         AMOUNT          balance }
+
+;; otherwise: next builder
+def $builders_sweep_loop(state, epoch, withdrawalIndex, builderIndex, uint64_left, uint64_limit, withdrawal_prior*, withdrawal_acc*, uint64_processed)
+  = $builders_sweep_loop(
+      state, epoch, withdrawalIndex, $((builderIndex + 1) \ |state.BUILDERS|), $(uint64_left - 1), uint64_limit,
+      withdrawal_prior*, withdrawal_acc*, $(uint64_processed + 1)
+    )
+  -- if $(uint64_left > 0)
+  -- if $(|withdrawal_prior*| + |withdrawal_acc*| < uint64_limit)
+  -- if $(builderIndex < |state.BUILDERS|)
+  -- if state.BUILDERS[builderIndex] = builder
+  -- if $get_builder_balance_after_withdrawals(state, builderIndex, withdrawal_prior* ++ withdrawal_acc*) = balance
+  -- if ~($(builder.WITHDRAWABLE_EPOCH <= epoch) /\ $(balance > 0))
+
+;; [Gloas:EIP7732] get_builders_sweep_withdrawals(BeaconState, WithdrawalIndex, Sequence[Withdrawal])
+;;   -> tuple[Sequence[Withdrawal], WithdrawalIndex, Uint64]
+dec $get_builders_sweep_withdrawals(beaconState, withdrawalIndex, withdrawal*) : (withdrawal*, withdrawalIndex, uint64)
+def $get_builders_sweep_withdrawals(state, withdrawalIndex, withdrawal_prior*)
+  = $builders_sweep_loop(
+      state, $get_current_epoch(state), withdrawalIndex, state.NEXT_WITHDRAWAL_BUILDER_INDEX,
+      $min_uint64(|state.BUILDERS|, $MAX_BUILDERS_PER_WITHDRAWALS_SWEEP), uint64_limit,
+      withdrawal_prior*, eps, 0
+    )
+  -- if $($MAX_WITHDRAWALS_PER_PAYLOAD - 1) = uint64_limit
+  ;; assert
+  -- if $(|withdrawal_prior*| <= uint64_limit)
+
+;; [Capella -> Electra -> Gloas] get_expected_withdrawals(BeaconState) -> ExpectedWithdrawals
+;;  The validator sweep is $expected_withdrawals_loop (get_validators_sweep_withdrawals).
+;;  Its accumulator starts with the prior withdrawals.
 dec $get_expected_withdrawals(beaconState) : expectedWithdrawals
 
-;; TODO(gloas): functions `get_expected_withdrawals` changed upstream in specs/gloas/beacon-chain.md
-;; body commented out below: uncomment it and apply the diff above
-;; --- old
-;; +++ new
-;; @@ -3,5 +3,11 @@
-;;      withdrawals: list[Withdrawal] = []
-;;
-;; -    # [New in Electra:EIP7251]
-;; +    # [New in Gloas:EIP7732]
-;; +    # Get builder withdrawals
-;; +    builder_withdrawals, withdrawal_index, processed_builder_withdrawals_count = (
-;; +        get_builder_withdrawals(state, withdrawal_index, withdrawals)
-;; +    )
-;; +    withdrawals.extend(builder_withdrawals)
-;; +
-;;      # Get partial withdrawals
-;;      partial_withdrawals, withdrawal_index, processed_partial_withdrawals_count = (
-;; @@ -9,4 +15,11 @@
-;;      )
-;;      withdrawals.extend(partial_withdrawals)
-;; +
-;; +    # [New in Gloas:EIP7732]
-;; +    # Get builders sweep withdrawals
-;; +    builders_sweep_withdrawals, withdrawal_index, processed_builders_sweep_count = (
-;; +        get_builders_sweep_withdrawals(state, withdrawal_index, withdrawals)
-;; +    )
-;; +    withdrawals.extend(builders_sweep_withdrawals)
-;;
-;;      # Get validators sweep withdrawals
-;; @@ -18,6 +31,9 @@
-;;      return ExpectedWithdrawals(
-;;          withdrawals,
-;; -        # [New in Electra:EIP7251]
-;; +        # [New in Gloas:EIP7732]
-;; +        processed_builder_withdrawals_count,
-;;          processed_partial_withdrawals_count,
-;; +        # [New in Gloas:EIP7732]
-;; +        processed_builders_sweep_count,
-;;          processed_validators_sweep_count,
-;;      )
+def $get_expected_withdrawals(state)
+  = { WITHDRAWALS                         withdrawal_all*,
+      PROCESSED_BUILDER_WITHDRAWALS_COUNT uint64_builder_count,
+      PROCESSED_PARTIAL_WITHDRAWALS_COUNT uint64_partial_count,
+      PROCESSED_BUILDERS_SWEEP_COUNT      uint64_builders_sweep_count }
+  ;; [New in Gloas:EIP7732] builder withdrawals
+  -- if $get_builder_withdrawals(state, state.NEXT_WITHDRAWAL_INDEX, eps)
+       = (withdrawal_builder*, withdrawalIndex_1, uint64_builder_count)
+  ;; partial withdrawals
+  -- if $get_pending_partial_withdrawals(state, withdrawalIndex_1, withdrawal_builder*)
+       = (withdrawal_partial*, withdrawalIndex_2, uint64_partial_count)
+  ;; [New in Gloas:EIP7732] builders sweep withdrawals
+  -- if $get_builders_sweep_withdrawals(state, withdrawalIndex_2, withdrawal_builder* ++ withdrawal_partial*)
+       = (withdrawal_sweep*, withdrawalIndex_3, uint64_builders_sweep_count)
+  -- if withdrawal_prior* = withdrawal_builder* ++ withdrawal_partial* ++ withdrawal_sweep*
+  ;; validators sweep withdrawals
+  ;; assert: There must be at least one space reserved for validator sweep withdrawals
+  -- if $(|withdrawal_prior*| < $MAX_WITHDRAWALS_PER_PAYLOAD)
+  -- if $expected_withdrawals_loop(
+         state, $get_current_epoch(state), withdrawalIndex_3, state.NEXT_WITHDRAWAL_VALIDATOR_INDEX,
+         $min_uint64(|state.VALIDATORS|, $MAX_VALIDATORS_PER_WITHDRAWALS_SWEEP), 0, withdrawal_prior*
+       ) = withdrawal_all*
 
-;; def $get_expected_withdrawals(state)
-;;   = { WITHDRAWALS                         withdrawal_all*,
-;;       PROCESSED_PARTIAL_WITHDRAWALS_COUNT uint64_partial_count }
-;;   -- if $get_pending_partial_withdrawals(state, state.NEXT_WITHDRAWAL_INDEX, eps)
-;;        = (withdrawal_partial*, withdrawalIndex_next, uint64_partial_count)
-;;   -- if epoch_cur = $get_current_epoch(state)
-;;   -- if validatorIndex_start = state.NEXT_WITHDRAWAL_VALIDATOR_INDEX
-;;   -- if uint64_bound = $min_uint64(|state.VALIDATORS|, $MAX_VALIDATORS_PER_WITHDRAWALS_SWEEP)
-;;   ;; assert: There must be at least one space reserved for validator sweep withdrawals
-;;   -- if $(|withdrawal_partial*| < $MAX_WITHDRAWALS_PER_PAYLOAD)
-;;   -- if $expected_withdrawals_loop(
-;;          state, epoch_cur, withdrawalIndex_next, validatorIndex_start, uint64_bound, 0, withdrawal_partial*
-;;        ) = withdrawal_all*
-
-;; [Modified in Electra:EIP7251] pending partial withdrawals come before the validator sweep
+;; [Capella -> Gloas] apply one withdrawal
 relation ApplyWithdrawal:
   beaconState '.' BALANCES `{ withdrawal `} ~> beaconState
   hint(input %0 %1)
 
-rule ApplyWithdrawal/main:
+;; [Modified in Gloas:EIP7732] a builder withdrawal decreases the builder balance
+rule ApplyWithdrawal/builder:
+  state '.' BALANCES `{ withdrawal `}
+  ~> state[.BUILDERS[builderIndex].BALANCE = $saturating_sub(state.BUILDERS[builderIndex].BALANCE, withdrawal.AMOUNT)]
+  -- if $is_builder_index(withdrawal.VALIDATOR_INDEX) = true
+  -- if $convert_validator_index_to_builder_index(withdrawal.VALIDATOR_INDEX) = builderIndex
+  ;; inserted guard (python raises IndexError)
+  -- if $(builderIndex < |state.BUILDERS|)
+
+rule ApplyWithdrawal/validator:
   state '.' BALANCES `{ withdrawal `} ~> state_out
+  -- if $is_builder_index(withdrawal.VALIDATOR_INDEX) = false
   -- DecreaseBalance: state '.' BALANCES `[ withdrawal.VALIDATOR_INDEX `] '-' withdrawal.AMOUNT ~> state_out
 
+;; [Capella -> Gloas] apply_withdrawals(state, withdrawals)
 relation ApplyWithdrawals:
   beaconState '.' BALANCES `{ withdrawal* `} ~>* beaconState
   hint(input %0 %1)
 
-;; TODO(gloas): functions `apply_withdrawals` changed upstream in specs/gloas/beacon-chain.md
-;; body commented out below: uncomment it and apply the diff above
-;; --- old
-;; +++ new
-;; @@ -1,3 +1,10 @@
-;;  def apply_withdrawals(state: BeaconState, withdrawals: Sequence[Withdrawal]) -> None:
-;;      for withdrawal in withdrawals:
-;; -        decrease_balance(state, withdrawal.validator_index, withdrawal.amount)
-;; +        # [Modified in Gloas:EIP7732]
-;; +        if is_builder_index(withdrawal.validator_index):
-;; +            builder_index = convert_validator_index_to_builder_index(withdrawal.validator_index)
-;; +            state.builders[builder_index].balance = saturating_sub(
-;; +                state.builders[builder_index].balance, withdrawal.amount
-;; +            )
-;; +        else:
-;; +            decrease_balance(state, withdrawal.validator_index, withdrawal.amount)
-
-;; rule ApplyWithdrawals/fold:
-;;   state '.' BALANCES `{ withdrawal* `} ~>* state_out
-;;   -- (ApplyWithdrawal: state_cur '.' BALANCES `{ withdrawal `} ~> state_next)*{
-;;        state -> state_cur ... state_next -> state_out
-;;      }
+rule ApplyWithdrawals/fold:
+  state '.' BALANCES `{ withdrawal* `} ~>* state_out
+  -- (ApplyWithdrawal: state_cur '.' BALANCES `{ withdrawal `} ~> state_next)*{
+       state -> state_cur ... state_next -> state_out
+     }
 
 ;; [Custom]
 ;; loop helper for ProcessAttestation
