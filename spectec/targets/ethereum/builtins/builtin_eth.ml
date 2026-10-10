@@ -12,5 +12,6 @@ let builtins =
     Math.builtins;
     MerkleImpl.builtins;
     SszImpl.builtins;
+    ShuffleImpl.builtins;
   ]
   |> List.concat

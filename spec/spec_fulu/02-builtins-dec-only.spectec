@@ -115,3 +115,7 @@ builtin dec $bytes4_to_bytes(bytes4) : bytes
 ;; bytes32 withdrawal_credentials → executionAddress
 ;; bytes32 X -> X[12:] -> last 20 bytes
 builtin dec $extract_execution_address(bytes32) : executionAddress
+
+;; [Custom] compute_shuffled_index in native code: index, index_count, seed, SHUFFLE_ROUND_COUNT
+;;  NEEDS USER DECISION
+builtin dec $compute_shuffled_index_rounds(uint64, uint64, bytes32, uint64) : uint64

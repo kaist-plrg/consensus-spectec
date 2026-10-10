@@ -42,11 +42,10 @@ def $apply_shuffle_round(i, (seed, i_count, uint64_round)) = i_out
 ;;  - loop over rounds = [0 .. SHUFFLE_ROUND_COUNT-1]
 dec $compute_shuffled_index(uint64, uint64, bytes32) : uint64
 
-def $compute_shuffled_index(i, i_count, seed) = i_shuffled
-  -- if $range($SHUFFLE_ROUND_COUNT) = uint64_round*
-  -- (if $apply_shuffle_round(i_cur, (seed, i_count, uint64_round)) = i_next)*{
-       i -> i_cur ... i_next -> i_shuffled
-     }
+;; NEEDS USER DECISION: the rounds run in the builtin $compute_shuffled_index_rounds.
+;;  The interpreted rounds cost about 1.3 ms per call; the proposer lookahead makes about 2,000 calls per epoch.
+def $compute_shuffled_index(i, i_count, seed)
+  = $compute_shuffled_index_rounds(i, i_count, seed, $SHUFFLE_ROUND_COUNT)
 
 
 ;; [Custom | Electra : compute_proposer_index, get_next_sync_committee_indices]
