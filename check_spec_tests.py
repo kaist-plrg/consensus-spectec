@@ -14,7 +14,8 @@ Cases without a post state must be rejected by failed premises. Interpreter
 faults, CLI errors, and input errors fail the check.
 
 Block cases in sanity/blocks, random, and finality apply blocks in order with
-full validation. The script exits with status 1 if any case fails. It writes
+full validation. Cases in sanity/slots run ProcessSlots to the target slot.
+The script exits with status 1 if any case fails. It writes
 a summary when GITHUB_STEP_SUMMARY is set.
 """
 
@@ -138,6 +139,9 @@ def check(case):
         elif handler in RELATIONS:
             name, file, typ = RELATIONS[handler]
             state, err = relation(name, (file, typ, None))
+        elif (case / "slots.yaml").exists():  # sanity/slots: process_slots(state, pre.slot + slots)
+            slot = json.loads(Path(pre).read_text())["slot"] + yaml(case / "slots.yaml")
+            state, err = relation("ProcessSlots", ("slot", "Slot", slot))
         elif runner == "operations":
             task, name, typ, flag = OPERATIONS[handler]
             extra = []
