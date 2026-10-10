@@ -35,6 +35,16 @@ def $take_prefix_<X>(X*, n) = X*
   -- otherwise
 
 ;; =========================
+;; drop_prefix (X* -> X*)
+;; =========================
+;; Python slice xs[n:], which returns an empty list when n exceeds its length
+dec $drop_prefix_<X>(X*, nat) : X*
+def $drop_prefix_<X>(X*, n) = X*[n : |X*| - n]
+  -- if $(n <= |X*|)
+def $drop_prefix_<X>(X*, n) = eps
+  -- otherwise
+
+;; =========================
 ;; flag helpers
 ;; =========================
 ;; [Custom : ProcessAttestations / AddFlag ] has_flag: flags[i] = 1
@@ -89,41 +99,11 @@ def $eth_fast_aggregate_verify(blsPubkey*, bytes32_msg, blsSignature)
   -- otherwise
 
 ;; [Bellatrix: ProcessExecutionPayload] execution engine
-;; TODO(electra): protocols `ExecutionEngine.verify_and_notify_new_payload` changed upstream in specs/electra/beacon-chain.md
-;; OCaml builtin (spectec/targets/ethereum/builtins); check it
-;; --- old
-;; +++ new
-;; @@ -6,20 +6,24 @@
-;;      """
-;;      execution_payload = new_payload_request.execution_payload
-;; -    # [New in Deneb:EIP4788]
-;;      parent_beacon_block_root = new_payload_request.parent_beacon_block_root
-;; +    # [New in Electra]
-;; +    execution_requests_list = get_execution_requests_list(new_payload_request.execution_requests)
-;;
-;;      if b"" in execution_payload.transactions:
-;;          return False
-;;
-;; -    # [Modified in Deneb:EIP4788]
-;; -    if not self.is_valid_block_hash(execution_payload, parent_beacon_block_root):
-;; +    # [Modified in Electra]
-;; +    if not self.is_valid_block_hash(
-;; +        execution_payload, parent_beacon_block_root, execution_requests_list
-;; +    ):
-;;          return False
-;;
-;; -    # [New in Deneb:EIP4844]
-;;      if not self.is_valid_versioned_hashes(new_payload_request):
-;;          return False
-;;
-;; -    # [Modified in Deneb:EIP4788]
-;; -    if not self.notify_new_payload(execution_payload, parent_beacon_block_root):
-;; +    # [Modified in Electra]
-;; +    if not self.notify_new_payload(
-;; +        execution_payload, parent_beacon_block_root, execution_requests_list
-;; +    ):
-;;          return False
-;;
+;; [Electra] verify_and_notify_new_payload also takes
+;;  get_execution_requests_list(new_payload_request.execution_requests).
+;;  The builtin is a mock: it returns the validity that the test runner sets and ignores its input.
+;;  So the request list does not change the result, and get_execution_requests_list
+;;  (EIP-7685 encoding, which needs ssz_serialize) is not translated.
 
 builtin dec $ee_verify_and_notify_new_payload(executionPayload) : bool
 

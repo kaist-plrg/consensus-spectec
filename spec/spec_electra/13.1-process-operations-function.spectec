@@ -91,7 +91,22 @@ rule ProcessAttesterSlashings/fold:
      }
 
 
-;; [Phase0 -> Altair]
+;; [Custom | loop : process_attestation] [Electra:EIP7549]
+;;  checks each committee of committee_bits and returns the final committee_offset
+dec $attestation_committee_offset(beaconState, attestationData, committeeIndex*, boolean*, nat) : nat
+
+def $attestation_committee_offset(state, attestationData, eps, bit*, n_offset) = n_offset
+
+def $attestation_committee_offset(state, attestationData, committeeIndex_h :: committeeIndex_t*, bit*, n_offset)
+  = $attestation_committee_offset(state, attestationData, committeeIndex_t*, bit*, $(n_offset + |vid_committee*|))
+  ;; assert
+  -- if $(committeeIndex_h < $get_committee_count_per_slot(state, attestationData.TARGET.EPOCH))
+  -- if $get_beacon_committee(state, attestationData.SLOT, committeeIndex_h) = vid_committee*
+  -- if $committee_attesters(vid_committee*, bit*, n_offset) = vid_attesting*
+  ;; assert
+  -- if $(|vid_attesting*| > 0)
+
+;; [Phase0 -> Altair -> Electra]
 ;; process_attestation
 ;;  modifies: .CURRENT_EPOCH_PARTICIPATION / .PREVIOUS_EPOCH_PARTICIPATION, .BALANCES
 
@@ -99,104 +114,74 @@ relation ProcessAttestation:
   beaconState attestation ~> beaconState
   hint(input %0 %1)
 
-;; TODO(electra): functions `process_attestation` changed upstream in specs/electra/beacon-chain.md
-;; body commented out below: uncomment it and apply the diff above
-;; --- old
-;; +++ new
-;; @@ -3,10 +3,23 @@
-;;      assert data.target.epoch in (get_previous_epoch(state), get_current_epoch(state))
-;;      assert data.target.epoch == compute_epoch_at_slot(data.slot)
-;; -    # [Modified in Deneb:EIP7045]
-;;      assert data.slot + MIN_ATTESTATION_INCLUSION_DELAY <= state.slot
-;; -    assert data.index < get_committee_count_per_slot(state, data.target.epoch)
-;;
-;; -    committee = get_beacon_committee(state, data.slot, data.index)
-;; -    assert len(attestation.aggregation_bits) == len(committee)
-;; +    # [Modified in Electra:EIP7549]
-;; +    assert data.index == 0
-;; +    committee_indices = get_committee_indices(attestation.committee_bits)
-;; +    committee_offset = 0
-;; +    for committee_index in committee_indices:
-;; +        assert committee_index < get_committee_count_per_slot(state, data.target.epoch)
-;; +        committee = get_beacon_committee(state, data.slot, committee_index)
-;; +        committee_attesters = {
-;; +            attester_index
-;; +            for i, attester_index in enumerate(committee)
-;; +            if attestation.aggregation_bits[committee_offset + i]
-;; +        }
-;; +        assert len(committee_attesters) > 0
-;; +        committee_offset += len(committee)
-;; +
-;; +    # Bitfield length matches total number of participants
-;; +    assert len(attestation.aggregation_bits) == committee_offset
-;;
-;;      # Participation flag indices
+;; [Modified in Electra:EIP7549]
+rule ProcessAttestation/current_epoch:
+  state attestation ~> state_out
+  -- if attestationData = attestation.DATA
+  ----
+  ;; branch instead of assert 1
+  -- if attestationData.TARGET.EPOCH = $get_current_epoch(state)
+  ;; assert 2
+  -- if attestationData.TARGET.EPOCH = $compute_epoch_at_slot(attestationData.SLOT)
+  ;; assert 3
+  -- if $( attestationData.SLOT + $MIN_ATTESTATION_INCLUSION_DELAY <= state.SLOT )
+  ;; Removed in [Deneb]
+  ;; -- if $( state.SLOT <= attestationData.SLOT + $SLOTS_PER_EPOCH )
+  ;; [Modified in Electra:EIP7549] assert 4: committees from committee_bits
+  -- if attestationData.INDEX = 0
+  -- if $get_committee_indices(attestation.COMMITTEE_BITS) = committeeIndex*
+  -- if $attestation_committee_offset(state, attestationData, committeeIndex*, attestation.AGGREGATION_BITS, 0) = n_offset
+  ;; assert 5: Bitfield length matches total number of participants
+  -- if |attestation.AGGREGATION_BITS| = n_offset
+  ;; participation flag indices
+  -- if $get_attestation_participation_flag_indices(state, attestationData, $(state.SLOT - attestationData.SLOT)) = vid_participation_flag*
+  ;; assert 6: verify signature
+  -- if $is_valid_indexed_attestation(state, $get_indexed_attestation(state, attestation))
+  ----
+  ;; double loop
+  -- ProcessFlags_over_attesting:
+      state.CURRENT_EPOCH_PARTICIPATION `[ $get_attesting_indices(state, attestation) `] '++' `{ vid_participation_flag* `}
+        '#' state '#' SUM 0
+      ~> participationFlags_updated* '#' SUM reward_proposer_numerator
+  -- if state[.CURRENT_EPOCH_PARTICIPATION = participationFlags_updated*] = state_1
+  -- if $( ($WEIGHT_DENOMINATOR - $PROPOSER_WEIGHT) * $WEIGHT_DENOMINATOR / $PROPOSER_WEIGHT )
+      = reward_proposer_denominator
+  -- if $(reward_proposer_numerator / reward_proposer_denominator) = reward_proposer
+  -- IncreaseBalance: state_1 '.' BALANCES `[ $get_beacon_proposer_index(state_1) `] '+' reward_proposer ~> state_out
 
-;; rule ProcessAttestation/current_epoch:
-;;   state attestation ~> state_out
-;;   -- if attestationData = attestation.DATA
-;;   ----
-;;   ;; branch instead of assert 1
-;;   -- if attestationData.TARGET.EPOCH = $get_current_epoch(state)
-;;   ;; assert 2
-;;   -- if attestationData.TARGET.EPOCH = $compute_epoch_at_slot(attestationData.SLOT)
-;;   ;; assert 3
-;;   -- if $( attestationData.SLOT + $MIN_ATTESTATION_INCLUSION_DELAY <= state.SLOT )
-;;   ;; Removed in [Deneb]
-;;   ;; -- if $( state.SLOT <= attestationData.SLOT + $SLOTS_PER_EPOCH )
-;;   ;; assert 4
-;;   -- if $( attestationData.INDEX < $get_committee_count_per_slot(state, attestationData.TARGET.EPOCH) )
-;;   -- if vid_committee* = $get_beacon_committee(state, attestationData.SLOT, attestationData.INDEX)
-;;   ;; assert 5
-;;   -- if |attestation.AGGREGATION_BITS| = |vid_committee*|
-;;   ;; participation flag indices
-;;   -- if $get_attestation_participation_flag_indices(state, attestationData, $(state.SLOT - attestationData.SLOT)) = vid_participation_flag*
-;;   ;; assert 6: verify signature
-;;   -- if $is_valid_indexed_attestation(state, $get_indexed_attestation(state, attestation))
-;;   ----
-;;   ;; double loop
-;;   -- ProcessFlags_over_attesting:
-;;       state.CURRENT_EPOCH_PARTICIPATION `[ $get_attesting_indices(state, attestation) `] '++' `{ vid_participation_flag* `}
-;;         '#' state '#' SUM 0
-;;       ~> participationFlags_updated* '#' SUM reward_proposer_numerator
-;;   -- if state[.CURRENT_EPOCH_PARTICIPATION = participationFlags_updated*] = state_1
-;;   -- if $( ($WEIGHT_DENOMINATOR - $PROPOSER_WEIGHT) * $WEIGHT_DENOMINATOR / $PROPOSER_WEIGHT )
-;;       = reward_proposer_denominator
-;;   -- if $(reward_proposer_numerator / reward_proposer_denominator) = reward_proposer
-;;   -- IncreaseBalance: state_1 '.' BALANCES `[ $get_beacon_proposer_index(state_1) `] '+' reward_proposer ~> state_out
-;;
-;; rule ProcessAttestation/previous_epoch:
-;;   state attestation ~> state_out
-;;   -- if attestationData = attestation.DATA
-;;   ----
-;;   ;; branch instead of assert 1
-;;   -- if attestationData.TARGET.EPOCH = $get_previous_epoch(state)
-;;   ;; assert 2
-;;   -- if attestationData.TARGET.EPOCH = $compute_epoch_at_slot(attestationData.SLOT)
-;;   ;; assert 3
-;;   -- if $( attestationData.SLOT + $MIN_ATTESTATION_INCLUSION_DELAY <= state.SLOT )
-;;   ;; Removed in [Deneb]
-;;   ;; -- if $( state.SLOT <= attestationData.SLOT + $SLOTS_PER_EPOCH )
-;;   ;; assert 4
-;;   -- if $( attestationData.INDEX < $get_committee_count_per_slot(state, attestationData.TARGET.EPOCH) )
-;;   -- if vid_committee* = $get_beacon_committee(state, attestationData.SLOT, attestationData.INDEX)
-;;   ;; assert 5
-;;   -- if |attestation.AGGREGATION_BITS| = |vid_committee*|
-;;   ;; participation flag indices
-;;   -- if $get_attestation_participation_flag_indices(state, attestationData, $(state.SLOT - attestationData.SLOT)) = vid_participation_flag*
-;;   ;; assert 6: verify signature
-;;   -- if $is_valid_indexed_attestation(state, $get_indexed_attestation(state, attestation))
-;;   ----
-;;   ;; double loop
-;;   -- ProcessFlags_over_attesting:
-;;       state.PREVIOUS_EPOCH_PARTICIPATION `[ $get_attesting_indices(state, attestation) `] '++' `{ vid_participation_flag* `}
-;;         '#' state '#' SUM 0
-;;       ~> participationFlags_updated* '#' SUM reward_proposer_numerator
-;;   -- if state[.PREVIOUS_EPOCH_PARTICIPATION = participationFlags_updated*] = state_1
-;;   -- if $( ($WEIGHT_DENOMINATOR - $PROPOSER_WEIGHT) * $WEIGHT_DENOMINATOR / $PROPOSER_WEIGHT )
-;;       = reward_proposer_denominator
-;;   -- if $(reward_proposer_numerator / reward_proposer_denominator) = reward_proposer
-;;   -- IncreaseBalance: state_1 '.' BALANCES `[ $get_beacon_proposer_index(state_1) `] '+' reward_proposer ~> state_out
+rule ProcessAttestation/previous_epoch:
+  state attestation ~> state_out
+  -- if attestationData = attestation.DATA
+  ----
+  ;; branch instead of assert 1
+  -- if attestationData.TARGET.EPOCH = $get_previous_epoch(state)
+  ;; assert 2
+  -- if attestationData.TARGET.EPOCH = $compute_epoch_at_slot(attestationData.SLOT)
+  ;; assert 3
+  -- if $( attestationData.SLOT + $MIN_ATTESTATION_INCLUSION_DELAY <= state.SLOT )
+  ;; Removed in [Deneb]
+  ;; -- if $( state.SLOT <= attestationData.SLOT + $SLOTS_PER_EPOCH )
+  ;; [Modified in Electra:EIP7549] assert 4: committees from committee_bits
+  -- if attestationData.INDEX = 0
+  -- if $get_committee_indices(attestation.COMMITTEE_BITS) = committeeIndex*
+  -- if $attestation_committee_offset(state, attestationData, committeeIndex*, attestation.AGGREGATION_BITS, 0) = n_offset
+  ;; assert 5: Bitfield length matches total number of participants
+  -- if |attestation.AGGREGATION_BITS| = n_offset
+  ;; participation flag indices
+  -- if $get_attestation_participation_flag_indices(state, attestationData, $(state.SLOT - attestationData.SLOT)) = vid_participation_flag*
+  ;; assert 6: verify signature
+  -- if $is_valid_indexed_attestation(state, $get_indexed_attestation(state, attestation))
+  ----
+  ;; double loop
+  -- ProcessFlags_over_attesting:
+      state.PREVIOUS_EPOCH_PARTICIPATION `[ $get_attesting_indices(state, attestation) `] '++' `{ vid_participation_flag* `}
+        '#' state '#' SUM 0
+      ~> participationFlags_updated* '#' SUM reward_proposer_numerator
+  -- if state[.PREVIOUS_EPOCH_PARTICIPATION = participationFlags_updated*] = state_1
+  -- if $( ($WEIGHT_DENOMINATOR - $PROPOSER_WEIGHT) * $WEIGHT_DENOMINATOR / $PROPOSER_WEIGHT )
+      = reward_proposer_denominator
+  -- if $(reward_proposer_numerator / reward_proposer_denominator) = reward_proposer
+  -- IncreaseBalance: state_1 '.' BALANCES `[ $get_beacon_proposer_index(state_1) `] '+' reward_proposer ~> state_out
 
 ;; fold ProcessAttestation over attestation*
 relation ProcessAttestations:
@@ -214,16 +199,7 @@ rule ProcessAttestations/fold:
 ;; process_deposit
 ;;  modifies: ETH1_DEPOSIT_INDEX,
 ;;    VALIDATORS, BALANCES, PREVIOUS_EPOCH_PARTICIPATION, CURRENT_EPOCH_PARTICIPATION, INACTIVITY_SCORES
-;; REVIEW(electra): functions `process_deposit` doc_only upstream in specs/electra/beacon-chain.md
-;; comment/docstring-only change upstream; body kept, review the contract
-;; --- old
-;; +++ new
-;; @@ -13,4 +13,5 @@
-;;      state.eth1_deposit_index += 1
-;;
-;; +    # [Modified in Electra:EIP7251]
-;;      apply_deposit(
-;;          state=state,
+;; [Modified in Electra:EIP7251] through ApplyDeposit only
 
 relation ProcessDeposit:
   beaconState deposit ~> beaconState
@@ -267,47 +243,34 @@ relation ProcessVoluntaryExit:
   beaconState signedVoluntaryExit ~> beaconState
   hint(input %0 %1)
 
-;; TODO(electra): functions `process_voluntary_exit` changed upstream in specs/electra/beacon-chain.md
-;; body commented out below: uncomment it and apply the diff above
-;; --- old
-;; +++ new
-;; @@ -10,6 +10,8 @@
-;;      # Verify the validator has been active long enough
-;;      assert get_current_epoch(state) >= validator.activation_epoch + SHARD_COMMITTEE_PERIOD
-;; +    # [New in Electra:EIP7251]
-;; +    # Only exit validator if it has no pending withdrawals in the queue
-;; +    assert get_pending_balance_to_withdraw(state, voluntary_exit.validator_index) == 0
-;;      # Verify signature
-;; -    # [Modified in Deneb:EIP7044]
-;;      domain = compute_domain(
-;;          DOMAIN_VOLUNTARY_EXIT, CAPELLA_FORK_VERSION, state.genesis_validators_root
-
-;; rule ProcessVoluntaryExit/main:
-;;   state signedVoluntaryExit ~> state_exit
-;;   -- if voluntaryExit = signedVoluntaryExit.MESSAGE
-;;   -- if voluntaryExit.VALIDATOR_INDEX = vid_exit
-;;   ;; inserted guard
-;;   -- if $(vid_exit < |state.VALIDATORS|)
-;;   -- if state.VALIDATORS[vid_exit] = validator
-;;   -- if $get_current_epoch(state) = epoch_cur
-;;   ;; assert 1: verify the validator is active
-;;   -- if $is_active_validator(validator, epoch_cur) = true
-;;   ;; assert 2: verify exit has not been initiated
-;;   -- if validator.EXIT_EPOCH = $FAR_FUTURE_EPOCH
-;;   ;; assert 3: exits must specify an epoch when they become valid
-;;   -- if $(epoch_cur >= voluntaryExit.EPOCH)
-;;   ;; assert 4: verify the validator has been active long enough
-;;   ;; inserted overflow check
-;;   -- if $(validator.ACTIVATION_EPOCH <= $UINT64_MAX - $SHARD_COMMITTEE_PERIOD )
-;;   -- if $(epoch_cur >= validator.ACTIVATION_EPOCH + $SHARD_COMMITTEE_PERIOD)
-;;   ;; verify signature
-;;   ;; modified in [Deneb]
-;;   ;; -- if $get_domain(state, $DOMAIN_VOLUNTARY_EXIT, voluntaryExit.EPOCH) = domain_exit
-;;   -- if $compute_domain($DOMAIN_VOLUNTARY_EXIT, $CAPELLA_FORK_VERSION, state.GENESIS_VALIDATORS_ROOT) = domain_exit
-;;   -- if $compute_signing_root_voluntary_exit(voluntaryExit, domain_exit) = root_vol_exit_signing_root
-;;   ;; assert 5
-;;   -- if $bls_verify(validator.PUBKEY, root_vol_exit_signing_root, signedVoluntaryExit.SIGNATURE) = true
-;;   -- InitiateValidatorExit: state '.' VALIDATORS `[ vid_exit `] ~> state_exit
+;; [Modified in Electra:EIP7251] no pending withdrawals in the queue
+rule ProcessVoluntaryExit/main:
+  state signedVoluntaryExit ~> state_exit
+  -- if voluntaryExit = signedVoluntaryExit.MESSAGE
+  -- if voluntaryExit.VALIDATOR_INDEX = vid_exit
+  ;; inserted guard
+  -- if $(vid_exit < |state.VALIDATORS|)
+  -- if state.VALIDATORS[vid_exit] = validator
+  -- if $get_current_epoch(state) = epoch_cur
+  ;; assert 1: verify the validator is active
+  -- if $is_active_validator(validator, epoch_cur) = true
+  ;; assert 2: verify exit has not been initiated
+  -- if validator.EXIT_EPOCH = $FAR_FUTURE_EPOCH
+  ;; assert 3: exits must specify an epoch when they become valid
+  -- if $(epoch_cur >= voluntaryExit.EPOCH)
+  ;; assert 4: verify the validator has been active long enough
+  ;; inserted overflow check
+  -- if $(validator.ACTIVATION_EPOCH <= $UINT64_MAX - $SHARD_COMMITTEE_PERIOD )
+  -- if $(epoch_cur >= validator.ACTIVATION_EPOCH + $SHARD_COMMITTEE_PERIOD)
+  ;; assert 5 [New in Electra:EIP7251]: Only exit validator if it has no pending withdrawals in the queue
+  -- if $get_pending_balance_to_withdraw(state, vid_exit) = 0
+  ;; verify signature
+  ;; modified in [Deneb]
+  -- if $compute_domain($DOMAIN_VOLUNTARY_EXIT, $CAPELLA_FORK_VERSION, state.GENESIS_VALIDATORS_ROOT) = domain_exit
+  -- if $compute_signing_root_voluntary_exit(voluntaryExit, domain_exit) = root_vol_exit_signing_root
+  ;; assert 6
+  -- if $bls_verify(validator.PUBKEY, root_vol_exit_signing_root, signedVoluntaryExit.SIGNATURE) = true
+  -- InitiateValidatorExit: state '.' VALIDATORS `[ vid_exit `] ~> state_exit
 
 ;; fold ProcessVoluntaryExit over signedVoluntaryExit*
 relation ProcessVoluntaryExits:
@@ -355,5 +318,259 @@ relation ProcessBlsToExecutionChanges:
 rule ProcessBlsToExecutionChanges/fold:
   state signedBlsToExecutionChange* ~> state_out
   -- (ProcessBlsToExecutionChange: state_cur signedBlsToExecutionChange ~> state_next)*{
+       state -> state_cur ... state_next -> state_out
+     }
+
+;; [Electra:EIP6110]
+;; process_deposit_request
+;;  modifies: DEPOSIT_REQUESTS_START_INDEX, PENDING_DEPOSITS
+
+relation ProcessDepositRequest:
+  beaconState DEPOSIT_REQUEST depositRequest ~> beaconState
+  hint(input %0 %1)
+
+;; Set deposit request start index
+rule ProcessDepositRequest/first:
+  state DEPOSIT_REQUEST depositRequest
+  ~> state[.DEPOSIT_REQUESTS_START_INDEX = depositRequest.INDEX]
+          [.PENDING_DEPOSITS = state.PENDING_DEPOSITS ++ [pendingDeposit]]
+  -- if state.DEPOSIT_REQUESTS_START_INDEX = $UNSET_DEPOSIT_REQUESTS_START_INDEX
+  -- if pendingDeposit = { PUBKEY depositRequest.PUBKEY,
+                           WITHDRAWAL_CREDENTIALS depositRequest.WITHDRAWAL_CREDENTIALS,
+                           AMOUNT depositRequest.AMOUNT,
+                           SIGNATURE depositRequest.SIGNATURE,
+                           SLOT state.SLOT }
+
+rule ProcessDepositRequest/next:
+  state DEPOSIT_REQUEST depositRequest
+  ~> state[.PENDING_DEPOSITS = state.PENDING_DEPOSITS ++ [pendingDeposit]]
+  -- if state.DEPOSIT_REQUESTS_START_INDEX =/= $UNSET_DEPOSIT_REQUESTS_START_INDEX
+  -- if pendingDeposit = { PUBKEY depositRequest.PUBKEY,
+                           WITHDRAWAL_CREDENTIALS depositRequest.WITHDRAWAL_CREDENTIALS,
+                           AMOUNT depositRequest.AMOUNT,
+                           SIGNATURE depositRequest.SIGNATURE,
+                           SLOT state.SLOT }
+
+;; fold ProcessDepositRequest over depositRequest*
+relation ProcessDepositRequests:
+  beaconState depositRequest* ~> beaconState
+  hint(input %0 %1)
+
+rule ProcessDepositRequests/fold:
+  state depositRequest* ~> state_out
+  -- (ProcessDepositRequest: state_cur DEPOSIT_REQUEST depositRequest ~> state_next)*{
+       state -> state_cur ... state_next -> state_out
+     }
+
+
+;; [Electra:EIP7002:EIP7251]
+;; process_withdrawal_request
+;;  modifies: PENDING_PARTIAL_WITHDRAWALS, EXIT_BALANCE_TO_CONSUME, EARLIEST_EXIT_EPOCH,
+;;    VALIDATORS[](.EXIT_EPOCH, .WITHDRAWABLE_EPOCH)
+
+;; [Custom | branch : process_withdrawal_request] all the `return`s before the pending balance
+dec $is_valid_withdrawal_request(beaconState, withdrawalRequest) : boolean
+def $is_valid_withdrawal_request(state, withdrawalRequest) = true
+  ;; If partial withdrawal queue is full, only full exits are processed
+  -- if ~( $(|state.PENDING_PARTIAL_WITHDRAWALS| = $PENDING_PARTIAL_WITHDRAWALS_LIMIT)
+          /\ withdrawalRequest.AMOUNT =/= $FULL_EXIT_REQUEST_AMOUNT )
+  ;; Verify pubkey exists
+  -- if $validator_pubkeys(state) = blsPubkey*
+  -- if ( withdrawalRequest.VALIDATOR_PUBKEY <- blsPubkey* )
+  -- if state.VALIDATORS[$index_of_<blsPubkey>(blsPubkey*, withdrawalRequest.VALIDATOR_PUBKEY)] = validator
+  ;; Verify withdrawal credentials
+  -- if $has_execution_withdrawal_credential(validator) = true
+  -- if $extract_execution_address(validator.WITHDRAWAL_CREDENTIALS) = withdrawalRequest.SOURCE_ADDRESS
+  ;; Verify the validator is active
+  -- if $get_current_epoch(state) = epoch_cur
+  -- if $is_active_validator(validator, epoch_cur) = true
+  ;; Verify exit has not been initiated
+  -- if validator.EXIT_EPOCH = $FAR_FUTURE_EPOCH
+  ;; Verify the validator has been active long enough
+  -- if $(epoch_cur >= validator.ACTIVATION_EPOCH + $SHARD_COMMITTEE_PERIOD)
+def $is_valid_withdrawal_request(state, withdrawalRequest) = false
+  -- otherwise
+
+;; [Custom | branch : process_withdrawal_request] the partial withdrawal conditions
+dec $is_valid_partial_withdrawal(validator, gwei, gwei) : boolean
+def $is_valid_partial_withdrawal(validator, balance, gwei_pending) = true
+  ;; Only allow partial withdrawals with compounding withdrawal credentials
+  -- if $has_compounding_withdrawal_credential(validator) = true
+  -- if $(validator.EFFECTIVE_BALANCE >= $MIN_ACTIVATION_BALANCE)
+  -- if $(balance > $MIN_ACTIVATION_BALANCE + gwei_pending)
+def $is_valid_partial_withdrawal(validator, balance, gwei_pending) = false
+  -- otherwise
+
+relation ProcessWithdrawalRequest:
+  beaconState WITHDRAWAL_REQUEST withdrawalRequest ~> beaconState
+  hint(input %0 %1)
+
+rule ProcessWithdrawalRequest/ignored:
+  state WITHDRAWAL_REQUEST withdrawalRequest ~> state
+  -- if $is_valid_withdrawal_request(state, withdrawalRequest) = false
+
+;; full exit with no pending withdrawals in the queue
+rule ProcessWithdrawalRequest/full_exit:
+  state WITHDRAWAL_REQUEST withdrawalRequest ~> state_out
+  -- if $is_valid_withdrawal_request(state, withdrawalRequest) = true
+  -- if withdrawalRequest.AMOUNT = $FULL_EXIT_REQUEST_AMOUNT
+  -- if $index_of_<blsPubkey>($validator_pubkeys(state), withdrawalRequest.VALIDATOR_PUBKEY) = vid
+  -- if $get_pending_balance_to_withdraw(state, vid) = 0
+  -- InitiateValidatorExit: state '.' VALIDATORS `[ vid `] ~> state_out
+
+;; full exit with pending withdrawals: return
+rule ProcessWithdrawalRequest/full_exit_pending:
+  state WITHDRAWAL_REQUEST withdrawalRequest ~> state
+  -- if $is_valid_withdrawal_request(state, withdrawalRequest) = true
+  -- if withdrawalRequest.AMOUNT = $FULL_EXIT_REQUEST_AMOUNT
+  -- if $index_of_<blsPubkey>($validator_pubkeys(state), withdrawalRequest.VALIDATOR_PUBKEY) = vid
+  -- if $($get_pending_balance_to_withdraw(state, vid) > 0)
+
+;; partial withdrawal: queue it behind the exit churn
+rule ProcessWithdrawalRequest/partial:
+  state WITHDRAWAL_REQUEST withdrawalRequest
+  ~> state_churn[.PENDING_PARTIAL_WITHDRAWALS = state_churn.PENDING_PARTIAL_WITHDRAWALS ++ [pendingPartialWithdrawal]]
+  -- if $is_valid_withdrawal_request(state, withdrawalRequest) = true
+  -- if withdrawalRequest.AMOUNT =/= $FULL_EXIT_REQUEST_AMOUNT
+  -- if $index_of_<blsPubkey>($validator_pubkeys(state), withdrawalRequest.VALIDATOR_PUBKEY) = vid
+  -- if state.VALIDATORS[vid] = validator
+  ;; inserted guard (python raises IndexError)
+  -- if $(vid < |state.BALANCES|)
+  -- if state.BALANCES[vid] = balance
+  -- if $get_pending_balance_to_withdraw(state, vid) = gwei_pending
+  -- if $is_valid_partial_withdrawal(validator, balance, gwei_pending) = true
+  -- if $min_uint64($(balance - $MIN_ACTIVATION_BALANCE - gwei_pending), withdrawalRequest.AMOUNT) = gwei_to_withdraw
+  -- ComputeExitEpochAndUpdateChurn: state EXIT_CHURN gwei_to_withdraw ~> state_churn
+  ;; inserted overflow check
+  -- if $(state_churn.EARLIEST_EXIT_EPOCH <= $UINT64_MAX - $MIN_VALIDATOR_WITHDRAWABILITY_DELAY)
+  -- if pendingPartialWithdrawal =
+       { VALIDATOR_INDEX vid,
+         AMOUNT gwei_to_withdraw,
+         WITHDRAWABLE_EPOCH $(state_churn.EARLIEST_EXIT_EPOCH + $MIN_VALIDATOR_WITHDRAWABILITY_DELAY) }
+
+;; partial withdrawal that does not qualify: return
+rule ProcessWithdrawalRequest/partial_ignored:
+  state WITHDRAWAL_REQUEST withdrawalRequest ~> state
+  -- if $is_valid_withdrawal_request(state, withdrawalRequest) = true
+  -- if withdrawalRequest.AMOUNT =/= $FULL_EXIT_REQUEST_AMOUNT
+  -- if $index_of_<blsPubkey>($validator_pubkeys(state), withdrawalRequest.VALIDATOR_PUBKEY) = vid
+  -- if state.VALIDATORS[vid] = validator
+  -- if $(vid < |state.BALANCES|)
+  -- if $is_valid_partial_withdrawal(validator, state.BALANCES[vid], $get_pending_balance_to_withdraw(state, vid)) = false
+
+;; fold ProcessWithdrawalRequest over withdrawalRequest*
+relation ProcessWithdrawalRequests:
+  beaconState withdrawalRequest* ~> beaconState
+  hint(input %0 %1)
+
+rule ProcessWithdrawalRequests/fold:
+  state withdrawalRequest* ~> state_out
+  -- (ProcessWithdrawalRequest: state_cur WITHDRAWAL_REQUEST withdrawalRequest ~> state_next)*{
+       state -> state_cur ... state_next -> state_out
+     }
+
+
+;; [Electra:EIP7251]
+;; process_consolidation_request
+;;  modifies: VALIDATORS, BALANCES, PENDING_DEPOSITS (switch to compounding),
+;;    CONSOLIDATION_BALANCE_TO_CONSUME, EARLIEST_CONSOLIDATION_EPOCH, PENDING_CONSOLIDATIONS
+
+;; [Electra] is_valid_switch_to_compounding_request(BeaconState, ConsolidationRequest) -> bool
+;;  the early `return False`s become one conjunction
+dec $is_valid_switch_to_compounding_request(beaconState, consolidationRequest) : boolean
+def $is_valid_switch_to_compounding_request(state, consolidationRequest) = true
+  ;; Switch to compounding requires source and target be equal
+  -- if consolidationRequest.SOURCE_PUBKEY = consolidationRequest.TARGET_PUBKEY
+  ;; Verify pubkey exists
+  -- if $validator_pubkeys(state) = blsPubkey*
+  -- if ( consolidationRequest.SOURCE_PUBKEY <- blsPubkey* )
+  -- if state.VALIDATORS[$index_of_<blsPubkey>(blsPubkey*, consolidationRequest.SOURCE_PUBKEY)] = validator
+  ;; Verify request has been authorized
+  -- if $extract_execution_address(validator.WITHDRAWAL_CREDENTIALS) = consolidationRequest.SOURCE_ADDRESS
+  ;; Verify source withdrawal credentials
+  -- if $has_eth1_withdrawal_credential(validator) = true
+  ;; Verify the source is active
+  -- if $is_active_validator(validator, $get_current_epoch(state)) = true
+  ;; Verify exit for source has not been initiated
+  -- if validator.EXIT_EPOCH = $FAR_FUTURE_EPOCH
+def $is_valid_switch_to_compounding_request(state, consolidationRequest) = false
+  -- otherwise
+
+;; [Custom | branch : process_consolidation_request] all the `return`s of the consolidation path
+dec $is_valid_consolidation_request(beaconState, consolidationRequest) : boolean
+def $is_valid_consolidation_request(state, consolidationRequest) = true
+  ;; Verify that source != target, so a consolidation cannot be used as an exit
+  -- if consolidationRequest.SOURCE_PUBKEY =/= consolidationRequest.TARGET_PUBKEY
+  ;; If the pending consolidations queue is full, consolidation requests are ignored
+  -- if $(|state.PENDING_CONSOLIDATIONS| < $PENDING_CONSOLIDATIONS_LIMIT)
+  ;; If there is too little available consolidation churn limit, consolidation requests are ignored
+  -- if $($get_consolidation_churn_limit(state) > $MIN_ACTIVATION_BALANCE)
+  ;; Verify pubkeys exists
+  -- if $validator_pubkeys(state) = blsPubkey*
+  -- if ( consolidationRequest.SOURCE_PUBKEY <- blsPubkey* )
+  -- if ( consolidationRequest.TARGET_PUBKEY <- blsPubkey* )
+  -- if state.VALIDATORS[$index_of_<blsPubkey>(blsPubkey*, consolidationRequest.SOURCE_PUBKEY)] = validator_source
+  -- if state.VALIDATORS[$index_of_<blsPubkey>(blsPubkey*, consolidationRequest.TARGET_PUBKEY)] = validator_target
+  ;; Verify source withdrawal credentials
+  -- if $has_execution_withdrawal_credential(validator_source) = true
+  -- if $extract_execution_address(validator_source.WITHDRAWAL_CREDENTIALS) = consolidationRequest.SOURCE_ADDRESS
+  ;; Verify that target has compounding withdrawal credentials
+  -- if $has_compounding_withdrawal_credential(validator_target) = true
+  ;; Verify the source and the target are active
+  -- if $get_current_epoch(state) = epoch_cur
+  -- if $is_active_validator(validator_source, epoch_cur) = true
+  -- if $is_active_validator(validator_target, epoch_cur) = true
+  ;; Verify exits for source and target have not been initiated
+  -- if validator_source.EXIT_EPOCH = $FAR_FUTURE_EPOCH
+  -- if validator_target.EXIT_EPOCH = $FAR_FUTURE_EPOCH
+  ;; Verify the source has been active long enough
+  -- if $(epoch_cur >= validator_source.ACTIVATION_EPOCH + $SHARD_COMMITTEE_PERIOD)
+  ;; Verify the source has no pending withdrawals in the queue
+  -- if $get_pending_balance_to_withdraw(state, $index_of_<blsPubkey>(blsPubkey*, consolidationRequest.SOURCE_PUBKEY)) = 0
+def $is_valid_consolidation_request(state, consolidationRequest) = false
+  -- otherwise
+
+relation ProcessConsolidationRequest:
+  beaconState CONSOLIDATION_REQUEST consolidationRequest ~> beaconState
+  hint(input %0 %1)
+
+rule ProcessConsolidationRequest/switch_to_compounding:
+  state CONSOLIDATION_REQUEST consolidationRequest ~> state_out
+  -- if $is_valid_switch_to_compounding_request(state, consolidationRequest) = true
+  -- if $index_of_<blsPubkey>($validator_pubkeys(state), consolidationRequest.SOURCE_PUBKEY) = vid_source
+  -- SwitchToCompoundingValidator: state SWITCH_TO_COMPOUNDING vid_source ~> state_out
+
+rule ProcessConsolidationRequest/ignored:
+  state CONSOLIDATION_REQUEST consolidationRequest ~> state
+  -- if $is_valid_switch_to_compounding_request(state, consolidationRequest) = false
+  -- if $is_valid_consolidation_request(state, consolidationRequest) = false
+
+;; Initiate source validator exit and append pending consolidation
+rule ProcessConsolidationRequest/consolidate:
+  state CONSOLIDATION_REQUEST consolidationRequest
+  ~> state_churn[.VALIDATORS[vid_source] = validator_source[.EXIT_EPOCH = epoch_exit]
+                                                           [.WITHDRAWABLE_EPOCH = $(epoch_exit + $MIN_VALIDATOR_WITHDRAWABILITY_DELAY)]]
+                [.PENDING_CONSOLIDATIONS = state_churn.PENDING_CONSOLIDATIONS ++ [pendingConsolidation]]
+  -- if $is_valid_switch_to_compounding_request(state, consolidationRequest) = false
+  -- if $is_valid_consolidation_request(state, consolidationRequest) = true
+  -- if $validator_pubkeys(state) = blsPubkey*
+  -- if $index_of_<blsPubkey>(blsPubkey*, consolidationRequest.SOURCE_PUBKEY) = vid_source
+  -- if $index_of_<blsPubkey>(blsPubkey*, consolidationRequest.TARGET_PUBKEY) = vid_target
+  -- ComputeConsolidationEpochAndUpdateChurn:
+       state CONSOLIDATION_CHURN state.VALIDATORS[vid_source].EFFECTIVE_BALANCE ~> state_churn
+  -- if state_churn.EARLIEST_CONSOLIDATION_EPOCH = epoch_exit
+  -- if state_churn.VALIDATORS[vid_source] = validator_source
+  ;; inserted overflow check
+  -- if $(epoch_exit <= $UINT64_MAX - $MIN_VALIDATOR_WITHDRAWABILITY_DELAY)
+  -- if pendingConsolidation = { SOURCE_INDEX vid_source, TARGET_INDEX vid_target }
+
+;; fold ProcessConsolidationRequest over consolidationRequest*
+relation ProcessConsolidationRequests:
+  beaconState consolidationRequest* ~> beaconState
+  hint(input %0 %1)
+
+rule ProcessConsolidationRequests/fold:
+  state consolidationRequest* ~> state_out
+  -- (ProcessConsolidationRequest: state_cur CONSOLIDATION_REQUEST consolidationRequest ~> state_next)*{
        state -> state_cur ... state_next -> state_out
      }
