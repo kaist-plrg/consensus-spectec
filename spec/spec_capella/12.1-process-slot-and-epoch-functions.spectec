@@ -85,7 +85,7 @@ rule ProcessInactivityUpdates/skip:
 
 rule ProcessInactivityUpdates/main:
   state ~> state_updated
-  -- otherwise
+  -- if $get_current_epoch(state) =/= $GENESIS_EPOCH
   -- if $get_eligible_validator_indices(state) = vid_eligible*
   -- ApplyInactivity_over_vids: state '.' INACTIVITY_SCORES `[ vid_eligible* `] ~>* state_updated
 
@@ -103,7 +103,7 @@ rule ProcessRewardsAndPenalties/skip:
 
 rule ProcessRewardsAndPenalties/main:
   state ~> state_out
-  -- otherwise
+  -- if $get_current_epoch(state) =/= $GENESIS_EPOCH
   ;; 1: create flag indices: 0..|PARTICIPATION_FLAG_WEIGHTS|-1
   -- if $range(|$PARTICIPATION_FLAG_WEIGHTS|) = vid_flag*
   -- if ( $get_flag_index_deltas(state, vid_flag) = (reward_flag*, penalty_flag*) )*
@@ -267,10 +267,8 @@ rule ProcessHistoricalSummariesUpdate/skip:
 rule ProcessHistoricalSummariesUpdate/main:
   state ~>
     state[.HISTORICAL_SUMMARIES = state.HISTORICAL_SUMMARIES ++ [ historicalSummary ]]
-  -- otherwise
-  ;; -- if $($get_current_epoch(state) + 1) = epoch_next
-  ;; ;; branch-complete
-  ;; -- if $( epoch_next \ ($SLOTS_PER_HISTORICAL_ROOT / $SLOTS_PER_EPOCH) ) = 0
+  -- if $($get_current_epoch(state) + 1) = epoch_next
+  -- if $(epoch_next \ ($SLOTS_PER_HISTORICAL_ROOT / $SLOTS_PER_EPOCH)) = 0
   -- if $hash_tree_root_roots(state.BLOCK_ROOTS) = root_block_summary
   -- if $hash_tree_root_roots(state.STATE_ROOTS) = root_state_summary
   -- if { BLOCK_SUMMARY_ROOT root_block_summary, STATE_SUMMARY_ROOT root_state_summary } = historicalSummary

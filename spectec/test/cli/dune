@@ -11,6 +11,7 @@
   ../../../Converter/snappy_decompressor.py
   ../testgen_checkpoint/main.exe
   (source_tree ../../../spec/spec_capella)
+  (source_tree ../../../spec/spec_deneb)
   (source_tree ../../specs/impty)
   (source_tree ../../specs/miniml)
   (source_tree ../../testdata/interp/impty)

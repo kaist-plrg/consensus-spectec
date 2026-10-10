@@ -72,10 +72,7 @@ premise 565:
 premise 571:
   (not covered)
 
-premise 612:
-  (not covered)
-
-premise 618:
+premise 613:
   (not covered)
 
 premise 619:
@@ -84,16 +81,19 @@ premise 619:
 premise 620:
   (not covered)
 
-premise 622:
+premise 621:
   (not covered)
 
-premise 634:
+premise 623:
   (not covered)
 
-premise 643:
+premise 635:
   (not covered)
 
-premise 656:
+premise 644:
+  (not covered)
+
+premise 657:
   test default:
     STATE.current_epoch_participation[18] → UNKNOWN(0)
     STATE.current_epoch_participation[42] → UNKNOWN(0)
@@ -104,39 +104,39 @@ premise 656:
     STATE.current_epoch_participation[207] → UNKNOWN(0)
     STATE.current_epoch_participation[224] → UNKNOWN(0)
 
-premise 658:
+premise 659:
   (not covered)
 
-premise 665:
+premise 666:
   (not covered)
 
-premise 667:
+premise 668:
   (not covered)
 
-premise 681:
+premise 682:
   (not covered)
 
-premise 684:
+premise 685:
   (not covered)
 
-premise 686:
+premise 687:
   (not covered)
 
-premise 691:
+premise 692:
   (not covered)
 
-premise 696:
+premise 697:
   (not covered)
 
-premise 699:
+premise 700:
   (not covered)
 
-premise 706:
+premise 707:
   test default:
     STATE.slot → < 33
     BLOCK.message.body.attestations[0].data.slot → > 33
 
-premise 713:
+premise 714:
   test default:
     STATE → UNKNOWN({
   attesting_indices [
@@ -191,15 +191,15 @@ premise 713:
   signature bytes(983655760745835780632905629608451570982699707681348276434780655031794734110610657921480242520793157641112126439613906671466588611628180702985580393955791415326182443886441942578040829466352452843982991755516752825071803781075739075, len=96)
 })
 
-premise 718:
+premise 719:
   (not covered)
 
-premise 725:
+premise 726:
   (not covered)
 
-premise 733:
+premise 734:
   (not covered)
 
-premise 757:
+premise 758:
   (not covered)
 
