@@ -105,45 +105,32 @@ def $is_slashable_attestation_data(attestationData_1, attestationData_2) =
   ( $( attestationData_1.SOURCE.EPOCH < attestationData_2.SOURCE.EPOCH )
     /\ $( attestationData_2.TARGET.EPOCH < attestationData_1.TARGET.EPOCH ) ) ;;surround vote
 
-;; [Phase0] is_valid_indexed_attestation(BeaconState, IndexedAttestation) -> bool
+;; [Phase0 -> Gloas:EIP7688] is_valid_indexed_attestation(BeaconState, IndexedAttestation) -> bool
 dec $is_valid_indexed_attestation(beaconState, indexedAttestation) : boolean
-;; TODO(gloas): functions `is_valid_indexed_attestation` changed upstream in specs/gloas/beacon-chain.md
-;; body commented out below: uncomment it and apply the diff above
-;; --- old
-;; +++ new
-;; @@ -7,5 +7,10 @@
-;;      # Verify indices are sorted and unique
-;;      indices = indexed_attestation.attesting_indices
-;; -    if len(indices) == 0 or list(indices) != sorted(set(indices)):
-;; +    if (
-;; +        len(indices) == 0
-;; +        # [New in Gloas:EIP7688]
-;; +        or len(indices) > MAX_VALIDATORS_PER_COMMITTEE * MAX_COMMITTEES_PER_SLOT
-;; +        or list(indices) != sorted(set(indices))
-;; +    ):
-;;          return False
-;;      # Verify aggregate signature
-
-;; def $is_valid_indexed_attestation(state, indexedAttestation) = false
-;;   -- if |indexedAttestation.ATTESTING_INDICES| = 0
-;; def $is_valid_indexed_attestation(state, indexedAttestation) = false
-;;   -- if $sort_<validatorIndex>($to_set_<validatorIndex>(indexedAttestation.ATTESTING_INDICES))
-;;   =/= indexedAttestation.ATTESTING_INDICES
-;; def $is_valid_indexed_attestation(state, indexedAttestation)
-;;   = $bls_fast_aggregate_verify(blsPubkey*, root_signing, indexedAttestation.SIGNATURE)
-;;   -- if vid* = indexedAttestation.ATTESTING_INDICES
-;;   -- if $(|indexedAttestation.ATTESTING_INDICES| > 0)
-;;   -- if $sort_<validatorIndex>($to_set_<validatorIndex>(indexedAttestation.ATTESTING_INDICES))
-;;       = indexedAttestation.ATTESTING_INDICES
-;;   ;; inserted guard
-;;   -- if ($(vid < |state.VALIDATORS|))*
-;;   -- if (state.VALIDATORS[vid].PUBKEY = blsPubkey)*
-;;   -- if $get_domain(state, $DOMAIN_BEACON_ATTESTER, indexedAttestation.DATA.TARGET.EPOCH) = domain
-;;   -- if $compute_signing_root_attestationData(indexedAttestation.DATA, domain) = root_signing
-
 ;; false: empty list
+def $is_valid_indexed_attestation(state, indexedAttestation) = false
+  -- if |indexedAttestation.ATTESTING_INDICES| = 0
+;; false: too many indices [New in Gloas:EIP7688]
+def $is_valid_indexed_attestation(state, indexedAttestation) = false
+  -- if $(|indexedAttestation.ATTESTING_INDICES| > $MAX_VALIDATORS_PER_COMMITTEE * $MAX_COMMITTEES_PER_SLOT)
 ;; false: not sorted
+def $is_valid_indexed_attestation(state, indexedAttestation) = false
+  -- if $sort_<validatorIndex>($to_set_<validatorIndex>(indexedAttestation.ATTESTING_INDICES))
+  =/= indexedAttestation.ATTESTING_INDICES
 ;; otherwise
+def $is_valid_indexed_attestation(state, indexedAttestation)
+  = $bls_fast_aggregate_verify(blsPubkey*, root_signing, indexedAttestation.SIGNATURE)
+  -- if vid* = indexedAttestation.ATTESTING_INDICES
+  -- if $(|indexedAttestation.ATTESTING_INDICES| > 0)
+  -- if $(|indexedAttestation.ATTESTING_INDICES| <= $MAX_VALIDATORS_PER_COMMITTEE * $MAX_COMMITTEES_PER_SLOT)
+  -- if $sort_<validatorIndex>($to_set_<validatorIndex>(indexedAttestation.ATTESTING_INDICES))
+      = indexedAttestation.ATTESTING_INDICES
+  ;; inserted guard
+  -- if ($(vid < |state.VALIDATORS|))*
+  -- if (state.VALIDATORS[vid].PUBKEY = blsPubkey)*
+  -- if $get_domain(state, $DOMAIN_BEACON_ATTESTER, indexedAttestation.DATA.TARGET.EPOCH) = domain
+  -- if $compute_signing_root_attestationData(indexedAttestation.DATA, domain) = root_signing
+
 ;; [Custom]
 ;;  modifies: .VALIDATORS[](.EXIT_EPOCH, .WITHDRAWABLE_EPOCH, .SLASHED) .SLASHINGS, .BALANCES
 relation SlashIfEligible:
@@ -199,200 +186,65 @@ def $head_flag_list(bool_matching_head, uint64_inclusion_delay)
 def $head_flag_list(_, _) = eps
   -- otherwise
 
-;; [Altair] get_attestation_participation_flag_indices(BeaconState, AttestationData, uint64) -> Sequence[int]
-dec $get_attestation_participation_flag_indices(beaconState, attestationData, uint64) : nat*
+;; [Custom | branch : get_attestation_participation_flag_indices] justified_checkpoint
+dec $justified_checkpoint_for(beaconState, attestationData) : checkpoint
+def $justified_checkpoint_for(state, attestationData) = state.CURRENT_JUSTIFIED_CHECKPOINT
+  -- if attestationData.TARGET.EPOCH = $get_current_epoch(state)
+def $justified_checkpoint_for(state, attestationData) = state.PREVIOUS_JUSTIFIED_CHECKPOINT
+  -- otherwise
 
-;; TODO(gloas): functions `get_attestation_participation_flag_indices` changed upstream in specs/gloas/beacon-chain.md
-;; body commented out below: uncomment it and apply the diff above
-;; --- old
-;; +++ new
-;; @@ -1,4 +1,8 @@
-;;  def get_attestation_participation_flag_indices(
-;; -    state: BeaconState, data: AttestationData, inclusion_delay: Uint64
-;; +    state: BeaconState,
-;; +    data: AttestationData,
-;; +    inclusion_delay: Uint64,
-;; +    # [New in Gloas:EIP7732]
-;; +    parent_slot: Slot,
-;;  ) -> Sequence[int]:
-;;      """
-;; @@ -17,8 +21,18 @@
-;;      is_matching_target = is_matching_source and target_root_matches
-;;
-;; +    # [New in Gloas:EIP7732]
-;; +    if is_attestation_same_slot(state, data):
-;; +        assert data.index == 0
-;; +        payload_matches = True
-;; +    else:
-;; +        slot_index = parent_slot % SLOTS_PER_HISTORICAL_ROOT
-;; +        payload_index = state.execution_payload_availability[slot_index]
-;; +        payload_matches = Uint64(data.index) == Uint64(payload_index)
-;; +
-;;      # Matching head
-;;      head_root = get_block_root_at_slot(state, data.slot)
-;;      head_root_matches = data.beacon_block_root == head_root
-;; -    is_matching_head = is_matching_target and head_root_matches
-;; +    # [Modified in Gloas:EIP7732]
-;; +    is_matching_head = is_matching_target and head_root_matches and payload_matches
-;;
-;;      assert is_matching_source
-;; @@ -27,5 +41,4 @@
-;;      if is_matching_source and inclusion_delay <= integer_squareroot(SLOTS_PER_EPOCH):
-;;          participation_flag_indices.append(TIMELY_SOURCE_FLAG_INDEX)
-;; -    # [Modified in Deneb:EIP7045]
-;;      if is_matching_target:
-;;          participation_flag_indices.append(TIMELY_TARGET_FLAG_INDEX)
+;; [Custom] Uint64(bool)
+dec $bool_to_uint64(bool) : uint64
+def $bool_to_uint64(true) = 1
+def $bool_to_uint64(false) = 0
 
-;; def $get_attestation_participation_flag_indices(state, attestationData, uint64_inclusion_delay) = flag_indices*
-;;   ;; branch: if current, use current checkpoint
-;;   -- if attestationData.TARGET.EPOCH = $get_current_epoch(state)
-;;   -- if checkpoint_justified = state.CURRENT_JUSTIFIED_CHECKPOINT
-;;   ;; assert is_matching_source
-;;   -- if $(attestationData.SOURCE.EPOCH = checkpoint_justified.EPOCH)
-;;   -- if $(attestationData.SOURCE.ROOT = checkpoint_justified.ROOT)
-;;   ;; matching target
-;;   -- if $get_block_root(state, attestationData.TARGET.EPOCH) = root_target
-;;   -- if $(attestationData.TARGET.ROOT = root_target) = bool_target_root_matches
-;;   ;; matching head
-;;   -- if $get_block_root_at_slot(state, attestationData.SLOT) = root_head
-;;   -- if $(attestationData.BEACON_BLOCK_ROOT = root_head) = bool_head_root_matches
-;;   ;; build participation flags
-;;   -- if $source_flag_list(uint64_inclusion_delay) = flag_source*
-;;   ;; modified in [Deneb], removed inclusion_delay condition
-;;   -- if $target_flag_list(bool_target_root_matches) = flag_target*
-;;   -- if $head_flag_list(bool_target_root_matches /\ bool_head_root_matches, uint64_inclusion_delay) = flag_head*
-;;   ;; construct the flag list
-;;   -- if flag_indices* = flag_source* ++ flag_target* ++ flag_head*
-;;
-;; def $get_attestation_participation_flag_indices(state, attestationData, uint64_inclusion_delay) = flag_indices*
-;;   ;; branch: if not current, use previous checkpoint
-;;   -- if attestationData.TARGET.EPOCH =/= $get_current_epoch(state)
-;;   -- if checkpoint_justified = state.PREVIOUS_JUSTIFIED_CHECKPOINT
-;;   ;; assert is_matching_source
-;;   -- if $(attestationData.SOURCE.EPOCH = checkpoint_justified.EPOCH)
-;;   -- if $(attestationData.SOURCE.ROOT = checkpoint_justified.ROOT)
-;;   ;; matching target
-;;   -- if $get_block_root(state, attestationData.TARGET.EPOCH) = root_target
-;;   -- if $(attestationData.TARGET.ROOT = root_target) = bool_target_root_matches
-;;   ;; matching head
-;;   -- if $get_block_root_at_slot(state, attestationData.SLOT) = root_head
-;;   -- if $(attestationData.BEACON_BLOCK_ROOT = root_head) = bool_head_root_matches
-;;   ;; build participation flags
-;;   -- if $source_flag_list(uint64_inclusion_delay) = flag_source*
-;;   ;; modified in [Deneb], removed inclusion_delay condition
-;;   -- if $target_flag_list(bool_target_root_matches) = flag_target*
-;;   -- if $head_flag_list(bool_target_root_matches /\ bool_head_root_matches, uint64_inclusion_delay) = flag_head*
-;;   ;; construct the flag list
-;;   -- if flag_indices* = flag_source* ++ flag_target* ++ flag_head*
-
-;; [Phase0 -> Electra | loop : get_next_sync_committee_indices]
-dec $next_sync_committee_indices_loop(
-  beaconState, validatorIndex*, bytes32, uint64, uint64, validatorIndex*
-) : validatorIndex*
-
-;; while loop termination: |sync_committee_indices| >= SYNC_COMMITTEE_SIZE
-def $next_sync_committee_indices_loop(_, _, _, _, _, vid_sync_committee*)
-  = vid_sync_committee*
-  -- if $(|vid_sync_committee*| >= $SYNC_COMMITTEE_SIZE)
-
-;; append if condition satisfied
-def $next_sync_committee_indices_loop(
-  state, vid_active*, seed, count_active, vid, vid_sync_committee*
-) = $next_sync_committee_indices_loop(
-      state,
-      vid_active*,
-      seed,
-      count_active,
-      $(vid + 1),
-      vid_sync_committee* ++ [vid_candidate] ;;append if condition holds
-    )
-  ;; branch-complete: loop condition
-  -- if $( |vid_sync_committee*| < $SYNC_COMMITTEE_SIZE )
-  -- if vid_active*[$compute_shuffled_index($(vid \ count_active), count_active, seed)] = vid_candidate
-  -- if $compute_random_value(seed, vid) = uint64_random_value
-  -- if state.VALIDATORS[vid_candidate].EFFECTIVE_BALANCE = balance_effective
-  ;; inserted overflow check
-  -- if $( balance_effective <= $UINT64_MAX / $MAX_RANDOM_VALUE )
-  -- if $( balance_effective * $MAX_RANDOM_VALUE >= $MAX_EFFECTIVE_BALANCE_ELECTRA * uint64_random_value )
-  ;; procceed to next iteration
-
-;; continue if condition not satisfied
-def $next_sync_committee_indices_loop(
-  state, vid_active*, seed, count_active, vid, vid_sync_committee*
-) = $next_sync_committee_indices_loop(
-      state,
-      vid_active*,
-      seed,
-      count_active,
-      $(vid + 1),
-      vid_sync_committee*
-    )
-  ;; branch-complete: loop condition
-  -- if $( |vid_sync_committee*| < $SYNC_COMMITTEE_SIZE )
-  -- if vid_active*[$compute_shuffled_index($(vid \ count_active), count_active, seed)] = vid_candidate
-  -- if $compute_random_value(seed, vid) = uint64_random_value
-  -- if state.VALIDATORS[vid_candidate].EFFECTIVE_BALANCE = balance_effective
-  ;; inserted overflow check
-  -- if $( balance_effective <= $UINT64_MAX / $MAX_RANDOM_VALUE )
-  -- if $( balance_effective * $MAX_RANDOM_VALUE < $MAX_EFFECTIVE_BALANCE_ELECTRA * uint64_random_value )
-  ;; otherwise, proceed to next iteration without appending
+;; [Custom | branch : get_attestation_participation_flag_indices] payload_matches [New in Gloas:EIP7732]
+dec $payload_matches(beaconState, attestationData, slot) : bool
+def $payload_matches(state, attestationData, slot_parent) = true
+  -- if $is_attestation_same_slot(state, attestationData) = true
+  ;; assert
+  -- if attestationData.INDEX = 0
+def $payload_matches(state, attestationData, slot_parent) = $(attestationData.INDEX = $bool_to_uint64(bool_payload))
+  -- if $is_attestation_same_slot(state, attestationData) = false
+  -- if $(slot_parent \ $SLOTS_PER_HISTORICAL_ROOT) = i
+  ;; inserted guard
+  -- if $(i < |state.EXECUTION_PAYLOAD_AVAILABILITY|)
+  -- if state.EXECUTION_PAYLOAD_AVAILABILITY[i] = bool_payload
 
 
-;; [Phase0 -> Electra] get_next_sync_committee_indices(BeaconState) -> Sequence[ValidatorIndex]
+;; [Altair -> Gloas:EIP7732] get_attestation_participation_flag_indices(BeaconState, AttestationData, uint64, Slot) -> Sequence[int]
+dec $get_attestation_participation_flag_indices(beaconState, attestationData, uint64, slot) : nat*
+
+def $get_attestation_participation_flag_indices(state, attestationData, uint64_inclusion_delay, slot_parent) = flag_indices*
+  ;; branch: current or previous justified checkpoint
+  -- if $justified_checkpoint_for(state, attestationData) = checkpoint_justified
+  ;; assert is_matching_source
+  -- if attestationData.SOURCE = checkpoint_justified
+  ;; matching target
+  -- if $get_block_root(state, attestationData.TARGET.EPOCH) = root_target
+  -- if $(attestationData.TARGET.ROOT = root_target) = bool_target_root_matches
+  ;; [New in Gloas:EIP7732] payload availability
+  -- if $payload_matches(state, attestationData, slot_parent) = bool_payload_matches
+  ;; matching head
+  -- if $get_block_root_at_slot(state, attestationData.SLOT) = root_head
+  -- if $(attestationData.BEACON_BLOCK_ROOT = root_head) = bool_head_root_matches
+  ;; build participation flags
+  -- if $source_flag_list(uint64_inclusion_delay) = flag_source*
+  -- if $target_flag_list(bool_target_root_matches) = flag_target*
+  -- if $head_flag_list(bool_target_root_matches /\ bool_head_root_matches /\ bool_payload_matches, uint64_inclusion_delay) = flag_head*
+  ;; construct the flag list
+  -- if flag_indices* = flag_source* ++ flag_target* ++ flag_head*
+
+;; [Phase0 -> Gloas] get_next_sync_committee_indices(BeaconState) -> Sequence[ValidatorIndex]
 dec $get_next_sync_committee_indices(beaconState) : validatorIndex*
 
-;; TODO(gloas): functions `get_next_sync_committee_indices` changed upstream in specs/gloas/beacon-chain.md
-;; body commented out below: uncomment it and apply the diff above
-;; --- old
-;; +++ new
-;; @@ -4,25 +4,7 @@
-;;      """
-;;      epoch = get_current_epoch(state) + 1
-;; -
-;; -    # [Modified in Electra]
-;; -    MAX_RANDOM_VALUE = 2**16 - 1
-;; -    active_validator_indices = get_active_validator_indices(state, epoch)
-;; -    active_validator_count = Uint64(len(active_validator_indices))
-;;      seed = get_seed(state, epoch, DOMAIN_SYNC_COMMITTEE)
-;; -    i = Uint64(0)
-;; -    sync_committee_indices: list[ValidatorIndex] = []
-;; -    while len(sync_committee_indices) < SYNC_COMMITTEE_SIZE:
-;; -        shuffled_index = compute_shuffled_index(
-;; -            Uint64(i % active_validator_count), active_validator_count, seed
-;; -        )
-;; -        candidate_index = active_validator_indices[shuffled_index]
-;; -        # [Modified in Electra]
-;; -        random_bytes = sha256(seed + uint_to_bytes(i // 16))
-;; -        offset = i % 16 * 2
-;; -        random_value = bytes_to_uint64(random_bytes[offset : offset + 2])
-;; -        effective_balance = state.validators[candidate_index].effective_balance
-;; -        # [Modified in Electra:EIP7251]
-;; -        if effective_balance * MAX_RANDOM_VALUE >= MAX_EFFECTIVE_BALANCE_ELECTRA * random_value:
-;; -            sync_committee_indices.append(candidate_index)
-;; -        i += 1
-;; -    return sync_committee_indices
-;; +    indices = get_active_validator_indices(state, epoch)
-;; +    return compute_balance_weighted_selection(
-;; +        state, indices, seed, size=SYNC_COMMITTEE_SIZE, shuffle_indices=True
-;; +    )
+;; [Modified in Gloas] compute_balance_weighted_selection with shuffled candidates
+def $get_next_sync_committee_indices(state)
+  = $compute_balance_weighted_selection(state, vid_active*, seed, $SYNC_COMMITTEE_SIZE, true)
+  -- if epoch_next = $( $get_current_epoch(state) + 1 )
+  -- if $get_seed(state, epoch_next, $DOMAIN_SYNC_COMMITTEE) = seed
+  -- if $get_active_validator_indices(state, epoch_next) = vid_active*
 
-;; def $get_next_sync_committee_indices(state) = vid_out*
-;;   -- if epoch_next = $( $get_current_epoch(state) + 1 )
-;;   -- if $get_active_validator_indices(state, epoch_next) = vid_active*
-;;   -- if |vid_active*| = count_active
-;;   ;; inserted guard
-;;   -- if $(count_active > 0)
-;;   -- if $get_seed(state, epoch_next, $DOMAIN_SYNC_COMMITTEE) = seed
-;;   -- if $next_sync_committee_indices_loop(
-;;          state,
-;;          vid_active*,
-;;          seed,
-;;          count_active,
-;;          0,
-;;          eps ;; empty list
-;;        ) = vid_out*
-
-;; [Modified in Electra] 16-bit random value, MAX_EFFECTIVE_BALANCE_ELECTRA (in the loop)
 ;; [Phase0] get_next_sync_committee(BeaconState) -> SyncCommittee
 dec $get_next_sync_committee(beaconState) : syncCommittee
 

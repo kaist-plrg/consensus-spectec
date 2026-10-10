@@ -282,48 +282,23 @@ def $get_total_active_balance(state) = gwei_total
   -- if $to_set_<validatorIndex>(vid_active*) = vid_set*
   -- if $get_total_balance(state, vid_set*) = gwei_total
 
-;; [Electra] get_balance_churn_limit(BeaconState) -> Gwei
-dec $get_balance_churn_limit(beaconState) : gwei
-;; TODO(gloas): functions `get_balance_churn_limit` removed upstream in specs/electra/beacon-chain.md
-;; removed upstream: delete this declaration once nothing references it
-;; def get_balance_churn_limit(state: BeaconState) -> Gwei:
-;;     """
-;;     Return the churn limit for the current epoch.
-;;     """
-;;     churn = max(
-;;         MIN_PER_EPOCH_CHURN_LIMIT_ELECTRA, get_total_active_balance(state) // CHURN_LIMIT_QUOTIENT
-;;     )
-;;     return churn - churn % EFFECTIVE_BALANCE_INCREMENT
+;; [Gloas:EIP8061] get_activation_churn_limit(BeaconState) -> Gwei
+;;  replaces get_balance_churn_limit and get_activation_exit_churn_limit
+dec $get_activation_churn_limit(beaconState) : gwei
+def $get_activation_churn_limit(state) = $min_uint64($MAX_PER_EPOCH_ACTIVATION_CHURN_LIMIT_GLOAS, $(gwei_churn - gwei_churn \ $EFFECTIVE_BALANCE_INCREMENT))
+  -- if $max_uint64($MIN_PER_EPOCH_CHURN_LIMIT_ELECTRA,
+                    $($get_total_active_balance(state) / $CHURN_LIMIT_QUOTIENT_GLOAS)) = gwei_churn
 
-;; [Electra] get_activation_exit_churn_limit(BeaconState) -> Gwei
-dec $get_activation_exit_churn_limit(beaconState) : gwei
-;; TODO(gloas): functions `get_activation_exit_churn_limit` removed upstream in specs/electra/beacon-chain.md
-;; removed upstream: delete this declaration once nothing references it
-;; def get_activation_exit_churn_limit(state: BeaconState) -> Gwei:
-;;     """
-;;     Return the churn limit for the current epoch dedicated to activations and exits.
-;;     """
-;;     return min(MAX_PER_EPOCH_ACTIVATION_EXIT_CHURN_LIMIT, get_balance_churn_limit(state))
+;; [Gloas:EIP8061] get_exit_churn_limit(BeaconState) -> Gwei
+dec $get_exit_churn_limit(beaconState) : gwei
+def $get_exit_churn_limit(state) = $(gwei_churn - gwei_churn \ $EFFECTIVE_BALANCE_INCREMENT)
+  -- if $max_uint64($MIN_PER_EPOCH_CHURN_LIMIT_ELECTRA,
+                    $($get_total_active_balance(state) / $CHURN_LIMIT_QUOTIENT_GLOAS)) = gwei_churn
 
-;; [Electra] get_consolidation_churn_limit(BeaconState) -> Gwei
+;; [Modified in Gloas:EIP8061] get_consolidation_churn_limit(BeaconState) -> Gwei
 dec $get_consolidation_churn_limit(beaconState) : gwei
-;; TODO(gloas): functions `get_consolidation_churn_limit` changed upstream in specs/gloas/beacon-chain.md
-;; body commented out below: uncomment it and apply the diff above
-;; --- old
-;; +++ new
-;; @@ -1,2 +1,8 @@
-;;  def get_consolidation_churn_limit(state: BeaconState) -> Gwei:
-;; -    return get_balance_churn_limit(state) - get_activation_exit_churn_limit(state)
-;; +    """
-;; +    Per-epoch churn limit reserved for consolidations (EIP-7521).
-;; +    Derived from total active balance and rounded to
-;; +    ``EFFECTIVE_BALANCE_INCREMENT``.
-;; +    """
-;; +    churn = get_total_active_balance(state) // CONSOLIDATION_CHURN_LIMIT_QUOTIENT
-;; +    return churn - churn % EFFECTIVE_BALANCE_INCREMENT
-
-;; def $get_consolidation_churn_limit(state)
-;;   = $($get_balance_churn_limit(state) - $get_activation_exit_churn_limit(state))
+def $get_consolidation_churn_limit(state) = $(gwei_churn - gwei_churn \ $EFFECTIVE_BALANCE_INCREMENT)
+  -- if $($get_total_active_balance(state) / $CONSOLIDATION_CHURN_LIMIT_QUOTIENT) = gwei_churn
 
 ;; [Custom | filter helper : get_pending_balance_to_withdraw]
 dec $is_pending_withdrawal_of(pendingPartialWithdrawal, validatorIndex) : bool

@@ -46,55 +46,41 @@ rule DecreaseBalance/remains:
 ;; [Custom | branch : compute_exit_epoch_and_update_churn]
 ;;  a new epoch for exits starts with a full per-epoch churn
 dec $exit_balance_to_consume(beaconState, epoch) : gwei
-def $exit_balance_to_consume(state, epoch_earliest) = $get_activation_exit_churn_limit(state)
+def $exit_balance_to_consume(state, epoch_earliest) = $get_exit_churn_limit(state)
   -- if $(state.EARLIEST_EXIT_EPOCH < epoch_earliest)
 def $exit_balance_to_consume(state, epoch_earliest) = state.EXIT_BALANCE_TO_CONSUME
   -- otherwise
 
-;; [Electra] compute_exit_epoch_and_update_churn(state, exit_balance) -> Epoch
-;;  mutates: EXIT_BALANCE_TO_CONSUME, EARLIEST_EXIT_EPOCH
-;;  the returned epoch is the new state.EARLIEST_EXIT_EPOCH
+;; [Electra -> Gloas:EIP8061] compute_exit_epoch_and_update_churn(state, exit_balance) -> Epoch
+;;  Gloas uses the uncapped exit churn (get_exit_churn_limit)
 relation ComputeExitEpochAndUpdateChurn:
   beaconState EXIT_CHURN gwei ~> beaconState
   hint(input %0 %1)
 
-;; TODO(gloas): functions `compute_exit_epoch_and_update_churn` changed upstream in specs/gloas/beacon-chain.md
-;; body commented out below: uncomment it and apply the diff above
-;; --- old
-;; +++ new
-;; @@ -3,5 +3,6 @@
-;;          state.earliest_exit_epoch, compute_activation_exit_epoch(get_current_epoch(state))
-;;      )
-;; -    per_epoch_churn = get_activation_exit_churn_limit(state)
-;; +    # [Modified in Gloas:EIP8061]
-;; +    per_epoch_churn = get_exit_churn_limit(state)
-;;      # New epoch for exits.
-;;      if state.earliest_exit_epoch < earliest_exit_epoch:
-
-;; rule ComputeExitEpochAndUpdateChurn/fits:
-;;   state EXIT_CHURN gwei_exit
-;;   ~> state[.EXIT_BALANCE_TO_CONSUME = $(gwei_to_consume - gwei_exit)]
-;;           [.EARLIEST_EXIT_EPOCH = epoch_earliest]
-;;   -- if $max_uint64(state.EARLIEST_EXIT_EPOCH,
-;;                     $compute_activation_exit_epoch($get_current_epoch(state))) = epoch_earliest
-;;   -- if $exit_balance_to_consume(state, epoch_earliest) = gwei_to_consume
-;;   -- if $(gwei_exit <= gwei_to_consume)
-;;
-;; rule ComputeExitEpochAndUpdateChurn/extra_epochs:
-;;   state EXIT_CHURN gwei_exit
-;;   ~> state[.EXIT_BALANCE_TO_CONSUME = $(gwei_to_consume + uint64_extra * gwei_churn - gwei_exit)]
-;;           [.EARLIEST_EXIT_EPOCH = $(epoch_earliest + uint64_extra)]
-;;   -- if $max_uint64(state.EARLIEST_EXIT_EPOCH,
-;;                     $compute_activation_exit_epoch($get_current_epoch(state))) = epoch_earliest
-;;   -- if $exit_balance_to_consume(state, epoch_earliest) = gwei_to_consume
-;;   -- if $(gwei_exit > gwei_to_consume)
-;;   -- if $get_activation_exit_churn_limit(state) = gwei_churn
-;;   ;; inserted guard (python raises ZeroDivisionError)
-;;   -- if $(gwei_churn > 0)
-;;   -- if $((gwei_exit - gwei_to_consume - 1) / gwei_churn + 1) = uint64_extra
-
 ;; the exit fits in the earliest exit epoch
+rule ComputeExitEpochAndUpdateChurn/fits:
+  state EXIT_CHURN gwei_exit
+  ~> state[.EXIT_BALANCE_TO_CONSUME = $(gwei_to_consume - gwei_exit)]
+          [.EARLIEST_EXIT_EPOCH = epoch_earliest]
+  -- if $max_uint64(state.EARLIEST_EXIT_EPOCH,
+                    $compute_activation_exit_epoch($get_current_epoch(state))) = epoch_earliest
+  -- if $exit_balance_to_consume(state, epoch_earliest) = gwei_to_consume
+  -- if $(gwei_exit <= gwei_to_consume)
+
 ;; the exit needs additional epochs
+rule ComputeExitEpochAndUpdateChurn/extra_epochs:
+  state EXIT_CHURN gwei_exit
+  ~> state[.EXIT_BALANCE_TO_CONSUME = $(gwei_to_consume + uint64_extra * gwei_churn - gwei_exit)]
+          [.EARLIEST_EXIT_EPOCH = $(epoch_earliest + uint64_extra)]
+  -- if $max_uint64(state.EARLIEST_EXIT_EPOCH,
+                    $compute_activation_exit_epoch($get_current_epoch(state))) = epoch_earliest
+  -- if $exit_balance_to_consume(state, epoch_earliest) = gwei_to_consume
+  -- if $(gwei_exit > gwei_to_consume)
+  -- if $get_exit_churn_limit(state) = gwei_churn
+  ;; inserted guard (python raises ZeroDivisionError)
+  -- if $(gwei_churn > 0)
+  -- if $((gwei_exit - gwei_to_consume - 1) / gwei_churn + 1) = uint64_extra
+
 ;; [Custom | branch : compute_consolidation_epoch_and_update_churn]
 ;;  a new epoch for consolidations starts with a full per-epoch churn
 dec $consolidation_balance_to_consume(beaconState, epoch) : gwei

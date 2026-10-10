@@ -1,0 +1,81 @@
+;; =========================
+;; [Gloas] payload timeliness committee helpers
+;; =========================
+
+;; [Custom | loop : compute_ptc] the committees of a slot, concatenated in order
+dec $slot_committees(beaconState, slot, committeeIndex*) : validatorIndex*
+def $slot_committees(state, slot, eps) = eps
+def $slot_committees(state, slot, committeeIndex_h :: committeeIndex_t*)
+  = $get_beacon_committee(state, slot, committeeIndex_h) ++ $slot_committees(state, slot, committeeIndex_t*)
+
+;; [Gloas] compute_ptc(BeaconState, Slot) -> PayloadTimelinessCommittee
+dec $compute_ptc(beaconState, slot) : validatorIndex*
+def $compute_ptc(state, slot) = $compute_balance_weighted_selection(state, vid*, seed, $PTC_SIZE, false)
+  -- if $compute_epoch_at_slot(slot) = epoch
+  -- if $hash_<bytes>($concat_bytes($bytes32_to_bytes($get_seed(state, epoch, $DOMAIN_PTC_ATTESTER)),
+                                    $uint64_to_bytes_le(slot))) = seed
+  -- if $range($get_committee_count_per_slot(state, epoch)) = n*
+  -- if $slot_committees(state, slot, n*) = vid*
+
+;; [Gloas] get_ptc(BeaconState, Slot) -> PayloadTimelinessCommittee
+dec $get_ptc(beaconState, slot) : validatorIndex*
+;; previous epoch
+def $get_ptc(state, slot) = state.PTC_WINDOW[uint64_w]
+  -- if $(slot \ $SLOTS_PER_EPOCH) = uint64_w
+  ;; inserted guard
+  -- if $(uint64_w < |state.PTC_WINDOW|)
+  -- if $compute_epoch_at_slot(slot) = epoch
+  -- if $(epoch >= $GLOAS_FORK_EPOCH)
+  -- if $get_current_epoch(state) = epoch_state
+  -- if $(epoch < epoch_state)
+  ;; assert
+  -- if $(epoch + 1 = epoch_state)
+;; current or lookahead epoch
+def $get_ptc(state, slot) = state.PTC_WINDOW[uint64_w]
+  -- if $compute_epoch_at_slot(slot) = epoch
+  -- if $(epoch >= $GLOAS_FORK_EPOCH)
+  -- if $get_current_epoch(state) = epoch_state
+  -- if $(epoch >= epoch_state)
+  ;; assert
+  -- if $(epoch <= epoch_state + $MIN_SEED_LOOKAHEAD)
+  -- if $((epoch - epoch_state + 1) * $SLOTS_PER_EPOCH) = uint64_offset
+  -- if $(slot \ $SLOTS_PER_EPOCH) = uint64_i
+  -- if $(uint64_offset + uint64_i) = uint64_w
+  ;; inserted guard
+  -- if $(uint64_w < |state.PTC_WINDOW|)
+
+;; [Gloas] get_indexed_payload_attestation(BeaconState, PayloadAttestation) -> IndexedPayloadAttestation
+dec $get_indexed_payload_attestation(beaconState, payloadAttestation) : indexedPayloadAttestation
+def $get_indexed_payload_attestation(state, payloadAttestation)
+  = { ATTESTING_INDICES $sort_<validatorIndex>(vid_attesting*),
+      DATA payloadAttestation.DATA,
+      SIGNATURE payloadAttestation.SIGNATURE }
+  -- if $get_ptc(state, payloadAttestation.DATA.SLOT) = vid_ptc*
+  -- if $enumerate_<validatorIndex>(vid_ptc*) = (i, vid)*
+  -- if $filter_list_2_<(nat, validatorIndex), boolean*>(
+         (i, vid)*, payloadAttestation.AGGREGATION_BITS, def $bit_is_one_at_index
+       ) = (_, vid_attesting)*
+
+
+;; [Gloas] is_valid_indexed_payload_attestation(BeaconState, IndexedPayloadAttestation) -> bool
+dec $is_valid_indexed_payload_attestation(beaconState, indexedPayloadAttestation) : bool
+;; false: empty list
+def $is_valid_indexed_payload_attestation(state, indexedPayloadAttestation) = false
+  -- if |indexedPayloadAttestation.ATTESTING_INDICES| = 0
+;; false: not sorted (duplicates are allowed)
+def $is_valid_indexed_payload_attestation(state, indexedPayloadAttestation) = false
+  -- if $sort_<validatorIndex>(indexedPayloadAttestation.ATTESTING_INDICES)
+     =/= indexedPayloadAttestation.ATTESTING_INDICES
+;; otherwise: verify the aggregate signature
+def $is_valid_indexed_payload_attestation(state, indexedPayloadAttestation)
+  = $bls_fast_aggregate_verify(blsPubkey*, root_signing, indexedPayloadAttestation.SIGNATURE)
+  -- if vid* = indexedPayloadAttestation.ATTESTING_INDICES
+  -- if $(|vid*| > 0)
+  -- if $sort_<validatorIndex>(vid*) = vid*
+  ;; inserted guard
+  -- if ($(vid < |state.VALIDATORS|))*
+  -- if (state.VALIDATORS[vid].PUBKEY = blsPubkey)*
+  -- if $get_domain(state, $DOMAIN_PTC_ATTESTER,
+                    $compute_epoch_at_slot(indexedPayloadAttestation.DATA.SLOT)) = domain
+  -- if $compute_signing_root_payloadAttestationData(indexedPayloadAttestation.DATA, domain) = root_signing
+

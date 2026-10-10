@@ -522,12 +522,9 @@ syntax pendingDepositsAcc =
     FINALIZED_SLOT slot,
     NEXT_EPOCH epoch }
 
-;; [Custom | branch : process_pending_deposits] the three `break`s at the top of the loop body
+;; [Custom | branch : process_pending_deposits] the `break`s at the top of the loop body
+;; [Modified in Fulu] no break for Eth1 bridge deposits
 dec $pending_deposit_stops(beaconState, pendingDepositsAcc, pendingDeposit) : bool
-;; a deposit request while Eth1 bridge deposits are pending
-def $pending_deposit_stops(state, pendingDepositsAcc, pendingDeposit) = true
-  -- if $(pendingDeposit.SLOT > $GENESIS_SLOT)
-  -- if $(state.ETH1_DEPOSIT_INDEX < state.DEPOSIT_REQUESTS_START_INDEX)
 ;; not finalized
 def $pending_deposit_stops(state, pendingDepositsAcc, pendingDeposit) = true
   -- if $(pendingDeposit.SLOT > pendingDepositsAcc.FINALIZED_SLOT)
@@ -560,7 +557,8 @@ def $pending_deposits_acc0(state)
       PROCESSED 0,
       POSTPONE eps,
       CHURN_REACHED false,
-      AVAILABLE $(state.DEPOSIT_BALANCE_TO_CONSUME + $get_activation_exit_churn_limit(state)),
+      ;; [Modified in Gloas:EIP8061] deposits consume the activation-only churn
+      AVAILABLE $(state.DEPOSIT_BALANCE_TO_CONSUME + $get_activation_churn_limit(state)),
       FINALIZED_SLOT $compute_start_slot_at_epoch(state.FINALIZED_CHECKPOINT.EPOCH),
       NEXT_EPOCH $($get_current_epoch(state) + 1) }
 
@@ -568,94 +566,57 @@ relation ProcessPendingDeposits_loop:
   beaconState WITH pendingDepositsAcc OVER `[ pendingDeposit* `] ~> beaconState WITH pendingDepositsAcc
   hint(input %0 %1 %2)
 
-;; TODO(gloas): functions `process_pending_deposits` changed upstream in specs/gloas/beacon-chain.md
-;; body commented out below: uncomment it and apply the diff above
-;; --- old
-;; +++ new
-;; @@ -1,7 +1,7 @@
-;;  def process_pending_deposits(state: BeaconState) -> None:
-;;      next_epoch = get_current_epoch(state) + 1
-;; -    available_for_processing = state.deposit_balance_to_consume + get_activation_exit_churn_limit(
-;; -        state
-;; -    )
-;; +    # [Modified in Gloas:EIP8061]
-;; +    # Deposits still consume the activation-only churn budget in Gloas.
-;; +    available_for_processing = state.deposit_balance_to_consume + get_activation_churn_limit(state)
-;;      processed_amount = 0
-;;      next_deposit_index = 0
-
-
-;; TODO(fulu): functions `process_pending_deposits` changed upstream in specs/fulu/beacon-chain.md
-;; body commented out below: uncomment it and apply the diff above
-;; --- old
-;; +++ new
-;; @@ -11,14 +11,4 @@
-;;
-;;      for deposit in state.pending_deposits:
-;; -        # Do not process deposit requests if Eth1 bridge deposits are not yet applied.
-;; -        if (
-;; -            # Is deposit request
-;; -            deposit.slot > GENESIS_SLOT
-;; -            and
-;; -            # There are pending Eth1 bridge deposits
-;; -            state.eth1_deposit_index < state.deposit_requests_start_index
-;; -        ):
-;; -            break
-;; -
-;;          # Check if deposit has been finalized, otherwise, stop processing.
-;;          if deposit.slot > finalized_slot:
-
-;; rule ProcessPendingDeposits_loop/nil:
-;;   state WITH pendingDepositsAcc OVER `[ eps `] ~> state WITH pendingDepositsAcc
-;;
-;; rule ProcessPendingDeposits_loop/stop:
-;;   state WITH pendingDepositsAcc OVER `[ pendingDeposit_h :: pendingDeposit_t* `] ~> state WITH pendingDepositsAcc
-;;   -- if $pending_deposit_stops(state, pendingDepositsAcc, pendingDeposit_h) = true
-;;
-;; rule ProcessPendingDeposits_loop/withdrawn:
-;;   state WITH pendingDepositsAcc OVER `[ pendingDeposit_h :: pendingDeposit_t* `] ~> state_out WITH pendingDepositsAcc_out
-;;   -- if $pending_deposit_stops(state, pendingDepositsAcc, pendingDeposit_h) = false
-;;   -- if $pending_deposit_status(state, pendingDeposit_h, pendingDepositsAcc.NEXT_EPOCH) = 2
-;;   -- ApplyPendingDeposit: state APPLY_PENDING pendingDeposit_h ~> state_1
-;;   -- ProcessPendingDeposits_loop:
-;;        state_1 WITH pendingDepositsAcc[.NEXT_INDEX = $(pendingDepositsAcc.NEXT_INDEX + 1)] OVER `[ pendingDeposit_t* `]
-;;        ~> state_out WITH pendingDepositsAcc_out
-;;
-;; rule ProcessPendingDeposits_loop/exited:
-;;   state WITH pendingDepositsAcc OVER `[ pendingDeposit_h :: pendingDeposit_t* `] ~> state_out WITH pendingDepositsAcc_out
-;;   -- if $pending_deposit_stops(state, pendingDepositsAcc, pendingDeposit_h) = false
-;;   -- if $pending_deposit_status(state, pendingDeposit_h, pendingDepositsAcc.NEXT_EPOCH) = 1
-;;   -- ProcessPendingDeposits_loop:
-;;        state WITH pendingDepositsAcc[.NEXT_INDEX = $(pendingDepositsAcc.NEXT_INDEX + 1)]
-;;                                     [.POSTPONE = pendingDepositsAcc.POSTPONE ++ [pendingDeposit_h]]
-;;              OVER `[ pendingDeposit_t* `]
-;;        ~> state_out WITH pendingDepositsAcc_out
-;;
-;; rule ProcessPendingDeposits_loop/churn_reached:
-;;   state WITH pendingDepositsAcc OVER `[ pendingDeposit_h :: pendingDeposit_t* `]
-;;   ~> state WITH pendingDepositsAcc[.CHURN_REACHED = true]
-;;   -- if $pending_deposit_stops(state, pendingDepositsAcc, pendingDeposit_h) = false
-;;   -- if $pending_deposit_status(state, pendingDeposit_h, pendingDepositsAcc.NEXT_EPOCH) = 0
-;;   -- if $(pendingDepositsAcc.PROCESSED + pendingDeposit_h.AMOUNT > pendingDepositsAcc.AVAILABLE)
-;;
-;; rule ProcessPendingDeposits_loop/apply:
-;;   state WITH pendingDepositsAcc OVER `[ pendingDeposit_h :: pendingDeposit_t* `] ~> state_out WITH pendingDepositsAcc_out
-;;   -- if $pending_deposit_stops(state, pendingDepositsAcc, pendingDeposit_h) = false
-;;   -- if $pending_deposit_status(state, pendingDeposit_h, pendingDepositsAcc.NEXT_EPOCH) = 0
-;;   -- if $(pendingDepositsAcc.PROCESSED + pendingDeposit_h.AMOUNT <= pendingDepositsAcc.AVAILABLE)
-;;   -- ApplyPendingDeposit: state APPLY_PENDING pendingDeposit_h ~> state_1
-;;   -- ProcessPendingDeposits_loop:
-;;        state_1 WITH pendingDepositsAcc[.NEXT_INDEX = $(pendingDepositsAcc.NEXT_INDEX + 1)]
-;;                                       [.PROCESSED = $(pendingDepositsAcc.PROCESSED + pendingDeposit_h.AMOUNT)]
-;;                OVER `[ pendingDeposit_t* `]
-;;        ~> state_out WITH pendingDepositsAcc_out
-
 ;; loop exhausted
+rule ProcessPendingDeposits_loop/nil:
+  state WITH pendingDepositsAcc OVER `[ eps `] ~> state WITH pendingDepositsAcc
+
 ;; break before reading the validator
+rule ProcessPendingDeposits_loop/stop:
+  state WITH pendingDepositsAcc OVER `[ pendingDeposit_h :: pendingDeposit_t* `] ~> state WITH pendingDepositsAcc
+  -- if $pending_deposit_stops(state, pendingDepositsAcc, pendingDeposit_h) = true
+
 ;; withdrawn: apply without consuming churn
+rule ProcessPendingDeposits_loop/withdrawn:
+  state WITH pendingDepositsAcc OVER `[ pendingDeposit_h :: pendingDeposit_t* `] ~> state_out WITH pendingDepositsAcc_out
+  -- if $pending_deposit_stops(state, pendingDepositsAcc, pendingDeposit_h) = false
+  -- if $pending_deposit_status(state, pendingDeposit_h, pendingDepositsAcc.NEXT_EPOCH) = 2
+  -- ApplyPendingDeposit: state APPLY_PENDING pendingDeposit_h ~> state_1
+  -- ProcessPendingDeposits_loop:
+       state_1 WITH pendingDepositsAcc[.NEXT_INDEX = $(pendingDepositsAcc.NEXT_INDEX + 1)] OVER `[ pendingDeposit_t* `]
+       ~> state_out WITH pendingDepositsAcc_out
+
 ;; exited: postpone
+rule ProcessPendingDeposits_loop/exited:
+  state WITH pendingDepositsAcc OVER `[ pendingDeposit_h :: pendingDeposit_t* `] ~> state_out WITH pendingDepositsAcc_out
+  -- if $pending_deposit_stops(state, pendingDepositsAcc, pendingDeposit_h) = false
+  -- if $pending_deposit_status(state, pendingDeposit_h, pendingDepositsAcc.NEXT_EPOCH) = 1
+  -- ProcessPendingDeposits_loop:
+       state WITH pendingDepositsAcc[.NEXT_INDEX = $(pendingDepositsAcc.NEXT_INDEX + 1)]
+                                    [.POSTPONE = pendingDepositsAcc.POSTPONE ++ [pendingDeposit_h]]
+             OVER `[ pendingDeposit_t* `]
+       ~> state_out WITH pendingDepositsAcc_out
+
 ;; churn limit reached: break with the flag set
+rule ProcessPendingDeposits_loop/churn_reached:
+  state WITH pendingDepositsAcc OVER `[ pendingDeposit_h :: pendingDeposit_t* `]
+  ~> state WITH pendingDepositsAcc[.CHURN_REACHED = true]
+  -- if $pending_deposit_stops(state, pendingDepositsAcc, pendingDeposit_h) = false
+  -- if $pending_deposit_status(state, pendingDeposit_h, pendingDepositsAcc.NEXT_EPOCH) = 0
+  -- if $(pendingDepositsAcc.PROCESSED + pendingDeposit_h.AMOUNT > pendingDepositsAcc.AVAILABLE)
+
 ;; within churn: consume and apply
+rule ProcessPendingDeposits_loop/apply:
+  state WITH pendingDepositsAcc OVER `[ pendingDeposit_h :: pendingDeposit_t* `] ~> state_out WITH pendingDepositsAcc_out
+  -- if $pending_deposit_stops(state, pendingDepositsAcc, pendingDeposit_h) = false
+  -- if $pending_deposit_status(state, pendingDeposit_h, pendingDepositsAcc.NEXT_EPOCH) = 0
+  -- if $(pendingDepositsAcc.PROCESSED + pendingDeposit_h.AMOUNT <= pendingDepositsAcc.AVAILABLE)
+  -- ApplyPendingDeposit: state APPLY_PENDING pendingDeposit_h ~> state_1
+  -- ProcessPendingDeposits_loop:
+       state_1 WITH pendingDepositsAcc[.NEXT_INDEX = $(pendingDepositsAcc.NEXT_INDEX + 1)]
+                                      [.PROCESSED = $(pendingDepositsAcc.PROCESSED + pendingDeposit_h.AMOUNT)]
+               OVER `[ pendingDeposit_t* `]
+       ~> state_out WITH pendingDepositsAcc_out
+
 ;; === ProcessPendingConsolidations ===
 
 ;; [Custom | loop : process_pending_consolidations]

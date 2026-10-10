@@ -1,0 +1,266 @@
+;; =========================
+;; [Gloas] helpers: builders and balance-weighted selection
+;; =========================
+
+;; --- Predicates ---
+
+;; [Gloas] is_builder_index(ValidatorIndex) -> bool
+dec $is_builder_index(validatorIndex) : bool
+def $is_builder_index(vid) = ($and_uint64(vid, $BUILDER_INDEX_FLAG) =/= 0)
+
+;; [Gloas] is_active_builder(BeaconState, BuilderIndex) -> bool
+dec $is_active_builder(beaconState, builderIndex) : bool
+def $is_active_builder(state, builderIndex) = true
+  ;; inserted guard (python raises IndexError)
+  -- if $(builderIndex < |state.BUILDERS|)
+  -- if state.BUILDERS[builderIndex] = builder
+  ;; placement in builder list is finalized
+  -- if $(builder.DEPOSIT_EPOCH < state.FINALIZED_CHECKPOINT.EPOCH)
+  ;; has not initiated exit
+  -- if builder.WITHDRAWABLE_EPOCH = $FAR_FUTURE_EPOCH
+def $is_active_builder(state, builderIndex) = false
+  -- otherwise
+
+;; [Gloas] is_builder_withdrawal_credential(Bytes32) -> bool
+dec $is_builder_withdrawal_credential(bytes32) : bool
+def $is_builder_withdrawal_credential(bytes32_wc) = ($get_first_byte(bytes32_wc) = $BUILDER_WITHDRAWAL_PREFIX)
+
+;; [Gloas] is_attestation_same_slot(BeaconState, AttestationData) -> bool
+dec $is_attestation_same_slot(beaconState, attestationData) : bool
+def $is_attestation_same_slot(state, attestationData) = true
+  -- if attestationData.SLOT = 0
+def $is_attestation_same_slot(state, attestationData)
+  = (attestationData.BEACON_BLOCK_ROOT = root_slot) /\ (attestationData.BEACON_BLOCK_ROOT =/= root_prev)
+  -- if $(attestationData.SLOT > 0)
+  -- if $get_block_root_at_slot(state, attestationData.SLOT) = root_slot
+  -- if $get_block_root_at_slot(state, $(attestationData.SLOT - 1)) = root_prev
+
+;; --- Misc ---
+
+;; [Gloas] convert_builder_index_to_validator_index(BuilderIndex) -> ValidatorIndex
+;;  builder_index | BUILDER_INDEX_FLAG
+dec $convert_builder_index_to_validator_index(builderIndex) : validatorIndex
+def $convert_builder_index_to_validator_index(builderIndex) = builderIndex
+  -- if $is_builder_index(builderIndex) = true
+def $convert_builder_index_to_validator_index(builderIndex) = $(builderIndex + $BUILDER_INDEX_FLAG)
+  -- otherwise
+
+;; [Gloas] convert_validator_index_to_builder_index(ValidatorIndex) -> BuilderIndex
+;;  validator_index & ~BUILDER_INDEX_FLAG
+dec $convert_validator_index_to_builder_index(validatorIndex) : builderIndex
+def $convert_validator_index_to_builder_index(vid) = $(vid - $BUILDER_INDEX_FLAG)
+  -- if $is_builder_index(vid) = true
+def $convert_validator_index_to_builder_index(vid) = vid
+  -- otherwise
+
+;; [Custom] saturating_sub(Gwei, Gwei) -> Gwei
+dec $saturating_sub(gwei, gwei) : gwei
+def $saturating_sub(gwei_a, gwei_b) = $(gwei_a - gwei_b)
+  -- if $(gwei_a >= gwei_b)
+def $saturating_sub(gwei_a, gwei_b) = 0
+  -- otherwise
+
+;; [Custom | filter : get_pending_balance_to_withdraw_for_builder] the amount of one withdrawal to a builder
+dec $builder_withdrawal_amount(builderPendingWithdrawal, builderIndex) : gwei
+def $builder_withdrawal_amount(builderPendingWithdrawal, builderIndex) = builderPendingWithdrawal.AMOUNT
+  -- if builderPendingWithdrawal.BUILDER_INDEX = builderIndex
+def $builder_withdrawal_amount(builderPendingWithdrawal, builderIndex) = 0
+  -- otherwise
+
+;; [Gloas] get_pending_balance_to_withdraw_for_builder(BeaconState, BuilderIndex) -> Gwei
+dec $get_pending_balance_to_withdraw_for_builder(beaconState, builderIndex) : gwei
+def $get_pending_balance_to_withdraw_for_builder(state, builderIndex) = $(gwei_withdrawals + gwei_payments)
+  -- if state.BUILDER_PENDING_WITHDRAWALS = builderPendingWithdrawal*
+  -- if ($builder_withdrawal_amount(builderPendingWithdrawal, builderIndex) = gwei_w)*
+  -- if $sum_<gwei>(gwei_w*) = gwei_withdrawals
+  -- if state.BUILDER_PENDING_PAYMENTS = builderPendingPayment*
+  -- if ($builder_withdrawal_amount(builderPendingPayment.WITHDRAWAL, builderIndex) = gwei_p)*
+  -- if $sum_<gwei>(gwei_p*) = gwei_payments
+
+;; [Gloas] can_builder_cover_bid(BeaconState, BuilderIndex, Gwei) -> bool
+dec $can_builder_cover_bid(beaconState, builderIndex, gwei) : bool
+def $can_builder_cover_bid(state, builderIndex, gwei_bid) = false
+  -- if $(builderIndex < |state.BUILDERS|)
+  -- if $(state.BUILDERS[builderIndex].BALANCE
+          < $MIN_DEPOSIT_AMOUNT + $get_pending_balance_to_withdraw_for_builder(state, builderIndex))
+def $can_builder_cover_bid(state, builderIndex, gwei_bid) = $(balance - gwei_min >= gwei_bid)
+  ;; inserted guard (python raises IndexError)
+  -- if $(builderIndex < |state.BUILDERS|)
+  -- if state.BUILDERS[builderIndex].BALANCE = balance
+  -- if $($MIN_DEPOSIT_AMOUNT + $get_pending_balance_to_withdraw_for_builder(state, builderIndex)) = gwei_min
+  -- if $(balance >= gwei_min)
+
+;; [Gloas] get_builder_payment_quorum_threshold(BeaconState) -> Gwei
+dec $get_builder_payment_quorum_threshold(beaconState) : gwei
+def $get_builder_payment_quorum_threshold(state)
+  = $(gwei_per_slot * $BUILDER_PAYMENT_THRESHOLD_NUMERATOR / $BUILDER_PAYMENT_THRESHOLD_DENOMINATOR)
+  -- if $($get_total_active_balance(state) / $SLOTS_PER_EPOCH) = gwei_per_slot
+
+;; --- Balance-weighted selection ---
+
+;; Positions that the draw loop of compute_balance_weighted_selection picks
+;; from the candidates when shuffle_indices is False. A builtin runs the loop:
+;; in compute_ptc it takes about 33,000 draws per slot (1.07M per epoch).
+builtin dec $balance_weighted_picks(gwei*, bytes32, uint64) : nat*
+
+;; [Custom | loop : compute_balance_weighted_selection, shuffle_indices = True]
+;;  The draw i takes the candidate compute_shuffled_index(i % total, total, seed)
+;;  and keeps it if effective_balance * MAX_RANDOM_VALUE >= MAX_EFFECTIVE_BALANCE_ELECTRA * random_value.
+dec $bws_draw(gwei*, validatorIndex*, bytes32, nat) : (bool, validatorIndex)
+def $bws_draw(balance_eb*, vid*, seed, i) = (true, vid*[uint64_k])
+  -- if $compute_shuffled_index($(i \ |vid*|), |vid*|, seed) = uint64_k
+  -- if balance_eb*[uint64_k] = balance_k
+  -- if $compute_random_value(seed, i) = uint64_random_value
+  -- if $(balance_k * $MAX_RANDOM_VALUE >= $MAX_EFFECTIVE_BALANCE_ELECTRA * uint64_random_value)
+def $bws_draw(balance_eb*, vid*, seed, i) = (false, 0)
+  -- otherwise
+
+dec $bws_kept((bool, validatorIndex)) : bool
+def $bws_kept((bool_keep, _)) = bool_keep
+
+;; One call takes the 16 draws of one hash block (draws 16j .. 16j+15).
+;; The loop stops when it has `size` indices; the last block can overshoot, so the caller cuts the list.
+dec $bws_shuffled_loop(gwei*, validatorIndex*, bytes32, uint64, nat, validatorIndex*) : validatorIndex*
+def $bws_shuffled_loop(balance_eb*, vid*, seed, uint64_size, j, vid_sel*) = vid_sel*
+  -- if $(|vid_sel*| >= uint64_size)
+def $bws_shuffled_loop(balance_eb*, vid*, seed, uint64_size, j, vid_sel*)
+  = $bws_shuffled_loop(balance_eb*, vid*, seed, uint64_size, $(j + 1), vid_sel* ++ vid_new*)
+  -- if $(|vid_sel*| < uint64_size)
+  -- if $range(16) = n*
+  -- if ($bws_draw(balance_eb*, vid*, seed, $(j * 16 + n)) = (bool_keep, vid_c))*
+  -- if $filter_list_<(bool, validatorIndex)>((bool_keep, vid_c)*, def $bws_kept) = (_, vid_new)*
+
+;; [Gloas] compute_balance_weighted_selection(BeaconState, Sequence[ValidatorIndex], Bytes32, Uint64, bool)
+;;   -> Sequence[ValidatorIndex]
+dec $compute_balance_weighted_selection(beaconState, validatorIndex*, bytes32, uint64, bool) : validatorIndex*
+;; candidates in order
+def $compute_balance_weighted_selection(state, vid*, seed, uint64_size, false) = vid_sel*
+  ;; assert
+  -- if $(|vid*| > 0)
+  ;; inserted guard
+  -- if ($(vid < |state.VALIDATORS|))*
+  -- if (state.VALIDATORS[vid].EFFECTIVE_BALANCE = balance_eb)*
+  -- if $balance_weighted_picks(balance_eb*, seed, uint64_size) = n*
+  -- if (vid*[n] = vid_sel)*
+;; shuffled candidates
+def $compute_balance_weighted_selection(state, vid*, seed, uint64_size, true)
+  = $take_prefix_<validatorIndex>(vid_sel*, uint64_size)
+  ;; assert
+  -- if $(|vid*| > 0)
+  ;; inserted guard
+  -- if ($(vid < |state.VALIDATORS|))*
+  -- if (state.VALIDATORS[vid].EFFECTIVE_BALANCE = balance_eb)*
+  -- if $bws_shuffled_loop(balance_eb*, vid*, seed, uint64_size, 0, eps) = vid_sel*
+
+;; [Custom] the first index of compute_balance_weighted_selection(state, indices, seed, 1, True)
+dec $compute_proposer_at(beaconState, validatorIndex*, bytes32) : validatorIndex
+def $compute_proposer_at(state, vid*, seed) = vid_sel*[0]
+  -- if $compute_balance_weighted_selection(state, vid*, seed, 1, true) = vid_sel*
+
+;; [Fulu -> Gloas] compute_proposer_indices(BeaconState, Epoch, Bytes32, Sequence[ValidatorIndex]) -> ProposerIndices
+dec $compute_proposer_indices(beaconState, epoch, bytes32, validatorIndex*) : validatorIndex*
+def $compute_proposer_indices(state, epoch, seed, vid*) = vid_proposer*
+  -- if $compute_start_slot_at_epoch(epoch) = slot_start
+  -- if $range($SLOTS_PER_EPOCH) = n*
+  -- if ($hash_<bytes>($concat_bytes($bytes32_to_bytes(seed), $uint64_to_bytes_le($(slot_start + n)))) = bytes32_s)*
+  -- if ($compute_proposer_at(state, vid*, bytes32_s) = vid_proposer)*
+
+;; [Custom | filter : get_beacon_proposer_indices]
+dec $is_unslashed_validator(validatorIndex, beaconState) : bool
+def $is_unslashed_validator(vid, state) = ~state.VALIDATORS[vid].SLASHED
+  -- if $(vid < |state.VALIDATORS|)
+
+;; [Fulu -> Gloas:EIP8045] get_beacon_proposer_indices(BeaconState, Epoch) -> ProposerIndices
+;;  slashed validators leave the candidates
+dec $get_beacon_proposer_indices(beaconState, epoch) : validatorIndex*
+def $get_beacon_proposer_indices(state, epoch) = $compute_proposer_indices(state, epoch, seed, vid*)
+  -- if $filter_list_2_<validatorIndex, beaconState>(
+         $get_active_validator_indices(state, epoch), state, def $is_unslashed_validator) = vid*
+  -- if $get_seed(state, epoch, $DOMAIN_BEACON_PROPOSER) = seed
+
+;; --- Builder registry ---
+
+;; [Custom | loop : get_index_for_new_builder]
+dec $index_for_new_builder_loop(builder*, nat, epoch) : builderIndex
+def $index_for_new_builder_loop(eps, n, epoch) = n
+def $index_for_new_builder_loop(builder_h :: builder_t*, n, epoch) = n
+  -- if $(builder_h.WITHDRAWABLE_EPOCH <= epoch)
+  -- if builder_h.BALANCE = 0
+def $index_for_new_builder_loop(builder_h :: builder_t*, n, epoch) = $index_for_new_builder_loop(builder_t*, $(n + 1), epoch)
+  -- otherwise
+
+;; [Gloas] get_index_for_new_builder(BeaconState) -> BuilderIndex
+dec $get_index_for_new_builder(beaconState) : builderIndex
+def $get_index_for_new_builder(state) = $index_for_new_builder_loop(state.BUILDERS, 0, $get_current_epoch(state))
+
+;; [Gloas] add_builder_to_registry(state, pubkey, version, execution_address, amount, slot)
+relation AddBuilderToRegistry:
+  beaconState '.' BUILDERS '++' `{ blsPubkey uint8 executionAddress gwei slot `} ~> beaconState
+  hint(input %0 %1 %2 %3 %4 %5)
+
+rule AddBuilderToRegistry:
+  state '.' BUILDERS '++' `{ blsPubkey uint8_version executionAddress gwei_amount slot `}
+  ~> state[.BUILDERS = $set_or_append_list_<builder>(state.BUILDERS, $get_index_for_new_builder(state), builder)]
+  -- if builder = { PUBKEY blsPubkey,
+                    VERSION uint8_version,
+                    EXECUTION_ADDRESS executionAddress,
+                    BALANCE gwei_amount,
+                    DEPOSIT_EPOCH $compute_epoch_at_slot(slot),
+                    WITHDRAWABLE_EPOCH $FAR_FUTURE_EPOCH }
+
+;; [Custom | Gloas] builder_pubkeys = [b.pubkey for b in state.builders]
+dec $builder_pubkeys(beaconState) : blsPubkey*
+def $builder_pubkeys(state) = blsPubkey*
+  -- if state.BUILDERS = builder*
+  -- if (builder.PUBKEY = blsPubkey)*
+
+;; [Gloas] is_valid_builder_deposit_signature(BuilderDepositRequest) -> bool
+dec $is_valid_builder_deposit_signature(builderDepositRequest) : bool
+def $is_valid_builder_deposit_signature(builderDepositRequest)
+  = $bls_verify(builderDepositRequest.PUBKEY, $compute_signing_root_depositMessage(depositMessage, domain),
+                builderDepositRequest.SIGNATURE)
+  -- if depositMessage = { PUBKEY builderDepositRequest.PUBKEY,
+                           WITHDRAWAL_CREDENTIALS builderDepositRequest.WITHDRAWAL_CREDENTIALS,
+                           AMOUNT builderDepositRequest.AMOUNT }
+  -- if $compute_domain($DOMAIN_BUILDER_DEPOSIT, eps, eps) = domain
+
+;; --- Builder mutators ---
+
+;; [Gloas] initiate_builder_exit(state, builder_index)
+relation InitiateBuilderExit:
+  beaconState '.' BUILDERS `[ builderIndex `] ~> beaconState
+  hint(input %0 %1)
+
+rule InitiateBuilderExit:
+  state '.' BUILDERS `[ builderIndex `]
+  ~> state[.BUILDERS[builderIndex].WITHDRAWABLE_EPOCH = $($get_current_epoch(state) + $MIN_BUILDER_WITHDRAWABILITY_DELAY)]
+  ;; inserted guard (python raises IndexError)
+  -- if $(builderIndex < |state.BUILDERS|)
+
+;; [Custom] BuilderPendingPayment.empty()
+dec $empty_builder_pending_payment : builderPendingPayment
+def $empty_builder_pending_payment
+  = { WEIGHT 0,
+      WITHDRAWAL { FEE_RECIPIENT 0, AMOUNT 0, BUILDER_INDEX 0 },
+      PROPOSER_INDEX 0 }
+
+;; [Gloas] settle_builder_payment(state, payment_index)
+relation SettleBuilderPayment:
+  beaconState SETTLE uint64 ~> beaconState
+  hint(input %0 %1)
+
+rule SettleBuilderPayment/withdraw:
+  state SETTLE uint64_i
+  ~> state[.BUILDER_PENDING_WITHDRAWALS = state.BUILDER_PENDING_WITHDRAWALS ++ [builderPendingPayment.WITHDRAWAL]]
+          [.BUILDER_PENDING_PAYMENTS[uint64_i] = $empty_builder_pending_payment]
+  ;; assert
+  -- if $(uint64_i < |state.BUILDER_PENDING_PAYMENTS|)
+  -- if state.BUILDER_PENDING_PAYMENTS[uint64_i] = builderPendingPayment
+  -- if $(builderPendingPayment.WITHDRAWAL.AMOUNT > 0)
+
+rule SettleBuilderPayment/empty:
+  state SETTLE uint64_i
+  ~> state[.BUILDER_PENDING_PAYMENTS[uint64_i] = $empty_builder_pending_payment]
+  ;; assert
+  -- if $(uint64_i < |state.BUILDER_PENDING_PAYMENTS|)
+  -- if state.BUILDER_PENDING_PAYMENTS[uint64_i].WITHDRAWAL.AMOUNT = 0
