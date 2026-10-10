@@ -50,8 +50,20 @@ OPERATIONS = {
     "withdrawals": ("withdrawals", "execution_payload", "ExecutionPayload", "--payload"),
     "bls_to_execution_change": ("bls-to-execution-change", "address_change", "SignedBLSToExecutionChange", "--change"),
 }
-EPOCH = {"justification_and_finalization": "justification", "rewards_and_penalties": "rewards"}
-FORKS = ("capella", "deneb")
+# handler -> (relation, input file, input SSZ type) for operations without their own task
+RELATIONS = {
+    "deposit_request": ("ProcessDepositRequest", "deposit_request", "DepositRequest"),
+    "withdrawal_request": ("ProcessWithdrawalRequest", "withdrawal_request", "WithdrawalRequest"),
+    "consolidation_request": ("ProcessConsolidationRequest", "consolidation_request", "ConsolidationRequest"),
+    "execution_payload_bid": ("ProcessExecutionPayloadBid", "execution_payload_bid", "SignedExecutionPayloadBid"),
+    "parent_execution_payload": ("ProcessParentExecutionPayload", "block", "BeaconBlock"),
+    "payload_attestation": ("ProcessPayloadAttestation", "payload_attestation", "PayloadAttestation"),
+    "builder_deposit_request": ("ProcessBuilderDepositRequest", "builder_deposit_request", "BuilderDepositRequest"),
+    "builder_exit_request": ("ProcessBuilderExitRequest", "builder_exit_request", "BuilderExitRequest"),
+}
+# handler -> handler whose processing call it tests
+ALIASES = {"voluntary_exit_churn": "voluntary_exit", "pending_deposits_churn": "pending_deposits"}
+FORKS = ("capella", "deneb", "electra", "fulu", "gloas")
 
 
 def yaml(path):
@@ -70,6 +82,7 @@ def check(case):
         raise ValueError(f"no fork ({', '.join(FORKS)}) in the path")
     runner = next((p for p in case.parts if p in ("operations", "epoch_processing")), "blocks")
     handler = case.parts[case.parts.index(runner) + 1] if runner != "blocks" else None
+    handler = ALIASES.get(handler, handler)
 
     post = case / "post.ssz_snappy"
 
@@ -101,9 +114,30 @@ def check(case):
 
             return json_to_ssz(json.loads(out.read_text()), spec.BeaconState).encode_bytes(), ""
 
+        def relation(name, *args):
+            """Run a relation on the pre-state; args are (input file, SSZ type, JSON value or None)."""
+            flags = []
+            for file, typ, value in args:
+                if value is None:
+                    path = to_json(f"{file}.json", typ, ssz(case / f"{file}.ssz_snappy"))
+                else:
+                    path = str(tmp / f"{file}.json")
+                    Path(path).write_text(json.dumps(value))
+                flags += ["--arg", f"{typ[0].lower()}{typ[1:]}={path}"]
+            return spectec("relation", "--name", name, "--pre", pre, *flags)
+
         pre = to_json("pre.json", "BeaconState", ssz(case / "pre.ssz_snappy"))
+        meta = yaml(case / "meta.yaml") if (case / "meta.yaml").exists() else {}
         if runner == "epoch_processing":
-            state, err = spectec("epoch", EPOCH.get(handler, handler.replace("_", "-")), "--pre", pre)
+            state, err = relation("Process" + handler.title().replace("_", ""))
+        elif "parent_slot" in meta:  # Gloas process_attestation(state, attestation, parent_slot)
+            state, err = relation("ProcessAttestation", ("attestation", "Attestation", None),
+                                  ("parent_slot", "Slot", meta["parent_slot"]))
+        elif handler == "withdrawals" and not (case / "execution_payload.ssz_snappy").exists():
+            state, err = relation("ProcessWithdrawals")  # Gloas process_withdrawals(state)
+        elif handler in RELATIONS:
+            name, file, typ = RELATIONS[handler]
+            state, err = relation(name, (file, typ, None))
         elif runner == "operations":
             task, name, typ, flag = OPERATIONS[handler]
             extra = []
