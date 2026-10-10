@@ -39,46 +39,49 @@ rule ApplyRewardsAndPenalties_over_deltas/fold:
 
 ;; [Custom]
 ;; apply inactivity score update for a single index
+;;  The first state is the state at the start of process_inactivity_updates.
+;;  The participation and leak queries read it: the loop changes only INACTIVITY_SCORES,
+;;  which they do not read, and the same state object lets the function cache answer them.
 relation ApplyInactivity:
-  beaconState '.' INACTIVITY_SCORES `[ validatorIndex `] ~> beaconState
-  hint(input %0 %1)
+  beaconState '|-' beaconState '.' INACTIVITY_SCORES `[ validatorIndex `] ~> beaconState
+  hint(input %0 %1 %2)
 
 rule ApplyInactivity/unslashed_participating_no_leak:
-  state '.' INACTIVITY_SCORES `[ vid `]
+  state_0 '|-' state '.' INACTIVITY_SCORES `[ vid `]
     ~> state[.INACTIVITY_SCORES[vid]
               = $max_uint64($(state.INACTIVITY_SCORES[vid] - 1 - $INACTIVITY_SCORE_RECOVERY_RATE), 0)
             ]
   ----
   ;; branch 1 : true
-  -- if vid <- $get_unslashed_participating_indices(state, $TIMELY_TARGET_FLAG_INDEX, $get_previous_epoch(state))
+  -- if vid <- $get_unslashed_participating_indices(state_0, $TIMELY_TARGET_FLAG_INDEX, $get_previous_epoch(state_0))
   ;; branch 2 : false
-  -- if ~ $is_in_inactivity_leak(state)
+  -- if ~ $is_in_inactivity_leak(state_0)
   ;; inserted guard
   -- if $(vid < |state.INACTIVITY_SCORES|)
 
 rule ApplyInactivity/unslashed_participating_leak:
-  state '.' INACTIVITY_SCORES `[ vid `]
+  state_0 '|-' state '.' INACTIVITY_SCORES `[ vid `]
     ~> state[.INACTIVITY_SCORES[vid]
               = $max_uint64($(state.INACTIVITY_SCORES[vid] - 1), 0)
             ]
   ----
   ;; branch 1 : true
-  -- if vid <- $get_unslashed_participating_indices(state, $TIMELY_TARGET_FLAG_INDEX, $get_previous_epoch(state))
+  -- if vid <- $get_unslashed_participating_indices(state_0, $TIMELY_TARGET_FLAG_INDEX, $get_previous_epoch(state_0))
   ;; branch 2 : true
-  -- if $is_in_inactivity_leak(state)
+  -- if $is_in_inactivity_leak(state_0)
   ;; inserted guard
   -- if $(vid < |state.INACTIVITY_SCORES|)
 
 rule ApplyInactivity/inactive_no_leak:
-  state '.' INACTIVITY_SCORES `[ vid `]
+  state_0 '|-' state '.' INACTIVITY_SCORES `[ vid `]
     ~> state[.INACTIVITY_SCORES[vid]
               = $max_uint64($(state.INACTIVITY_SCORES[vid] + n_leak_penalty), 0)
             ]
   ----
   ;; branch 1 : false
-  -- if ~(vid <- $get_unslashed_participating_indices(state, $TIMELY_TARGET_FLAG_INDEX, $get_previous_epoch(state)))
+  -- if ~(vid <- $get_unslashed_participating_indices(state_0, $TIMELY_TARGET_FLAG_INDEX, $get_previous_epoch(state_0)))
   ;; branch 2 : false
-  -- if ~ $is_in_inactivity_leak(state)
+  -- if ~ $is_in_inactivity_leak(state_0)
   -- if n_leak_penalty = $($INACTIVITY_SCORE_BIAS - $INACTIVITY_SCORE_RECOVERY_RATE)
   ;; inserted guard
   -- if $(vid < |state.INACTIVITY_SCORES|)
@@ -86,15 +89,15 @@ rule ApplyInactivity/inactive_no_leak:
   -- if $(state.INACTIVITY_SCORES[vid] <= $UINT64_MAX - $INACTIVITY_SCORE_BIAS)
 
 rule ApplyInactivity/inactive_leak:
-  state '.' INACTIVITY_SCORES `[ vid `]
+  state_0 '|-' state '.' INACTIVITY_SCORES `[ vid `]
     ~> state[.INACTIVITY_SCORES[vid]
               = $max_uint64($(state.INACTIVITY_SCORES[vid] + $INACTIVITY_SCORE_BIAS), 0)
             ]
   ----
   ;; branch 1 : false
-  -- if ~(vid <- $get_unslashed_participating_indices(state, $TIMELY_TARGET_FLAG_INDEX, $get_previous_epoch(state)))
+  -- if ~(vid <- $get_unslashed_participating_indices(state_0, $TIMELY_TARGET_FLAG_INDEX, $get_previous_epoch(state_0)))
   ;; branch 2 : true
-  -- if $is_in_inactivity_leak(state)
+  -- if $is_in_inactivity_leak(state_0)
   ;; inserted guard
   -- if $(vid < |state.INACTIVITY_SCORES|)
   ;; inserted overflow check
@@ -106,7 +109,7 @@ relation ApplyInactivity_over_vids:
 
 rule ApplyInactivity_over_vids/fold:
   state '.' INACTIVITY_SCORES `[ vid* `] ~>* state_out
-  -- (ApplyInactivity: state_cur '.' INACTIVITY_SCORES `[ vid `] ~> state_next)*{
+  -- (ApplyInactivity: state '|-' state_cur '.' INACTIVITY_SCORES `[ vid `] ~> state_next)*{
        state -> state_cur ... state_next -> state_out
      }
 
