@@ -20,91 +20,6 @@
 ;;         validator_index = ValidatorIndex(validator_pubkeys.index(deposit.pubkey))
 ;;         increase_balance(state, validator_index, deposit.amount)
 
-;; TODO(electra): functions `compute_consolidation_epoch_and_update_churn` added upstream in specs/electra/beacon-chain.md
-;; new upstream definition: translate it (declaration + body)
-;; def compute_consolidation_epoch_and_update_churn(
-;;     state: BeaconState, consolidation_balance: Gwei
-;; ) -> Epoch:
-;;     earliest_consolidation_epoch = max(
-;;         state.earliest_consolidation_epoch, compute_activation_exit_epoch(get_current_epoch(state))
-;;     )
-;;     per_epoch_consolidation_churn = get_consolidation_churn_limit(state)
-;;     # New epoch for consolidations.
-;;     if state.earliest_consolidation_epoch < earliest_consolidation_epoch:
-;;         consolidation_balance_to_consume = per_epoch_consolidation_churn
-;;     else:
-;;         consolidation_balance_to_consume = state.consolidation_balance_to_consume
-;;
-;;     # Consolidation doesn't fit in the current earliest epoch.
-;;     if consolidation_balance > consolidation_balance_to_consume:
-;;         balance_to_process = consolidation_balance - consolidation_balance_to_consume
-;;         additional_epochs = (balance_to_process - 1) // per_epoch_consolidation_churn + 1
-;;         earliest_consolidation_epoch += Epoch(additional_epochs)
-;;         consolidation_balance_to_consume += additional_epochs * per_epoch_consolidation_churn
-;;
-;;     # Consume the balance and update state variables.
-;;     state.consolidation_balance_to_consume = (
-;;         consolidation_balance_to_consume - consolidation_balance
-;;     )
-;;     state.earliest_consolidation_epoch = earliest_consolidation_epoch
-;;
-;;     return state.earliest_consolidation_epoch
-
-;; TODO(electra): functions `compute_exit_epoch_and_update_churn` added upstream in specs/electra/beacon-chain.md
-;; new upstream definition: translate it (declaration + body)
-;; def compute_exit_epoch_and_update_churn(state: BeaconState, exit_balance: Gwei) -> Epoch:
-;;     earliest_exit_epoch = max(
-;;         state.earliest_exit_epoch, compute_activation_exit_epoch(get_current_epoch(state))
-;;     )
-;;     per_epoch_churn = get_activation_exit_churn_limit(state)
-;;     # New epoch for exits.
-;;     if state.earliest_exit_epoch < earliest_exit_epoch:
-;;         exit_balance_to_consume = per_epoch_churn
-;;     else:
-;;         exit_balance_to_consume = state.exit_balance_to_consume
-;;
-;;     # Exit doesn't fit in the current earliest epoch.
-;;     if exit_balance > exit_balance_to_consume:
-;;         balance_to_process = exit_balance - exit_balance_to_consume
-;;         additional_epochs = (balance_to_process - 1) // per_epoch_churn + 1
-;;         earliest_exit_epoch += Epoch(additional_epochs)
-;;         exit_balance_to_consume += additional_epochs * per_epoch_churn
-;;
-;;     # Consume the balance and update state variables.
-;;     state.exit_balance_to_consume = exit_balance_to_consume - exit_balance
-;;     state.earliest_exit_epoch = earliest_exit_epoch
-;;
-;;     return state.earliest_exit_epoch
-
-;; TODO(electra): functions `get_activation_exit_churn_limit` added upstream in specs/electra/beacon-chain.md
-;; new upstream definition: translate it (declaration + body)
-;; def get_activation_exit_churn_limit(state: BeaconState) -> Gwei:
-;;     """
-;;     Return the churn limit for the current epoch dedicated to activations and exits.
-;;     """
-;;     return min(MAX_PER_EPOCH_ACTIVATION_EXIT_CHURN_LIMIT, get_balance_churn_limit(state))
-
-;; TODO(electra): functions `get_balance_churn_limit` added upstream in specs/electra/beacon-chain.md
-;; new upstream definition: translate it (declaration + body)
-;; def get_balance_churn_limit(state: BeaconState) -> Gwei:
-;;     """
-;;     Return the churn limit for the current epoch.
-;;     """
-;;     churn = max(
-;;         MIN_PER_EPOCH_CHURN_LIMIT_ELECTRA, get_total_active_balance(state) // CHURN_LIMIT_QUOTIENT
-;;     )
-;;     return churn - churn % EFFECTIVE_BALANCE_INCREMENT
-
-;; TODO(electra): functions `get_committee_indices` added upstream in specs/electra/beacon-chain.md
-;; new upstream definition: translate it (declaration + body)
-;; def get_committee_indices(committee_bits: BitVector) -> Sequence[CommitteeIndex]:
-;;     return [CommitteeIndex(index) for index, bit in enumerate(committee_bits) if bit]
-
-;; TODO(electra): functions `get_consolidation_churn_limit` added upstream in specs/electra/beacon-chain.md
-;; new upstream definition: translate it (declaration + body)
-;; def get_consolidation_churn_limit(state: BeaconState) -> Gwei:
-;;     return get_balance_churn_limit(state) - get_activation_exit_churn_limit(state)
-
 ;; TODO(electra): functions `get_execution_requests_list` added upstream in specs/electra/beacon-chain.md
 ;; new upstream definition: translate it (declaration + body)
 ;; def get_execution_requests_list(execution_requests: ExecutionRequests) -> Sequence[bytes]:
@@ -119,26 +34,6 @@
 ;;         for request_type, request_data in requests
 ;;         if len(request_data) != 0
 ;;     ]
-
-;; TODO(electra): functions `get_max_effective_balance` added upstream in specs/electra/beacon-chain.md
-;; new upstream definition: translate it (declaration + body)
-;; def get_max_effective_balance(validator: Validator) -> Gwei:
-;;     """
-;;     Get max effective balance for ``validator``.
-;;     """
-;;     if has_compounding_withdrawal_credential(validator):
-;;         return MAX_EFFECTIVE_BALANCE_ELECTRA
-;;     else:
-;;         return MIN_ACTIVATION_BALANCE
-
-;; TODO(electra): functions `get_pending_balance_to_withdraw` added upstream in specs/electra/beacon-chain.md
-;; new upstream definition: translate it (declaration + body)
-;; def get_pending_balance_to_withdraw(state: BeaconState, validator_index: ValidatorIndex) -> Gwei:
-;;     balance = Gwei(0)
-;;     for withdrawal in state.pending_partial_withdrawals:
-;;         if withdrawal.validator_index == validator_index:
-;;             balance += withdrawal.amount
-;;     return balance
 
 ;; TODO(electra): functions `get_pending_partial_withdrawals` added upstream in specs/electra/beacon-chain.md
 ;; new upstream definition: translate it (declaration + body)
@@ -181,59 +76,6 @@
 ;;         processed_count += 1
 ;;
 ;;     return withdrawals, withdrawal_index, processed_count
-
-;; TODO(electra): functions `has_compounding_withdrawal_credential` added upstream in specs/electra/beacon-chain.md
-;; new upstream definition: translate it (declaration + body)
-;; def has_compounding_withdrawal_credential(validator: Validator) -> bool:
-;;     """
-;;     Check if ``validator`` has an 0x02 prefixed "compounding" withdrawal credential.
-;;     """
-;;     return is_compounding_withdrawal_credential(validator.withdrawal_credentials)
-
-;; TODO(electra): functions `has_execution_withdrawal_credential` added upstream in specs/electra/beacon-chain.md
-;; new upstream definition: translate it (declaration + body)
-;; def has_execution_withdrawal_credential(validator: Validator) -> bool:
-;;     """
-;;     Check if ``validator`` has a 0x01 or 0x02 prefixed withdrawal credential.
-;;     """
-;;     return (
-;;         has_eth1_withdrawal_credential(validator)  # 0x01
-;;         or has_compounding_withdrawal_credential(validator)  # 0x02
-;;     )
-
-;; TODO(electra): functions `is_compounding_withdrawal_credential` added upstream in specs/electra/beacon-chain.md
-;; new upstream definition: translate it (declaration + body)
-;; def is_compounding_withdrawal_credential(withdrawal_credentials: Bytes32) -> bool:
-;;     return withdrawal_credentials[:1] == COMPOUNDING_WITHDRAWAL_PREFIX
-
-;; TODO(electra): functions `is_eligible_for_partial_withdrawals` added upstream in specs/electra/beacon-chain.md
-;; new upstream definition: translate it (declaration + body)
-;; def is_eligible_for_partial_withdrawals(validator: Validator, balance: Gwei) -> bool:
-;;     """
-;;     Check if ``validator`` can process a pending partial withdrawal.
-;;     """
-;;     has_sufficient_effective_balance = validator.effective_balance >= MIN_ACTIVATION_BALANCE
-;;     has_excess_balance = balance > MIN_ACTIVATION_BALANCE
-;;     return (
-;;         validator.exit_epoch == FAR_FUTURE_EPOCH
-;;         and has_sufficient_effective_balance
-;;         and has_excess_balance
-;;     )
-
-;; TODO(electra): functions `is_valid_deposit_signature` added upstream in specs/electra/beacon-chain.md
-;; new upstream definition: translate it (declaration + body)
-;; def is_valid_deposit_signature(
-;;     pubkey: BLSPubkey, withdrawal_credentials: Bytes32, amount: Gwei, signature: BLSSignature
-;; ) -> bool:
-;;     deposit_message = DepositMessage(
-;;         pubkey=pubkey,
-;;         withdrawal_credentials=withdrawal_credentials,
-;;         amount=amount,
-;;     )
-;;     # Fork-agnostic domain since deposits are valid across forks
-;;     domain = compute_domain(DOMAIN_DEPOSIT)
-;;     signing_root = compute_signing_root(deposit_message, domain)
-;;     return bls.Verify(pubkey, signing_root, signature)
 
 ;; TODO(electra): functions `is_valid_switch_to_compounding_request` added upstream in specs/electra/beacon-chain.md
 ;; new upstream definition: translate it (declaration + body)
@@ -526,35 +368,6 @@
 ;;                 withdrawable_epoch=withdrawable_epoch,
 ;;             )
 ;;         )
-
-;; TODO(electra): functions `queue_excess_active_balance` added upstream in specs/electra/beacon-chain.md
-;; new upstream definition: translate it (declaration + body)
-;; def queue_excess_active_balance(state: BeaconState, index: ValidatorIndex) -> None:
-;;     balance = state.balances[index]
-;;     if balance > MIN_ACTIVATION_BALANCE:
-;;         excess_balance = balance - MIN_ACTIVATION_BALANCE
-;;         state.balances[index] = MIN_ACTIVATION_BALANCE
-;;         validator = state.validators[index]
-;;         # Use G2_POINT_AT_INFINITY as a signature field placeholder
-;;         # and GENESIS_SLOT to distinguish from a pending deposit request
-;;         state.pending_deposits.append(
-;;             PendingDeposit(
-;;                 pubkey=validator.pubkey,
-;;                 withdrawal_credentials=validator.withdrawal_credentials,
-;;                 amount=excess_balance,
-;;                 signature=G2_POINT_AT_INFINITY,
-;;                 slot=GENESIS_SLOT,
-;;             )
-;;         )
-
-;; TODO(electra): functions `switch_to_compounding_validator` added upstream in specs/electra/beacon-chain.md
-;; new upstream definition: translate it (declaration + body)
-;; def switch_to_compounding_validator(state: BeaconState, index: ValidatorIndex) -> None:
-;;     validator = state.validators[index]
-;;     validator.withdrawal_credentials = Bytes32(
-;;         COMPOUNDING_WITHDRAWAL_PREFIX + validator.withdrawal_credentials[1:]
-;;     )
-;;     queue_excess_active_balance(state, index)
 
 ;; TODO(electra): functions `update_pending_partial_withdrawals` added upstream in specs/electra/beacon-chain.md
 ;; new upstream definition: translate it (declaration + body)
