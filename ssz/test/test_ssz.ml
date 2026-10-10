@@ -29,6 +29,12 @@ let () =
   check "empty progressive list"
     (hash_tree_root_exn (Progressive_list (Uint 8)) (Seq []))
     (sha z z);
+  (let t = Container [ ("a", Vector (Uint 8, 5)); ("b", Uint 8) ] in
+   let a = Seq [ one; one; one; one; one ] in
+   check "root = subtree"
+     (hash_tree_root_exn t
+        (Fields [ Root (hash_tree_root_exn (Vector (Uint 8, 5)) a); one ]))
+     (hash_tree_root_exn t (Fields [ a; one ])));
   (match
      hash_tree_root (Container [ ("a", Uint 8) ]) (Fields [ Bool true ])
    with

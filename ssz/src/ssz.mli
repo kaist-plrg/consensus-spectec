@@ -31,6 +31,9 @@ type value =
   | Fields of value list
       (** container fields by position (active fields only) *)
   | Union of int * value  (** selector, data *)
+  | Root of string
+      (** A value of any type, given by its 32-byte root. A caller that keeps
+          roots of unchanged subtrees passes them in this form. *)
 
 (** The 32-byte root, or an error naming the first mismatch between type and
     value. *)

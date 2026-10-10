@@ -22,6 +22,7 @@ type value =
   | Bits of bool list
   | Fields of value list
   | Union of int * value
+  | Root of string
 
 (* Mismatch carries the path from the root value down to the offending part. *)
 exception Mismatch of string list * string
@@ -163,6 +164,9 @@ let chunk_limit count size = ((count * size) + 31) / 32
 
 let rec root (t : typ) (v : value) : string =
   match (t, v) with
+  | _, Root r ->
+      if String.length r <> 32 then fail "root of %d bytes" (String.length r);
+      r
   | (Uint _ | Boolean), _ -> (chunks_of_string (serialize_basic t v)).(0)
   | Vector (elem, n), _ when basic_size elem <> None ->
       let size, s, count = packed_basic elem v in
