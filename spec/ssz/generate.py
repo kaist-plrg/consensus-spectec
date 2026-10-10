@@ -21,7 +21,7 @@ import ssz  # noqa: E402
 from ssz.layout import field_names  # noqa: E402
 from ssz_specs_schema import Schema  # noqa: E402
 
-FORKS = ["capella", "deneb", "electra", "fulu"]
+FORKS = ["capella", "deneb", "electra", "fulu", "gloas"]
 PRESETS = ["minimal", "mainnet"]
 
 

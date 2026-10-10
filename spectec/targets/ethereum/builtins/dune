@@ -27,7 +27,9 @@
   (:electra_minimal %{project_root}/spec/ssz/electra-minimal.json)
   (:electra_mainnet %{project_root}/spec/ssz/electra-mainnet.json)
   (:fulu_minimal %{project_root}/spec/ssz/fulu-minimal.json)
-  (:fulu_mainnet %{project_root}/spec/ssz/fulu-mainnet.json))
+  (:fulu_mainnet %{project_root}/spec/ssz/fulu-mainnet.json)
+  (:gloas_minimal %{project_root}/spec/ssz/gloas-minimal.json)
+  (:gloas_mainnet %{project_root}/spec/ssz/gloas-mainnet.json))
  (action
   (with-stdout-to
    %{target}
@@ -48,4 +50,8 @@
     (cat %{fulu_minimal})
     (echo "|json}\nlet fulu_mainnet = {json|")
     (cat %{fulu_mainnet})
+    (echo "|json}\nlet gloas_minimal = {json|")
+    (cat %{gloas_minimal})
+    (echo "|json}\nlet gloas_mainnet = {json|")
+    (cat %{gloas_mainnet})
     (echo "|json}\n")))))

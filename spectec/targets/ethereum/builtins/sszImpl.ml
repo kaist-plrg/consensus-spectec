@@ -25,6 +25,8 @@ let schemas =
     (("electra", "mainnet"), Ssz_schemas.electra_mainnet);
     (("fulu", "minimal"), Ssz_schemas.fulu_minimal);
     (("fulu", "mainnet"), Ssz_schemas.fulu_mainnet);
+    (("gloas", "minimal"), Ssz_schemas.gloas_minimal);
+    (("gloas", "mainnet"), Ssz_schemas.gloas_mainnet);
   ]
 
 let schema : Ssz_schema.t option ref = ref None
@@ -55,7 +57,8 @@ let lookup ~at ?field name =
   match (Ssz_schema.find s name, field) with
   | None, _ -> Error (runtime at ("SSZ schema has no type " ^ name))
   | Some t, None -> Ok t
-  | Some (Ssz.Container fields), Some f -> (
+  | Some (Ssz.Container fields | Ssz.Progressive_container { fields; _ }), Some f
+    -> (
       match List.assoc_opt f fields with
       | Some t -> Ok t
       | None -> Error (runtime at (Printf.sprintf "%s has no field %s" name f)))
@@ -204,4 +207,10 @@ let builtins : (string * Define.t) list =
     signing "compute_signing_root_depositMessage" (named "DepositMessage");
     signing "compute_signing_root_block_root" (plain (Ssz.Vector (Uint 1, 32)));
     signing "compute_signing_root_beaconBlock" (named "BeaconBlock");
+    (* [Gloas] *)
+    htr "hash_tree_root_executionRequests" "ExecutionRequests";
+    signing "compute_signing_root_executionPayloadBid"
+      (named "ExecutionPayloadBid");
+    signing "compute_signing_root_payloadAttestationData"
+      (named "PayloadAttestationData");
   ]
