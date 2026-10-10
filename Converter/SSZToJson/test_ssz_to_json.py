@@ -11,25 +11,32 @@ from pathlib import Path
 SCRIPT = Path(__file__).parent / "SSZToJson.py"
 
 FIXTURE_MODULE = '''
-from remerkleable.basic import boolean, uint64
-from remerkleable.bitfields import Bitlist
-from remerkleable.byte_arrays import ByteVector
-from remerkleable.complex import Container, List
+from ssz import Boolean, Uint64, BitList, ByteVector, Container, List
 
-Root = ByteVector[32]
+
+class Root(ByteVector):
+    LENGTH = 32
+
+
+class Bits(BitList):
+    LIMIT = 8
+
+
+class Slots(List[Uint64]):
+    LIMIT = 4
 
 
 class Inner(Container):
-    slot: uint64
+    slot: Uint64
     root: Root
 
 
 class Sample(Container):
-    count: uint64
-    flag: boolean
-    bits: Bitlist[8]
+    count: Uint64
+    flag: Boolean
+    bits: Bits
     inner: Inner
-    slots: List[uint64, 4]
+    slots: Slots
 '''
 
 EXPECTED = {
@@ -54,9 +61,9 @@ def main():
         sample = fixture_types.Sample(
             count=42,
             flag=True,
-            bits=fixture_types.Bitlist[8](True, False, True),
+            bits=fixture_types.Bits(data=[True, False, True]),
             inner=fixture_types.Inner(slot=7, root=fixture_types.Root(b"\xab" * 32)),
-            slots=fixture_types.List[fixture_types.uint64, 4](1, 2, 3),
+            slots=fixture_types.Slots(data=[1, 2, 3]),
         )
 
         ssz_path = tmp / "sample.ssz"

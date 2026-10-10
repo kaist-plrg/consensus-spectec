@@ -24,16 +24,11 @@ SCRIPT_DIR = Path(__file__).resolve().parent
 PYSPEC = SCRIPT_DIR / "consensus-specs" / "tests" / "core" / "pyspec"
 if str(PYSPEC) not in sys.path:
     sys.path.insert(0, str(PYSPEC))
+sys.path.insert(0, str(SCRIPT_DIR / "Converter" / "SSZToJson"))
 
-from eth2spec.capella.mainnet import BeaconState as CapellaBeaconState  # noqa: E402
-from eth2spec.deneb.mainnet import BeaconState as DenebBeaconState  # noqa: E402
-from remerkleable.basic import boolean, bit, uint8, uint16, uint32, uint64, uint128, uint256  # noqa: E402
-from remerkleable.byte_arrays import ByteVector, ByteList  # noqa: E402
-from remerkleable.bitfields import Bitlist, Bitvector  # noqa: E402
-from remerkleable.complex import Container, List, Vector  # noqa: E402
-
-BASIC_INT_TYPES = (uint8, uint16, uint32, uint64, uint128, uint256)
-BASIC_BOOL_TYPES = (boolean, bit)
+from eth_consensus_specs.capella.mainnet import BeaconState as CapellaBeaconState  # noqa: E402
+from eth_consensus_specs.deneb.mainnet import BeaconState as DenebBeaconState  # noqa: E402
+from SSZToJson import ssz_to_json  # noqa: E402
 
 
 def parse_args() -> argparse.Namespace:
@@ -126,42 +121,6 @@ def sha256_hex(data: bytes) -> str:
     return hashlib.sha256(data).hexdigest()
 
 
-def _to_hex(b: bytes) -> str:
-    return "0x" + b.hex()
-
-
-def bitfield_to_bool_list(v) -> list[bool]:
-    return [bool(v.get(i)) for i in range(v.length())]
-
-
-def view_to_jsonable(v: Any) -> Any:
-    if isinstance(v, Container):
-        return {fname: view_to_jsonable(getattr(v, fname)) for fname in v.fields()}
-    if isinstance(v, (Vector, List)):
-        return [view_to_jsonable(e) for e in v]
-    if isinstance(v, (ByteVector, ByteList)):
-        return _to_hex(bytes(v))
-    if isinstance(v, (Bitvector, Bitlist)):
-        return bitfield_to_bool_list(v)
-    if isinstance(v, BASIC_INT_TYPES):
-        return int(v)
-    if isinstance(v, BASIC_BOOL_TYPES):
-        return bool(v)
-    if isinstance(v, (int, bool)):
-        return v
-    if isinstance(v, (bytes, bytearray, memoryview)):
-        return _to_hex(bytes(v))
-    if v is None:
-        return None
-    get = getattr(v, "get", None)
-    if callable(get):
-        try:
-            return view_to_jsonable(get())
-        except Exception:
-            pass
-    return str(v)
-
-
 def get_beacon_state_type(fork_version: str):
     if fork_version == "deneb":
         return DenebBeaconState
@@ -172,8 +131,7 @@ def decode_ssz(path: str, fork_version: str) -> Any:
     with open(path, "rb") as f:
         raw = f.read()
     beacon_state_type = get_beacon_state_type(fork_version)
-    view = beacon_state_type.decode_bytes(raw)
-    return view_to_jsonable(view)
+    return ssz_to_json(beacon_state_type.decode_bytes(raw))
 
 
 def _fmt_val(x: Any, hex_max: int) -> str:

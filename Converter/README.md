@@ -206,7 +206,7 @@ Use `--run-mode il` for the Capella and Deneb specifications. Structuring these 
 
 The `OfficialTestSuite` directory is not tracked in git. Run `make
 download-fixture` from the repository root: it pulls the
-[ethereum/consensus-specs v1.6.0 release asset](https://github.com/ethereum/consensus-specs/releases/tag/v1.6.0),
+[ethereum/consensus-specs v1.7.0-beta.3 release asset](https://github.com/ethereum/consensus-specs/releases/tag/v1.7.0-beta.3),
 matching the pinned `consensus-specs` submodule. The version and SHA-256 digest
 are pinned in the root `Makefile`; cached archives are verified on every run.
 Extraction finishes in a temporary directory before replacing this entire
@@ -346,13 +346,6 @@ python eth2specResult.py --pre pre.ssz --block blocks_0.ssz --out eth2specResult
 # Execute state transition using eth2spec (Deneb)
 python eth2specResult.py --pre pre.ssz --block blocks_0.ssz --out eth2specResult.ssz --fork deneb
 ```
-
-## Dependencies
-
-These tools require the following Python packages:
-- `remerkleable`: SSZ serialization/deserialization
-- `eth2spec`: Ethereum 2.0 specification implementation
-- `snappy`: Snappy compression/decompression
 
 ## Important Notes
 

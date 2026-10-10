@@ -19,7 +19,7 @@ consensus_specs_path = os.path.abspath(os.path.join(script_dir, '../consensus-sp
 if consensus_specs_path not in sys.path:
     sys.path.insert(0, consensus_specs_path)
 
-from eth2spec.utils.ssz.ssz_impl import deserialize
+from eth_consensus_specs.utils.ssz.ssz_impl import deserialize
 
 
 class MockExecutionEngine:
@@ -106,9 +106,9 @@ def main(pre_ssz_path, operation_ssz_path, output_ssz_path, operation_type, fork
     
     # Import the appropriate fork module
     if fork == "deneb":
-        from eth2spec.deneb import mainnet as spec
+        from eth_consensus_specs.deneb import mainnet as spec
     elif fork == "capella":
-        from eth2spec.capella import mainnet as spec
+        from eth_consensus_specs.capella import mainnet as spec
     else:
         raise ValueError(f"Unsupported fork: {fork}. Supported forks: 'capella', 'deneb'")
     

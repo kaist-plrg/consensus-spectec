@@ -92,14 +92,14 @@ vsix:
 # `make clean-fixture` drops the unpacked vectors but keeps the cached tarball,
 # so re-unpacking a different selection costs no download.
 
-# Match the consensus-specs gitlink (f96d3e7, v1.6.0); update both pins together.
-SPEC_TESTS_VERSION ?= v1.6.0
+# Match the consensus-specs gitlink (71c00190, v1.7.0-beta.3); update both pins together.
+SPEC_TESTS_VERSION ?= v1.7.0-beta.3
 SPEC_TESTS_PRESET ?= mainnet
 SPEC_TESTS_FORKS ?= capella deneb
 SPEC_TESTS_SUITES ?= sanity random finality
 # SHA-256 digests published with the ethereum/consensus-specs release assets.
-SPEC_TESTS_SHA256_v1.6.0_mainnet = dbdda1dd6d857edb34604c600d3cb161ef4eb3b4746d9217b8068c3bc3fa925e
-SPEC_TESTS_SHA256_v1.6.0_minimal = d491c81a0de054c8ef7066111d1e5cc1d0e03af5f8ee847f316a7a83201e65f0
+SPEC_TESTS_SHA256_v1.7.0-beta.3_mainnet = a50c3eae743fcf69e17e3510b84e94dcabf96977655788c66bdc43a96590fdf5
+SPEC_TESTS_SHA256_v1.7.0-beta.3_minimal = b26832555fa5a67cc3964bf140ae99cb662f8045d6d205993e3fa27feb39ca6f
 SPEC_TESTS_SHA256 ?= $(SPEC_TESTS_SHA256_$(SPEC_TESTS_VERSION)_$(SPEC_TESTS_PRESET))
 FIXTURE_SHA256 = $(shell command -v sha256sum 2>/dev/null || echo shasum -a 256)
 

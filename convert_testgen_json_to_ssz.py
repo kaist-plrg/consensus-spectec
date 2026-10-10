@@ -31,8 +31,8 @@ json_to_ssz_script = converter_dir / "JsonToSSZ" / "JsonToSSZ.py"
 ForkName = Literal["capella", "deneb"]
 
 FORK_TO_TYPE_MODULE: dict[str, str] = {
-    "capella": "eth2spec.capella.mainnet",
-    "deneb": "eth2spec.deneb.mainnet",
+    "capella": "eth_consensus_specs.capella.mainnet",
+    "deneb": "eth_consensus_specs.deneb.mainnet",
 }
 
 
@@ -43,7 +43,7 @@ def convert_json_to_ssz(json_path, ssz_path, type_module, type_name):
     Args:
         json_path: Path to input JSON file
         ssz_path: Path to output SSZ file
-        type_module: Python module path (e.g., eth2spec.capella.mainnet, eth2spec.deneb.mainnet)
+        type_module: Python module path (e.g., eth_consensus_specs.capella.mainnet, eth_consensus_specs.deneb.mainnet)
         type_name: Type name inside the module (e.g., BeaconState, SignedBeaconBlock)
     """
     if not os.path.exists(json_path):
@@ -82,7 +82,7 @@ def process_testgen_directory(input_testgen_dir, output_base_dir, fork: ForkName
     Args:
         input_testgen_dir: Direct path to testgen directory (e.g., testgen_01270309)
         output_base_dir: Base directory for output (will create testgen/ subdirectory)
-        fork: Consensus fork name ("capella" or "deneb"), used to select eth2spec.<fork>.mainnet types
+        fork: Consensus fork name ("capella" or "deneb"), used to select eth_consensus_specs.<fork>.mainnet types
         dry_run: If True, only print what would be done without actually converting
     """
     testgen_dir = Path(input_testgen_dir)
