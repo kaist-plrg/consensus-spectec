@@ -1,0 +1,328 @@
+;; =========================
+;; helpers for Increase / Decrease / initiate_validator_exit / slash_validator / apply_deposit 
+;; =========================
+
+;; [Phase0]
+;; increase_balance(beaconState, validatorIndex, gwei) : beaconState
+;;  mutates: .BALANCES
+
+relation IncreaseBalance:
+  beaconState '.' BALANCES `[ validatorIndex `] '+' gwei ~> beaconState
+  hint(input %0 %1 %2)
+
+rule IncreaseBalance:
+  state '.' BALANCES `[ vid `] '+' delta ~> state[ .BALANCES[vid] = $(balance + delta) ]
+  -- if $(vid < |state.BALANCES|)
+  -- if state.BALANCES[vid] = balance
+  ;; inserted overflow check
+  -- if $(balance <= $UINT64_MAX - delta)
+
+;; [Phase0]
+;; decrease_balance(beaconState, validatorIndex, gwei) : beaconState
+;;  mutates: .BALANCES
+
+relation DecreaseBalance:
+  beaconState '.' BALANCES  `[ validatorIndex `] '-' gwei ~> beaconState
+  hint(input %0 %1 %2)
+
+rule DecreaseBalance/zero:
+  state '.' BALANCES `[ vid `] '-' delta ~> state[ .BALANCES[vid] = 0]
+  -- if $(vid < |state.BALANCES|)
+  -- if state.BALANCES[vid] = balance
+  ;; branch
+  -- if $(delta > balance)
+  
+rule DecreaseBalance/remains:
+  state '.' BALANCES `[ vid `] '-' delta ~> state[ .BALANCES[vid] = $(balance - delta) ]
+  -- if $(vid < |state.BALANCES|)
+  -- if state.BALANCES[vid] = balance
+  ;; branch
+  -- if $(delta <= balance)
+
+;; ----------------------------
+;; [Electra] churn-based exit and consolidation epochs
+;; ----------------------------
+
+;; [Custom | branch : compute_exit_epoch_and_update_churn]
+;;  a new epoch for exits starts with a full per-epoch churn
+dec $exit_balance_to_consume(beaconState, epoch) : gwei
+def $exit_balance_to_consume(state, epoch_earliest) = $get_activation_exit_churn_limit(state)
+  -- if $(state.EARLIEST_EXIT_EPOCH < epoch_earliest)
+def $exit_balance_to_consume(state, epoch_earliest) = state.EXIT_BALANCE_TO_CONSUME
+  -- otherwise
+
+;; [Electra] compute_exit_epoch_and_update_churn(state, exit_balance) -> Epoch
+;;  mutates: EXIT_BALANCE_TO_CONSUME, EARLIEST_EXIT_EPOCH
+;;  the returned epoch is the new state.EARLIEST_EXIT_EPOCH
+relation ComputeExitEpochAndUpdateChurn:
+  beaconState EXIT_CHURN gwei ~> beaconState
+  hint(input %0 %1)
+
+;; TODO(gloas): functions `compute_exit_epoch_and_update_churn` changed upstream in specs/gloas/beacon-chain.md
+;; body commented out below: uncomment it and apply the diff above
+;; --- old
+;; +++ new
+;; @@ -3,5 +3,6 @@
+;;          state.earliest_exit_epoch, compute_activation_exit_epoch(get_current_epoch(state))
+;;      )
+;; -    per_epoch_churn = get_activation_exit_churn_limit(state)
+;; +    # [Modified in Gloas:EIP8061]
+;; +    per_epoch_churn = get_exit_churn_limit(state)
+;;      # New epoch for exits.
+;;      if state.earliest_exit_epoch < earliest_exit_epoch:
+
+;; rule ComputeExitEpochAndUpdateChurn/fits:
+;;   state EXIT_CHURN gwei_exit
+;;   ~> state[.EXIT_BALANCE_TO_CONSUME = $(gwei_to_consume - gwei_exit)]
+;;           [.EARLIEST_EXIT_EPOCH = epoch_earliest]
+;;   -- if $max_uint64(state.EARLIEST_EXIT_EPOCH,
+;;                     $compute_activation_exit_epoch($get_current_epoch(state))) = epoch_earliest
+;;   -- if $exit_balance_to_consume(state, epoch_earliest) = gwei_to_consume
+;;   -- if $(gwei_exit <= gwei_to_consume)
+;;
+;; rule ComputeExitEpochAndUpdateChurn/extra_epochs:
+;;   state EXIT_CHURN gwei_exit
+;;   ~> state[.EXIT_BALANCE_TO_CONSUME = $(gwei_to_consume + uint64_extra * gwei_churn - gwei_exit)]
+;;           [.EARLIEST_EXIT_EPOCH = $(epoch_earliest + uint64_extra)]
+;;   -- if $max_uint64(state.EARLIEST_EXIT_EPOCH,
+;;                     $compute_activation_exit_epoch($get_current_epoch(state))) = epoch_earliest
+;;   -- if $exit_balance_to_consume(state, epoch_earliest) = gwei_to_consume
+;;   -- if $(gwei_exit > gwei_to_consume)
+;;   -- if $get_activation_exit_churn_limit(state) = gwei_churn
+;;   ;; inserted guard (python raises ZeroDivisionError)
+;;   -- if $(gwei_churn > 0)
+;;   -- if $((gwei_exit - gwei_to_consume - 1) / gwei_churn + 1) = uint64_extra
+
+;; the exit fits in the earliest exit epoch
+;; the exit needs additional epochs
+;; [Custom | branch : compute_consolidation_epoch_and_update_churn]
+;;  a new epoch for consolidations starts with a full per-epoch churn
+dec $consolidation_balance_to_consume(beaconState, epoch) : gwei
+def $consolidation_balance_to_consume(state, epoch_earliest) = $get_consolidation_churn_limit(state)
+  -- if $(state.EARLIEST_CONSOLIDATION_EPOCH < epoch_earliest)
+def $consolidation_balance_to_consume(state, epoch_earliest) = state.CONSOLIDATION_BALANCE_TO_CONSUME
+  -- otherwise
+
+;; [Electra] compute_consolidation_epoch_and_update_churn(state, consolidation_balance) -> Epoch
+;;  mutates: CONSOLIDATION_BALANCE_TO_CONSUME, EARLIEST_CONSOLIDATION_EPOCH
+;;  the returned epoch is the new state.EARLIEST_CONSOLIDATION_EPOCH
+relation ComputeConsolidationEpochAndUpdateChurn:
+  beaconState CONSOLIDATION_CHURN gwei ~> beaconState
+  hint(input %0 %1)
+
+;; the consolidation fits in the earliest consolidation epoch
+rule ComputeConsolidationEpochAndUpdateChurn/fits:
+  state CONSOLIDATION_CHURN gwei_consolidation
+  ~> state[.CONSOLIDATION_BALANCE_TO_CONSUME = $(gwei_to_consume - gwei_consolidation)]
+          [.EARLIEST_CONSOLIDATION_EPOCH = epoch_earliest]
+  -- if $max_uint64(state.EARLIEST_CONSOLIDATION_EPOCH,
+                    $compute_activation_exit_epoch($get_current_epoch(state))) = epoch_earliest
+  -- if $consolidation_balance_to_consume(state, epoch_earliest) = gwei_to_consume
+  -- if $(gwei_consolidation <= gwei_to_consume)
+
+;; the consolidation needs additional epochs
+rule ComputeConsolidationEpochAndUpdateChurn/extra_epochs:
+  state CONSOLIDATION_CHURN gwei_consolidation
+  ~> state[.CONSOLIDATION_BALANCE_TO_CONSUME = $(gwei_to_consume + uint64_extra * gwei_churn - gwei_consolidation)]
+          [.EARLIEST_CONSOLIDATION_EPOCH = $(epoch_earliest + uint64_extra)]
+  -- if $max_uint64(state.EARLIEST_CONSOLIDATION_EPOCH,
+                    $compute_activation_exit_epoch($get_current_epoch(state))) = epoch_earliest
+  -- if $consolidation_balance_to_consume(state, epoch_earliest) = gwei_to_consume
+  -- if $(gwei_consolidation > gwei_to_consume)
+  -- if $get_consolidation_churn_limit(state) = gwei_churn
+  ;; inserted guard (python raises ZeroDivisionError)
+  -- if $(gwei_churn > 0)
+  -- if $((gwei_consolidation - gwei_to_consume - 1) / gwei_churn + 1) = uint64_extra
+
+;; [Phase0 -> Electra]
+;; initiate_validator_exit(state, index) : state
+;;  mutates: .VALIDATORS[](.EXIT_EPOCH, .WITHDRAWABLE_EPOCH), EXIT_BALANCE_TO_CONSUME, EARLIEST_EXIT_EPOCH
+
+relation InitiateValidatorExit:
+  beaconState '.' VALIDATORS `[ validatorIndex `] ~> beaconState
+  hint(input %0 %1)
+
+;; skip condition: already exited
+rule InitiateValidatorExit/skip:
+  state '.' VALIDATORS `[ vid `] ~> state
+  ;; inserted guard
+  -- if $(vid < |state.VALIDATORS|)
+  -- if state.VALIDATORS[vid] = validator
+  ;; branch
+  -- if validator.EXIT_EPOCH =/= $FAR_FUTURE_EPOCH
+
+rule InitiateValidatorExit/main:
+  state '.' VALIDATORS `[ vid `]
+  ~> state_churn[.VALIDATORS[vid] = validator[.EXIT_EPOCH = epoch_exit_queue][.WITHDRAWABLE_EPOCH = epoch_withdrawable]]
+  -- if $(vid < |state.VALIDATORS|)
+  -- if state.VALIDATORS[vid] = validator
+  ;; branch
+  -- if validator.EXIT_EPOCH = $FAR_FUTURE_EPOCH
+  ;; Compute exit queue epoch [Modified in Electra:EIP7251]
+  -- ComputeExitEpochAndUpdateChurn: state EXIT_CHURN validator.EFFECTIVE_BALANCE ~> state_churn
+  -- if state_churn.EARLIEST_EXIT_EPOCH = epoch_exit_queue
+  ;; Set validator exit epoch and withdrawable epoch
+  ;; inserted overflow check
+  -- if $(epoch_exit_queue <= $UINT64_MAX - $MIN_VALIDATOR_WITHDRAWABILITY_DELAY)
+  -- if epoch_withdrawable = $( epoch_exit_queue + $MIN_VALIDATOR_WITHDRAWABILITY_DELAY )
+
+;; [Electra] queue_excess_active_balance(state, index)
+;;  mutates: BALANCES, PENDING_DEPOSITS
+relation QueueExcessActiveBalance:
+  beaconState QUEUE_EXCESS validatorIndex ~> beaconState
+  hint(input %0 %1)
+
+rule QueueExcessActiveBalance/excess:
+  state QUEUE_EXCESS vid
+  ~> state[.BALANCES[vid] = $MIN_ACTIVATION_BALANCE]
+          [.PENDING_DEPOSITS = state.PENDING_DEPOSITS ++ [pendingDeposit]]
+  -- if $(vid < |state.BALANCES|)
+  -- if $(vid < |state.VALIDATORS|)
+  -- if state.BALANCES[vid] = balance
+  -- if $(balance > $MIN_ACTIVATION_BALANCE)
+  -- if state.VALIDATORS[vid] = validator
+  ;; Use G2_POINT_AT_INFINITY as a signature field placeholder
+  ;; and GENESIS_SLOT to distinguish from a pending deposit request
+  -- if pendingDeposit = { PUBKEY validator.PUBKEY,
+                           WITHDRAWAL_CREDENTIALS validator.WITHDRAWAL_CREDENTIALS,
+                           AMOUNT $(balance - $MIN_ACTIVATION_BALANCE),
+                           SIGNATURE $G2_POINT_AT_INFINITY,
+                           SLOT $GENESIS_SLOT }
+
+rule QueueExcessActiveBalance/none:
+  state QUEUE_EXCESS vid ~> state
+  -- if $(vid < |state.BALANCES|)
+  -- if $(state.BALANCES[vid] <= $MIN_ACTIVATION_BALANCE)
+
+;; [Electra] switch_to_compounding_validator(state, index)
+;;  mutates: VALIDATORS[](.WITHDRAWAL_CREDENTIALS), BALANCES, PENDING_DEPOSITS
+;;  python: COMPOUNDING_WITHDRAWAL_PREFIX + withdrawal_credentials[1:]
+;;  $make_versioned_hash is the (bytes1, bytes31) -> bytes32 concatenation
+relation SwitchToCompoundingValidator:
+  beaconState SWITCH_TO_COMPOUNDING validatorIndex ~> beaconState
+  hint(input %0 %1)
+
+rule SwitchToCompoundingValidator:
+  state SWITCH_TO_COMPOUNDING vid ~> state_out
+  -- if $(vid < |state.VALIDATORS|)
+  -- if $make_versioned_hash($COMPOUNDING_WITHDRAWAL_PREFIX,
+                             $strip_first_byte(state.VALIDATORS[vid].WITHDRAWAL_CREDENTIALS)) = bytes32_wc
+  -- QueueExcessActiveBalance:
+       state[.VALIDATORS[vid].WITHDRAWAL_CREDENTIALS = bytes32_wc] QUEUE_EXCESS vid ~> state_out
+
+;; [Phase0 -> Altair -> Bellatrix -> Electra]
+;; slash_validator(state, slashed_index, whistleblower_index = None) : beaconState
+;;  mutates: .VALIDATORS[](.EXIT_EPOCH, .WITHDRAWABLE_EPOCH, .SLASHED) .SLASHINGS, .BALANCES
+
+relation SlashValidator:
+  beaconState SLASH `[ validatorIndex `] BY validatorIndex? ~> beaconState
+  hint(input %0 %1 %2)
+
+;; when whistleblower id is not given
+rule SlashValidator/no_whistleblower:
+  state SLASH `[ vid_slashed `] BY eps ~> state_out
+  -- if $(vid_slashed < |state.VALIDATORS|)
+  -- if $get_current_epoch(state) = epoch
+  -- InitiateValidatorExit: state '.' VALIDATORS `[ vid_slashed `] ~> state_init
+  -- if state_init.VALIDATORS[vid_slashed] = validator
+  -- if $max_uint64(validator.WITHDRAWABLE_EPOCH, $( epoch + $EPOCHS_PER_SLASHINGS_VECTOR )) = epoch_withdrawable
+  -- if state_1 = state_init[.VALIDATORS[vid_slashed] = validator[.SLASHED = true][.WITHDRAWABLE_EPOCH = epoch_withdrawable]]
+  ;; accumulate slashings[epoch % EPOCHS_PER_SLASHINGS_VECTOR] += effective_balance
+  ;; inserted overflow check
+  -- if $(state_1.SLASHINGS[epoch \ $EPOCHS_PER_SLASHINGS_VECTOR] <= $UINT64_MAX - validator.EFFECTIVE_BALANCE)
+  -- if state_2 = state_1[ .SLASHINGS[epoch \ $EPOCHS_PER_SLASHINGS_VECTOR]
+                = $(state_1.SLASHINGS[epoch \ $EPOCHS_PER_SLASHINGS_VECTOR] + validator.EFFECTIVE_BALANCE) ]
+  ;; [Modified in Electra:EIP7251] slashing penalty
+  -- if $( validator.EFFECTIVE_BALANCE / $MIN_SLASHING_PENALTY_QUOTIENT_ELECTRA ) = penalty_slashing
+  -- DecreaseBalance: state_2 '.' BALANCES `[ vid_slashed `] '-' penalty_slashing ~> state_penalized
+  ;; rewards [Modified in Electra:EIP7251]
+  -- if vid_proposer = $get_beacon_proposer_index(state_penalized)
+  -- if $( validator.EFFECTIVE_BALANCE / $WHISTLEBLOWER_REWARD_QUOTIENT_ELECTRA ) = reward_whistleblower
+  -- if $( reward_whistleblower * $PROPOSER_WEIGHT ) = gwei_prop_num
+  -- if $( gwei_prop_num / $WEIGHT_DENOMINATOR ) = reward_proposer
+  -- IncreaseBalance: state_penalized '.' BALANCES `[ vid_proposer `] '+' reward_proposer ~> state_rewarded_proposer
+  -- if $( reward_whistleblower - reward_proposer ) = reward_whistleblower_rest
+  ;; branch: default vid_whistleblower = vid_proposer
+  -- IncreaseBalance: state_rewarded_proposer '.' BALANCES `[ vid_proposer `] '+' reward_whistleblower_rest ~> state_out
+
+;; when whistleblower id is given
+rule SlashValidator/whistleblower:
+  state SLASH `[ vid_slashed `] BY vid_whistleblower ~> state_out
+  -- if $(vid_slashed < |state.VALIDATORS|)
+  -- if $get_current_epoch(state) = epoch
+  -- InitiateValidatorExit: state '.' VALIDATORS `[ vid_slashed `] ~> state_init
+  -- if state_init.VALIDATORS[vid_slashed] = validator
+  -- if $max_uint64(validator.WITHDRAWABLE_EPOCH, $( epoch + $EPOCHS_PER_SLASHINGS_VECTOR )) = epoch_withdrawable
+  -- if state_1 = state_init[.VALIDATORS[vid_slashed] = validator[.SLASHED = true][.WITHDRAWABLE_EPOCH = epoch_withdrawable]]
+  ;; accumulate slashings[epoch % EPOCHS_PER_SLASHINGS_VECTOR] += effective_balance
+  ;; inserted overflow check
+  -- if $(state_1.SLASHINGS[epoch \ $EPOCHS_PER_SLASHINGS_VECTOR] <= $UINT64_MAX - validator.EFFECTIVE_BALANCE)
+  -- if state_2 = state_1[ .SLASHINGS[epoch \ $EPOCHS_PER_SLASHINGS_VECTOR]
+                = $(state_1.SLASHINGS[epoch \ $EPOCHS_PER_SLASHINGS_VECTOR] + validator.EFFECTIVE_BALANCE) ]
+  ;; [Modified in Electra:EIP7251] slashing penalty
+  -- if $( validator.EFFECTIVE_BALANCE / $MIN_SLASHING_PENALTY_QUOTIENT_ELECTRA ) = penalty_slashing
+  -- DecreaseBalance: state_2 '.' BALANCES `[ vid_slashed `] '-' penalty_slashing ~> state_penalized
+  ;; rewards [Modified in Electra:EIP7251]
+  -- if vid_proposer = $get_beacon_proposer_index(state_penalized)
+  -- if $( validator.EFFECTIVE_BALANCE / $WHISTLEBLOWER_REWARD_QUOTIENT_ELECTRA ) = reward_whistleblower
+  -- if $( reward_whistleblower * $PROPOSER_WEIGHT ) = gwei_prop_num
+  -- if $( gwei_prop_num / $WEIGHT_DENOMINATOR ) = reward_proposer
+  -- IncreaseBalance: state_penalized '.' BALANCES `[ vid_proposer `] '+' reward_proposer ~> state_rewarded_proposer
+  -- if $( reward_whistleblower - reward_proposer ) = reward_whistleblower_rest
+  ;; branch
+  -- IncreaseBalance: state_rewarded_proposer '.' BALANCES `[ vid_whistleblower `] '+' reward_whistleblower_rest ~> state_out
+
+
+;; [Electra] is_valid_deposit_signature(BLSPubkey, Bytes32, Gwei, BLSSignature) -> bool
+dec $is_valid_deposit_signature(blsPubkey, bytes32, gwei, blsSignature) : boolean
+
+def $is_valid_deposit_signature(blsPubkey, bytes32_wc, gwei_amount, blsSignature)
+  = $bls_verify(blsPubkey, $compute_signing_root_depositMessage(depositMessage, domain), blsSignature)
+  -- if depositMessage = { PUBKEY blsPubkey,
+                           WITHDRAWAL_CREDENTIALS bytes32_wc,
+                           AMOUNT gwei_amount }
+  ;; Fork-agnostic domain since deposits are valid across forks
+  -- if $compute_domain($DOMAIN_DEPOSIT, eps, eps) = domain
+
+;; [Phase0 -> Electra]
+;; apply_deposit(state, pubkey, withdrawal_credentials, amount, signature) : beaconState
+;;  mutates: VALIDATORS, BALANCES, PREVIOUS_EPOCH_PARTICIPATION, CURRENT_EPOCH_PARTICIPATION, INACTIVITY_SCORES,
+;;           PENDING_DEPOSITS
+
+relation ApplyDeposit:
+  beaconState '.' VALIDATORS '++' `{ blsPubkey bytes32 gwei `} SIGNED blsSignature ~> beaconState
+  hint(input %0 %1 %2 %3 %4)
+
+;; TODO(fulu): functions `apply_deposit` removed upstream in specs/electra/beacon-chain.md
+;; removed upstream: delete this declaration once nothing references it
+;; def apply_deposit(
+;;     state: BeaconState,
+;;     pubkey: BLSPubkey,
+;;     withdrawal_credentials: Bytes32,
+;;     amount: Gwei,
+;;     signature: BLSSignature,
+;; ) -> None:
+;;     validator_pubkeys = [v.pubkey for v in state.validators]
+;;     if pubkey not in validator_pubkeys:
+;;         # Verify the deposit signature (proof of possession) which is not checked by the deposit contract
+;;         if is_valid_deposit_signature(pubkey, withdrawal_credentials, amount, signature):
+;;             # [Modified in Electra:EIP7251]
+;;             add_validator_to_registry(state, pubkey, withdrawal_credentials, Gwei(0))
+;;         else:
+;;             return
+;;
+;;     # [Modified in Electra:EIP7251]
+;;     # Increase balance by deposit amount
+;;     state.pending_deposits.append(
+;;         PendingDeposit(
+;;             pubkey=pubkey,
+;;             withdrawal_credentials=withdrawal_credentials,
+;;             amount=amount,
+;;             signature=signature,
+;;             slot=GENESIS_SLOT,  # Use GENESIS_SLOT to distinguish from a pending deposit request
+;;         )
+;;     )
+
+;; if branch: new pubkey with valid signature, added with a zero balance [Modified in Electra:EIP7251]
+;; if branch: new pubkey with invalid signature (return without a change)
+;; else: existing pubkey, queue the amount [Modified in Electra:EIP7251]

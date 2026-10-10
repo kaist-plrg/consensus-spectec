@@ -1,0 +1,390 @@
+;; --------------------------------------------
+;; helpers for withdrawals
+;; --------------------------------------------
+
+;; [Custom | filter helper : get_balance_after_withdrawals]
+dec $is_withdrawal_of(withdrawal, validatorIndex) : bool
+def $is_withdrawal_of(withdrawal, vid) = (withdrawal.VALIDATOR_INDEX = vid)
+
+;; [Capella] get_balance_after_withdrawals(BeaconState, ValidatorIndex, Sequence[Withdrawal]) -> Gwei
+;;  Electra needs it: a pending partial withdrawal and a sweep withdrawal can share a validator
+dec $get_balance_after_withdrawals(beaconState, validatorIndex, withdrawal*) : gwei
+def $get_balance_after_withdrawals(state, vid, withdrawal_prior*) = $(balance - gwei_withdrawn)
+  ;; inserted guard (python raises IndexError)
+  -- if $(vid < |state.BALANCES|)
+  -- if state.BALANCES[vid] = balance
+  -- if $filter_list_2_<withdrawal, validatorIndex>(withdrawal_prior*, vid, def $is_withdrawal_of) = withdrawal_v*
+  -- if (withdrawal_v.AMOUNT = gwei_amount)*
+  -- if $sum_<gwei>(gwei_amount*) = gwei_withdrawn
+  ;; inserted underflow check (python raises on a negative Gwei)
+  -- if $(gwei_withdrawn <= balance)
+
+;; [Custom | loop : get_pending_partial_withdrawals]
+;;  args: state, epoch, next withdrawal index, withdrawals_limit, prior withdrawals,
+;;        pending partial withdrawals left, new withdrawals, processed count
+;;  returns: (new withdrawals, next withdrawal index, processed count)
+dec $pending_partial_withdrawals_loop(
+  beaconState, epoch, withdrawalIndex, uint64, withdrawal*, pendingPartialWithdrawal*, withdrawal*, uint64
+) : (withdrawal*, withdrawalIndex, uint64)
+
+;; loop exhausted
+def $pending_partial_withdrawals_loop(state, epoch, withdrawalIndex, uint64_limit, withdrawal_prior*, eps, withdrawal_acc*, uint64_processed)
+  = (withdrawal_acc*, withdrawalIndex, uint64_processed)
+
+;; break: not withdrawable yet, or the limit is reached
+def $pending_partial_withdrawals_loop(state, epoch, withdrawalIndex, uint64_limit, withdrawal_prior*, pendingPartialWithdrawal_h :: pendingPartialWithdrawal_t*, withdrawal_acc*, uint64_processed)
+  = (withdrawal_acc*, withdrawalIndex, uint64_processed)
+  -- if $(pendingPartialWithdrawal_h.WITHDRAWABLE_EPOCH > epoch)
+     \/ $(|withdrawal_prior*| + |withdrawal_acc*| >= uint64_limit)
+
+;; eligible: withdraw the excess above MIN_ACTIVATION_BALANCE, up to the requested amount
+def $pending_partial_withdrawals_loop(state, epoch, withdrawalIndex, uint64_limit, withdrawal_prior*, pendingPartialWithdrawal_h :: pendingPartialWithdrawal_t*, withdrawal_acc*, uint64_processed)
+  = $pending_partial_withdrawals_loop(
+      state, epoch, $(withdrawalIndex + 1), uint64_limit, withdrawal_prior*,
+      pendingPartialWithdrawal_t*, withdrawal_acc* ++ [ withdrawal ], $(uint64_processed + 1)
+    )
+  -- if $(pendingPartialWithdrawal_h.WITHDRAWABLE_EPOCH <= epoch)
+  -- if $(|withdrawal_prior*| + |withdrawal_acc*| < uint64_limit)
+  -- if pendingPartialWithdrawal_h.VALIDATOR_INDEX = vid
+  ;; inserted guard (python raises IndexError)
+  -- if $(vid < |state.VALIDATORS|)
+  -- if state.VALIDATORS[vid] = validator
+  -- if $get_balance_after_withdrawals(state, vid, withdrawal_prior* ++ withdrawal_acc*) = balance
+  -- if $is_eligible_for_partial_withdrawals(validator, balance) = true
+  ;; inserted overflow check
+  -- if $(withdrawalIndex <= $UINT64_MAX - 1)
+  -- if withdrawal =
+       { INDEX           withdrawalIndex,
+         VALIDATOR_INDEX vid,
+         ADDRESS         $extract_execution_address(validator.WITHDRAWAL_CREDENTIALS),
+         AMOUNT          $min_uint64($(balance - $MIN_ACTIVATION_BALANCE), pendingPartialWithdrawal_h.AMOUNT) }
+
+;; not eligible: count it as processed
+def $pending_partial_withdrawals_loop(state, epoch, withdrawalIndex, uint64_limit, withdrawal_prior*, pendingPartialWithdrawal_h :: pendingPartialWithdrawal_t*, withdrawal_acc*, uint64_processed)
+  = $pending_partial_withdrawals_loop(
+      state, epoch, withdrawalIndex, uint64_limit, withdrawal_prior*,
+      pendingPartialWithdrawal_t*, withdrawal_acc*, $(uint64_processed + 1)
+    )
+  -- if $(pendingPartialWithdrawal_h.WITHDRAWABLE_EPOCH <= epoch)
+  -- if $(|withdrawal_prior*| + |withdrawal_acc*| < uint64_limit)
+  -- if pendingPartialWithdrawal_h.VALIDATOR_INDEX = vid
+  -- if $(vid < |state.VALIDATORS|)
+  -- if state.VALIDATORS[vid] = validator
+  -- if $get_balance_after_withdrawals(state, vid, withdrawal_prior* ++ withdrawal_acc*) = balance
+  -- if $is_eligible_for_partial_withdrawals(validator, balance) = false
+
+;; [Electra] get_pending_partial_withdrawals(BeaconState, WithdrawalIndex, Sequence[Withdrawal])
+;;   -> (Sequence[Withdrawal], WithdrawalIndex, uint64)
+dec $get_pending_partial_withdrawals(beaconState, withdrawalIndex, withdrawal*) : (withdrawal*, withdrawalIndex, uint64)
+def $get_pending_partial_withdrawals(state, withdrawalIndex, withdrawal_prior*)
+  = $pending_partial_withdrawals_loop(
+      state, $get_current_epoch(state), withdrawalIndex, uint64_limit, withdrawal_prior*,
+      state.PENDING_PARTIAL_WITHDRAWALS, eps, 0
+    )
+  -- if $min_uint64($(|withdrawal_prior*| + $MAX_PENDING_PARTIALS_PER_WITHDRAWALS_SWEEP),
+                    $($MAX_WITHDRAWALS_PER_PAYLOAD - 1)) = uint64_limit
+  ;; assert
+  -- if $(|withdrawal_prior*| <= uint64_limit)
+
+;; [Custom | loop : get_validators_sweep_withdrawals]
+;;  [Modified in Electra:EIP7251] withdrawal_acc* starts with the prior withdrawals,
+;;  so it is all_withdrawals, and the result is prior ++ sweep withdrawals
+dec $expected_withdrawals_loop(
+  beaconState, epoch, withdrawalIndex, validatorIndex, uint64, uint64, withdrawal*
+) : withdrawal*
+
+def $expected_withdrawals_loop(_, _, _, _, _, _, withdrawal_acc*)
+  = withdrawal_acc*
+  -- if |withdrawal_acc*| = $MAX_WITHDRAWALS_PER_PAYLOAD
+
+def $expected_withdrawals_loop(_, _, _, _, uint64_bound, i, withdrawal_acc*)
+  = withdrawal_acc*
+  -- if $( i >= uint64_bound )
+
+;; case 1: fully withdrawable
+def $expected_withdrawals_loop(state, epoch, withdrawalIndex, vid, uint64_bound, i, withdrawal_acc*)
+  = $expected_withdrawals_loop(
+      state,
+      epoch,
+      $(withdrawalIndex + 1),
+      $((vid + 1) \ |state.VALIDATORS|),
+      uint64_bound,
+      $(i + 1),
+      withdrawal_acc* ++ [ withdrawal ]
+    )
+  ;; inserted bound check guards
+  -- if $(vid < |state.VALIDATORS|)
+  -- if $(vid < |state.BALANCES|)
+  -- if validator = state.VALIDATORS[vid]
+  -- if $get_balance_after_withdrawals(state, vid, withdrawal_acc*) = balance
+  ;; branch: fully withdrawable
+  -- if $is_fully_withdrawable_validator(validator, balance, epoch) = true
+  ;; inserted overflow check
+  -- if $(withdrawalIndex <= $UINT64_MAX - 1)
+  -- if withdrawal =
+       { INDEX           withdrawalIndex,
+         VALIDATOR_INDEX vid,
+         ADDRESS         $extract_execution_address(validator.WITHDRAWAL_CREDENTIALS),
+         AMOUNT          balance }
+       
+
+;; case 2: partially withdrawable
+def $expected_withdrawals_loop(state, epoch, withdrawalIndex, vid, uint64_bound, i, withdrawal_acc*)
+  = $expected_withdrawals_loop(
+      state,
+      epoch,
+      $(withdrawalIndex + 1),
+      $((vid + 1) \ |state.VALIDATORS|),
+      uint64_bound,
+      $(i + 1),
+      withdrawal_acc* ++ [ withdrawal ]
+    )
+  ;; inserted bound check guards
+  -- if $(vid < |state.VALIDATORS|)
+  -- if $(vid < |state.BALANCES|)
+  -- if validator = state.VALIDATORS[vid]
+  -- if $get_balance_after_withdrawals(state, vid, withdrawal_acc*) = balance
+  ;; branch: partially withdrawable
+  -- if $is_fully_withdrawable_validator(validator, balance, epoch) = false
+  -- if $is_partially_withdrawable_validator(validator, balance) = true
+  ;; inserted overflow check
+  -- if $(withdrawalIndex <= $UINT64_MAX - 1)
+  -- if withdrawal =
+       { INDEX           withdrawalIndex,
+         VALIDATOR_INDEX vid,
+         ADDRESS         $extract_execution_address(validator.WITHDRAWAL_CREDENTIALS),
+         AMOUNT          $( balance - $get_max_effective_balance(validator) ) }
+
+;; case C: neither
+def $expected_withdrawals_loop(state, epoch, withdrawalIndex, vid, uint64_bound, i, withdrawal_acc*)
+  = $expected_withdrawals_loop(
+      state,
+      epoch,
+      withdrawalIndex,
+      $((vid + 1) \ |state.VALIDATORS|),
+      uint64_bound,
+      $(i + 1),
+      withdrawal_acc*
+    )
+  ;; inserted bound check guards
+  -- if $(vid < |state.VALIDATORS|)
+  -- if $(vid < |state.BALANCES|)
+  -- if validator = state.VALIDATORS[vid]
+  -- if $get_balance_after_withdrawals(state, vid, withdrawal_acc*) = balance
+  ;; branch: neither
+  -- if ~ $is_fully_withdrawable_validator(validator, balance, epoch)
+  -- if ~ $is_partially_withdrawable_validator(validator, balance)
+
+;; [Capella -> Electra] get_expected_withdrawals(BeaconState) -> ExpectedWithdrawals
+dec $get_expected_withdrawals(beaconState) : expectedWithdrawals
+
+;; TODO(gloas): functions `get_expected_withdrawals` changed upstream in specs/gloas/beacon-chain.md
+;; body commented out below: uncomment it and apply the diff above
+;; --- old
+;; +++ new
+;; @@ -3,5 +3,11 @@
+;;      withdrawals: list[Withdrawal] = []
+;;
+;; -    # [New in Electra:EIP7251]
+;; +    # [New in Gloas:EIP7732]
+;; +    # Get builder withdrawals
+;; +    builder_withdrawals, withdrawal_index, processed_builder_withdrawals_count = (
+;; +        get_builder_withdrawals(state, withdrawal_index, withdrawals)
+;; +    )
+;; +    withdrawals.extend(builder_withdrawals)
+;; +
+;;      # Get partial withdrawals
+;;      partial_withdrawals, withdrawal_index, processed_partial_withdrawals_count = (
+;; @@ -9,4 +15,11 @@
+;;      )
+;;      withdrawals.extend(partial_withdrawals)
+;; +
+;; +    # [New in Gloas:EIP7732]
+;; +    # Get builders sweep withdrawals
+;; +    builders_sweep_withdrawals, withdrawal_index, processed_builders_sweep_count = (
+;; +        get_builders_sweep_withdrawals(state, withdrawal_index, withdrawals)
+;; +    )
+;; +    withdrawals.extend(builders_sweep_withdrawals)
+;;
+;;      # Get validators sweep withdrawals
+;; @@ -18,6 +31,9 @@
+;;      return ExpectedWithdrawals(
+;;          withdrawals,
+;; -        # [New in Electra:EIP7251]
+;; +        # [New in Gloas:EIP7732]
+;; +        processed_builder_withdrawals_count,
+;;          processed_partial_withdrawals_count,
+;; +        # [New in Gloas:EIP7732]
+;; +        processed_builders_sweep_count,
+;;          processed_validators_sweep_count,
+;;      )
+
+;; def $get_expected_withdrawals(state)
+;;   = { WITHDRAWALS                         withdrawal_all*,
+;;       PROCESSED_PARTIAL_WITHDRAWALS_COUNT uint64_partial_count }
+;;   -- if $get_pending_partial_withdrawals(state, state.NEXT_WITHDRAWAL_INDEX, eps)
+;;        = (withdrawal_partial*, withdrawalIndex_next, uint64_partial_count)
+;;   -- if epoch_cur = $get_current_epoch(state)
+;;   -- if validatorIndex_start = state.NEXT_WITHDRAWAL_VALIDATOR_INDEX
+;;   -- if uint64_bound = $min_uint64(|state.VALIDATORS|, $MAX_VALIDATORS_PER_WITHDRAWALS_SWEEP)
+;;   ;; assert: There must be at least one space reserved for validator sweep withdrawals
+;;   -- if $(|withdrawal_partial*| < $MAX_WITHDRAWALS_PER_PAYLOAD)
+;;   -- if $expected_withdrawals_loop(
+;;          state, epoch_cur, withdrawalIndex_next, validatorIndex_start, uint64_bound, 0, withdrawal_partial*
+;;        ) = withdrawal_all*
+
+;; [Modified in Electra:EIP7251] pending partial withdrawals come before the validator sweep
+relation ApplyWithdrawal:
+  beaconState '.' BALANCES `{ withdrawal `} ~> beaconState
+  hint(input %0 %1)
+
+rule ApplyWithdrawal/main:
+  state '.' BALANCES `{ withdrawal `} ~> state_out
+  -- DecreaseBalance: state '.' BALANCES `[ withdrawal.VALIDATOR_INDEX `] '-' withdrawal.AMOUNT ~> state_out
+
+relation ApplyWithdrawals:
+  beaconState '.' BALANCES `{ withdrawal* `} ~>* beaconState
+  hint(input %0 %1)
+
+;; TODO(gloas): functions `apply_withdrawals` changed upstream in specs/gloas/beacon-chain.md
+;; body commented out below: uncomment it and apply the diff above
+;; --- old
+;; +++ new
+;; @@ -1,3 +1,10 @@
+;;  def apply_withdrawals(state: BeaconState, withdrawals: Sequence[Withdrawal]) -> None:
+;;      for withdrawal in withdrawals:
+;; -        decrease_balance(state, withdrawal.validator_index, withdrawal.amount)
+;; +        # [Modified in Gloas:EIP7732]
+;; +        if is_builder_index(withdrawal.validator_index):
+;; +            builder_index = convert_validator_index_to_builder_index(withdrawal.validator_index)
+;; +            state.builders[builder_index].balance = saturating_sub(
+;; +                state.builders[builder_index].balance, withdrawal.amount
+;; +            )
+;; +        else:
+;; +            decrease_balance(state, withdrawal.validator_index, withdrawal.amount)
+
+;; rule ApplyWithdrawals/fold:
+;;   state '.' BALANCES `{ withdrawal* `} ~>* state_out
+;;   -- (ApplyWithdrawal: state_cur '.' BALANCES `{ withdrawal `} ~> state_next)*{
+;;        state -> state_cur ... state_next -> state_out
+;;      }
+
+;; [Custom]
+;; loop helper for ProcessAttestation
+relation AddFlag:
+  participationFlags `[ validatorIndex `] '++' `{ validatorIndex `} '#' beaconState '#' SUM gwei ~> participationFlags '#' SUM gwei
+  hint(input %0 %1 %2 %3 %4)
+
+rule AddFlag/main:
+  participationFlags `[ vid_attesting `] '++' `{ vid_flag `} '#' state '#' SUM reward
+    ~>
+    $add_flag(participationFlags, vid_flag)
+    '#' SUM $(reward + reward_base * $PARTICIPATION_FLAG_WEIGHTS[vid_flag])
+  -- if ~$has_flag(participationFlags, vid_flag)
+  -- if $get_base_reward(state, vid_attesting) = reward_base
+rule AddFlag/skip:
+  participationFlags `[ _ `] '++' `{ vid_flag `} '#' _ '#' SUM reward ~> participationFlags '#' SUM reward
+  -- if $has_flag(participationFlags, vid_flag)
+
+;; [Custom]
+;; fold AddFlag over flag indices
+relation AddFlags:
+  participationFlags `[ validatorIndex `] '++' `{ validatorIndex* `} '#' beaconState '#' SUM gwei
+    ~> participationFlags '#' SUM gwei
+  hint(input %0 %1 %2 %3 %4)
+
+rule AddFlags/fold:
+  participationFlags_0 `[ vid_attesting `] '++' `{ vid_flag* `} '#' state '#' SUM reward_0
+    ~> participationFlags_n '#' SUM reward_n
+  -- (AddFlag: participationFlags_cur `[ vid_attesting `] '++' `{ vid_flag `} '#' state '#' SUM reward_cur
+        ~> participationFlags_next '#' SUM reward_next)*{
+       participationFlags_0 -> participationFlags_cur ... participationFlags_next -> participationFlags_n,
+       reward_0 -> reward_cur ... reward_next -> reward_n
+     }
+
+;; [Custom]
+;; iterate AddFlags over participation flags
+relation ProcessFlags:
+  participationFlags* `[ validatorIndex `] '++' `{ validatorIndex* `} '#' beaconState '#' SUM gwei
+    ~> participationFlags* '#' SUM gwei
+  hint(input %0 %1 %2 %3 %4)
+
+rule ProcessFlags/main:
+  participationFlags* `[ vid_attesting `] '++' `{ vid_flag* `} '#' state '#' SUM reward
+    ~>
+    (participationFlags*[ [vid_attesting] = participationFlags_updated ])
+    '#' SUM $(reward + reward_increment)
+  -- if $(vid_attesting < |participationFlags*|)
+  -- AddFlags: participationFlags*[vid_attesting] `[vid_attesting`] '++' `{ vid_flag* `} '#' state '#' SUM 0
+      ~> participationFlags_updated '#' SUM reward_increment
+
+;; [Custom]
+;; fold ProcessFlags over attesting indices
+relation ProcessFlags_over_attesting:
+  participationFlags* `[ validatorIndex* `] '++' `{ validatorIndex* `} '#' beaconState '#' SUM gwei
+    ~> participationFlags* '#' SUM gwei
+  hint(input %0 %1 %2 %3 %4)
+
+rule ProcessFlags_over_attesting/fold:
+  participationFlags_0* `[ vid_attesting* `] '++' `{ vid_flag* `} '#' state '#' SUM reward_0
+    ~> participationFlags_n* '#' SUM reward_n
+  -- (ProcessFlags: participationFlags_cur* `[ vid_attesting `] '++' `{ vid_flag* `} '#' state '#' SUM reward_cur
+        ~> participationFlags_next* '#' SUM reward_next)*{
+       participationFlags_0* -> participationFlags_cur* ... participationFlags_next* -> participationFlags_n*,
+       reward_0 -> reward_cur ... reward_next -> reward_n
+     }
+
+;; process_sync_aggregate
+dec $bit_is_one_en_blsPubkey(enumerated_<blsPubkey>, boolean*) : bool
+def $bit_is_one_en_blsPubkey((i, blsPubkey), boolean_bits*) = true
+  -- if $(i < |boolean_bits*|)
+  -- if boolean_bits*[i] = true
+def $bit_is_one_en_blsPubkey((i, blsPubkey), boolean_bits*) = false
+  -- otherwise
+
+;; [Custom]
+;; loop helper for ProcessSyncAggregate
+relation ApplyReward:
+  beaconState
+    PARTICIPANT boolean `[ validatorIndex `] '+' gwei
+    PROPOSER `[ validatorIndex `] '+' gwei
+      ~> beaconState
+  hint(input %0 %1 %2 %3 %4 %5)
+
+rule ApplyReward/participation:
+  state
+    PARTICIPANT true `[ vid_participant `] '+' reward_participant
+    PROPOSER `[ vid_proposer `] '+' reward_proposer
+      ~> state_out
+  -- IncreaseBalance: state '.' BALANCES `[ vid_participant `] '+' reward_participant ~> state_participant
+  -- IncreaseBalance: state_participant '.' BALANCES `[ vid_proposer `] '+' reward_proposer ~> state_out
+
+rule ApplyReward/no_participation:
+  state
+    PARTICIPANT false `[ vid_participant `] '+' reward_participant
+    PROPOSER `[ _ `] '+' _
+      ~> state_out
+  -- DecreaseBalance: state '.' BALANCES `[ vid_participant `] '-' reward_participant ~> state_out
+
+;; [Custom]
+;; fold ApplyReward over vid_participant and bit_participating
+relation ApplyReward_over_participants:
+  beaconState
+    PARTICIPANT boolean* `[ validatorIndex* `] '+' gwei
+    PROPOSER `[ validatorIndex `] '+' gwei
+      ~> beaconState
+    hint(input %0 %1 %2 %3 %4 %5)
+
+rule ApplyReward_over_participants/fold:
+  state
+    PARTICIPANT boolean* `[ vid_participant* `] '+' reward_participant
+    PROPOSER `[ vid_proposer `] '+' reward_proposer
+      ~> state_out
+  -- (ApplyReward:
+        state_cur
+          PARTICIPANT boolean `[ vid_participant `] '+' reward_participant
+          PROPOSER `[ vid_proposer `] '+' reward_proposer
+            ~> state_next)*{
+       state -> state_cur ... state_next -> state_out
+     }
+  

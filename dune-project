@@ -17,7 +17,8 @@
     (share capella_specs)
     (share deneb_specs)
     (share electra_specs)
-    (share fulu_specs))
+    (share fulu_specs)
+    (share gloas_specs))
   (depends
     (ocaml (>= 5.1.0))
     (menhir (and :build (>= 20240715)))
