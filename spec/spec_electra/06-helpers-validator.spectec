@@ -19,24 +19,13 @@ def $is_active_validator(validator, epoch) = false
 ;; [Phase0] is_eligible_for_activation_queue(Validator) -> bool
 dec $is_eligible_for_activation_queue(validator) : boolean
 
-;; TODO(electra): functions `is_eligible_for_activation_queue` changed upstream in specs/electra/beacon-chain.md
-;; body commented out below: uncomment it and apply the diff above
-;; --- old
-;; +++ new
-;; @@ -5,4 +5,5 @@
-;;      return (
-;;          validator.activation_eligibility_epoch == FAR_FUTURE_EPOCH
-;; -        and validator.effective_balance == MAX_EFFECTIVE_BALANCE
-;; +        # [Modified in Electra:EIP7251]
-;; +        and validator.effective_balance >= MIN_ACTIVATION_BALANCE
-;;      )
+;; [Modified in Electra:EIP7251] MIN_ACTIVATION_BALANCE instead of MAX_EFFECTIVE_BALANCE
+def $is_eligible_for_activation_queue(validator) = true
+  -- if validator.ACTIVATION_ELIGIBILITY_EPOCH = $FAR_FUTURE_EPOCH
+  -- if $(validator.EFFECTIVE_BALANCE >= $MIN_ACTIVATION_BALANCE)
 
-;; def $is_eligible_for_activation_queue(validator) = true
-;;   -- if validator.ACTIVATION_ELIGIBILITY_EPOCH = $FAR_FUTURE_EPOCH
-;;   -- if validator.EFFECTIVE_BALANCE = $MAX_EFFECTIVE_BALANCE
-;;
-;; def $is_eligible_for_activation_queue(validator) = false
-;;   -- otherwise
+def $is_eligible_for_activation_queue(validator) = false
+  -- otherwise
 
 ;; [Phase0] is_eligible_for_activation(BeaconState, Validator) -> bool
 dec $is_eligible_for_activation(beaconState, validator) : boolean
@@ -64,61 +53,68 @@ dec $has_eth1_withdrawal_credential(validator) : boolean
 
 def $has_eth1_withdrawal_credential(validator) = ($get_first_byte(validator.WITHDRAWAL_CREDENTIALS) = $ETH1_ADDRESS_WITHDRAWAL_PREFIX)
 
+;; [Electra] is_compounding_withdrawal_credential(Bytes32) -> bool
+dec $is_compounding_withdrawal_credential(bytes32) : boolean
+
+def $is_compounding_withdrawal_credential(bytes32_wc) = ($get_first_byte(bytes32_wc) = $COMPOUNDING_WITHDRAWAL_PREFIX)
+
+;; [Electra] has_compounding_withdrawal_credential(Validator) -> bool
+dec $has_compounding_withdrawal_credential(validator) : boolean
+
+def $has_compounding_withdrawal_credential(validator) = $is_compounding_withdrawal_credential(validator.WITHDRAWAL_CREDENTIALS)
+
+;; [Electra] has_execution_withdrawal_credential(Validator) -> bool
+;;  0x01 or 0x02 prefix
+dec $has_execution_withdrawal_credential(validator) : boolean
+
+def $has_execution_withdrawal_credential(validator)
+  = $has_eth1_withdrawal_credential(validator) \/ $has_compounding_withdrawal_credential(validator)
+
 ;; [Capella] is_fully_withdrawable_validator(Validator, Gwei, Epoch) -> bool
 dec $is_fully_withdrawable_validator(validator, gwei, epoch) : boolean
 
-;; TODO(electra): functions `is_fully_withdrawable_validator` changed upstream in specs/electra/beacon-chain.md
-;; body commented out below: uncomment it and apply the diff above
-;; --- old
-;; +++ new
-;; @@ -4,5 +4,6 @@
-;;      """
-;;      return (
-;; -        has_eth1_withdrawal_credential(validator)
-;; +        # [Modified in Electra:EIP7251]
-;; +        has_execution_withdrawal_credential(validator)
-;;          and validator.withdrawable_epoch <= epoch
-;;          and balance > 0
+;; [Modified in Electra:EIP7251] has_execution_withdrawal_credential
+def $is_fully_withdrawable_validator(validator, balance, epoch) = true
+  -- if $has_execution_withdrawal_credential(validator) = true
+  -- if $(validator.WITHDRAWABLE_EPOCH <= epoch)
+  -- if $(balance > 0)
 
-;; def $is_fully_withdrawable_validator(validator, balance, epoch) = true
-;;   -- if $has_eth1_withdrawal_credential(validator) = true
-;;   -- if $(validator.WITHDRAWABLE_EPOCH <= epoch)
-;;   -- if $(balance > 0)
-;;
-;; def $is_fully_withdrawable_validator(validator, balance, epoch) = false
-;;   -- otherwise
+def $is_fully_withdrawable_validator(validator, balance, epoch) = false
+  -- otherwise
+
+;; [Electra] get_max_effective_balance(Validator) -> Gwei
+dec $get_max_effective_balance(validator) : gwei
+
+def $get_max_effective_balance(validator) = $MAX_EFFECTIVE_BALANCE_ELECTRA
+  -- if $has_compounding_withdrawal_credential(validator) = true
+
+def $get_max_effective_balance(validator) = $MIN_ACTIVATION_BALANCE
+  -- otherwise
 
 ;; [Capella] is_partially_withdrawable_validator(Validator, Gwei) -> bool
 dec $is_partially_withdrawable_validator(validator, gwei) : boolean
 
-;; TODO(electra): functions `is_partially_withdrawable_validator` changed upstream in specs/electra/beacon-chain.md
-;; body commented out below: uncomment it and apply the diff above
-;; --- old
-;; +++ new
-;; @@ -3,8 +3,12 @@
-;;      Check if ``validator`` is partially withdrawable.
-;;      """
-;; -    has_max_effective_balance = validator.effective_balance == MAX_EFFECTIVE_BALANCE
-;; -    has_excess_balance = balance > MAX_EFFECTIVE_BALANCE
-;; +    max_effective_balance = get_max_effective_balance(validator)
-;; +    # [Modified in Electra:EIP7251]
-;; +    has_max_effective_balance = validator.effective_balance == max_effective_balance
-;; +    # [Modified in Electra:EIP7251]
-;; +    has_excess_balance = balance > max_effective_balance
-;;      return (
-;; -        has_eth1_withdrawal_credential(validator)
-;; +        # [Modified in Electra:EIP7251]
-;; +        has_execution_withdrawal_credential(validator)
-;;          and has_max_effective_balance
-;;          and has_excess_balance
+;; [Modified in Electra:EIP7251] get_max_effective_balance, has_execution_withdrawal_credential
+def $is_partially_withdrawable_validator(validator, balance) = true
+  -- if $has_execution_withdrawal_credential(validator) = true
+  -- if $get_max_effective_balance(validator) = balance_max
+  -- if $(validator.EFFECTIVE_BALANCE = balance_max)
+  -- if $(balance > balance_max)
 
-;; def $is_partially_withdrawable_validator(validator, balance) = true
-;;   -- if $has_eth1_withdrawal_credential(validator) = true
-;;   -- if $(validator.EFFECTIVE_BALANCE = $MAX_EFFECTIVE_BALANCE)
-;;   -- if $(balance > $MAX_EFFECTIVE_BALANCE)
-;;
-;; def $is_partially_withdrawable_validator(validator, balance) = false
-;;   -- otherwise
+def $is_partially_withdrawable_validator(validator, balance) = false
+  -- otherwise
+
+;; [Electra] is_eligible_for_partial_withdrawals(Validator, Gwei) -> bool
+dec $is_eligible_for_partial_withdrawals(validator, gwei) : boolean
+
+def $is_eligible_for_partial_withdrawals(validator, balance) = true
+  -- if validator.EXIT_EPOCH = $FAR_FUTURE_EPOCH
+  -- if $(validator.EFFECTIVE_BALANCE >= $MIN_ACTIVATION_BALANCE)
+  -- if $(balance > $MIN_ACTIVATION_BALANCE)
+
+def $is_eligible_for_partial_withdrawals(validator, balance) = false
+  -- otherwise
+
 
 ;; [Custom]
 dec $is_active_validator_enumerated(enumerated_<validator>, epoch) : bool
@@ -135,6 +131,12 @@ def $get_active_validator_indices(state, epoch) = vid_active*
     )
     = (vid_active, _)*
 
+;; [Custom | Electra] validator_pubkeys = [v.pubkey for v in state.validators]
+dec $validator_pubkeys(beaconState) : blsPubkey*
+def $validator_pubkeys(state) = blsPubkey*
+  -- if state.VALIDATORS = validator*
+  -- if (validator.PUBKEY = blsPubkey)*
+
 ;; [Phase0] get_validator_churn_limit(BeaconState) -> uint64
 dec $get_validator_churn_limit(beaconState) : uint64
 def $get_validator_churn_limit(state)
@@ -148,63 +150,24 @@ def $get_validator_churn_limit(state)
 ;; [Phase0] get_validator_from_deposit(BLSPubkey, Bytes32, uint64) : validator
 dec $get_validator_from_deposit(blsPubkey, bytes32, uint64) : validator
 
-;; TODO(electra): functions `get_validator_from_deposit` changed upstream in specs/electra/beacon-chain.md
-;; body commented out below: uncomment it and apply the diff above
-;; --- old
-;; +++ new
-;; @@ -2,10 +2,8 @@
-;;      pubkey: BLSPubkey, withdrawal_credentials: Bytes32, amount: Gwei
-;;  ) -> Validator:
-;; -    effective_balance = min(amount - amount % EFFECTIVE_BALANCE_INCREMENT, MAX_EFFECTIVE_BALANCE)
-;; -
-;; -    return Validator(
-;; +    validator = Validator(
-;;          pubkey=pubkey,
-;;          withdrawal_credentials=withdrawal_credentials,
-;; -        effective_balance=effective_balance,
-;; +        effective_balance=Gwei(0),
-;;          slashed=Boolean(False),
-;;          activation_eligibility_epoch=FAR_FUTURE_EPOCH,
-;; @@ -14,2 +12,10 @@
-;;          withdrawable_epoch=FAR_FUTURE_EPOCH,
-;;      )
-;; +
-;; +    # [Modified in Electra:EIP7251]
-;; +    max_effective_balance = get_max_effective_balance(validator)
-;; +    validator.effective_balance = min(
-;; +        amount - amount % EFFECTIVE_BALANCE_INCREMENT, max_effective_balance
-;; +    )
-;; +
-;; +    return validator
-
-;; def $get_validator_from_deposit(blsPubkey, bytes32_withdrawal, uint64_amount)
-;;   = { PUBKEY                       blsPubkey,
-;;       WITHDRAWAL_CREDENTIALS       bytes32_withdrawal,
-;;       EFFECTIVE_BALANCE            balance_effective,
-;;       SLASHED                      false,
-;;       ACTIVATION_ELIGIBILITY_EPOCH $FAR_FUTURE_EPOCH,
-;;       ACTIVATION_EPOCH             $FAR_FUTURE_EPOCH,
-;;       EXIT_EPOCH                   $FAR_FUTURE_EPOCH,
-;;       WITHDRAWABLE_EPOCH           $FAR_FUTURE_EPOCH }
-;;   -- if $min_uint64($(uint64_amount - uint64_amount \ $EFFECTIVE_BALANCE_INCREMENT), $MAX_EFFECTIVE_BALANCE) = balance_effective
+;; [Modified in Electra:EIP7251] the cap is get_max_effective_balance of the new validator
+def $get_validator_from_deposit(blsPubkey, bytes32_withdrawal, uint64_amount)
+  = validator_0[.EFFECTIVE_BALANCE = balance_effective]
+  -- if validator_0 = { PUBKEY                       blsPubkey,
+                      WITHDRAWAL_CREDENTIALS       bytes32_withdrawal,
+                      EFFECTIVE_BALANCE            0,
+                      SLASHED                      false,
+                      ACTIVATION_ELIGIBILITY_EPOCH $FAR_FUTURE_EPOCH,
+                      ACTIVATION_EPOCH             $FAR_FUTURE_EPOCH,
+                      EXIT_EPOCH                   $FAR_FUTURE_EPOCH,
+                      WITHDRAWABLE_EPOCH           $FAR_FUTURE_EPOCH }
+  -- if $min_uint64($(uint64_amount - uint64_amount \ $EFFECTIVE_BALANCE_INCREMENT),
+                    $get_max_effective_balance(validator_0)) = balance_effective
 
 ;; [Phase0 -> Altair]
 ;; add_validator_to_registry(state, pubkey, withdrawal_credentials, amount) : beaconState
 ;;  mutates: VALIDATORS, BALANCES, PREVIOUS_EPOCH_PARTICIPATION, CURRENT_EPOCH_PARTICIPATION, INACTIVITY_SCORES
-;; REVIEW(electra): functions `add_validator_to_registry` doc_only upstream in specs/electra/beacon-chain.md
-;; comment/docstring-only change upstream; body kept, review the contract
-;; --- old
-;; +++ new
-;; @@ -3,8 +3,8 @@
-;;  ) -> None:
-;;      index = get_index_for_new_validator(state)
-;; +    # [Modified in Electra:EIP7251]
-;;      validator = get_validator_from_deposit(pubkey, withdrawal_credentials, amount)
-;;      set_or_append_list(state.validators, index, validator)
-;;      set_or_append_list(state.balances, index, amount)
-;; -    # [New in Altair]
-;;      set_or_append_list(state.previous_epoch_participation, index, ParticipationFlags(0b0000_0000))
-;;      set_or_append_list(state.current_epoch_participation, index, ParticipationFlags(0b0000_0000))
+;; [Modified in Electra:EIP7251] through get_validator_from_deposit only
 
 relation AddValidatorToRegistry:
   beaconState '.' VALIDATORS '++' `{ blsPubkey bytes32 uint64 `} ~> beaconState
@@ -297,14 +260,53 @@ def $get_unslashed_participating_indices(state, vid_flag, epoch) = $to_set_<vali
          def $is_unslashed
        ) = vid_unslashed*
 
-;; [Deneb] get_validator_activation_churn_limit(BeaconState) -> uint64
-dec $get_validator_activation_churn_limit(beaconState) : uint64
+;; [Phase0] get_total_balance(BeaconState, Set[ValidatorIndex]) -> Gwei
+dec $get_total_balance(beaconState, validatorIndex*) : gwei
 
-;; TODO(electra): functions `get_validator_activation_churn_limit` removed upstream in specs/deneb/beacon-chain.md
-;; removed upstream: delete this declaration once nothing references it
-;; def get_validator_activation_churn_limit(state: BeaconState) -> Uint64:
-;;     """
-;;     Return the validator activation churn limit for the current epoch.
-;;     """
-;;     return min(MAX_PER_EPOCH_ACTIVATION_CHURN_LIMIT, get_validator_churn_limit(state))
+def $get_total_balance(state, vid*)
+  = $max_uint64(
+      $EFFECTIVE_BALANCE_INCREMENT,
+      gwei_sum
+    )
+  -- if (state.VALIDATORS[vid].EFFECTIVE_BALANCE = balance)*
+  -- if $sum_<gwei>(balance*) = gwei_sum
+  ;; inserted overflow check
+  -- if $(gwei_sum <= $UINT64_MAX)
+
+;; [Phase0] get_total_active_balance(BeaconState) -> Gwei
+dec $get_total_active_balance(beaconState) : gwei
+
+def $get_total_active_balance(state) = gwei_total
+  -- if $get_current_epoch(state) = epoch_cur
+  -- if $get_active_validator_indices(state, epoch_cur) = vid_active*
+  -- if $to_set_<validatorIndex>(vid_active*) = vid_set*
+  -- if $get_total_balance(state, vid_set*) = gwei_total
+
+;; [Electra] get_balance_churn_limit(BeaconState) -> Gwei
+dec $get_balance_churn_limit(beaconState) : gwei
+def $get_balance_churn_limit(state) = $(gwei_churn - gwei_churn \ $EFFECTIVE_BALANCE_INCREMENT)
+  -- if $max_uint64($MIN_PER_EPOCH_CHURN_LIMIT_ELECTRA,
+                    $($get_total_active_balance(state) / $CHURN_LIMIT_QUOTIENT)) = gwei_churn
+
+;; [Electra] get_activation_exit_churn_limit(BeaconState) -> Gwei
+dec $get_activation_exit_churn_limit(beaconState) : gwei
+def $get_activation_exit_churn_limit(state)
+  = $min_uint64($MAX_PER_EPOCH_ACTIVATION_EXIT_CHURN_LIMIT, $get_balance_churn_limit(state))
+
+;; [Electra] get_consolidation_churn_limit(BeaconState) -> Gwei
+dec $get_consolidation_churn_limit(beaconState) : gwei
+def $get_consolidation_churn_limit(state)
+  = $($get_balance_churn_limit(state) - $get_activation_exit_churn_limit(state))
+
+;; [Custom | filter helper : get_pending_balance_to_withdraw]
+dec $is_pending_withdrawal_of(pendingPartialWithdrawal, validatorIndex) : bool
+def $is_pending_withdrawal_of(pendingPartialWithdrawal, vid) = (pendingPartialWithdrawal.VALIDATOR_INDEX = vid)
+
+;; [Electra] get_pending_balance_to_withdraw(BeaconState, ValidatorIndex) -> Gwei
+dec $get_pending_balance_to_withdraw(beaconState, validatorIndex) : gwei
+def $get_pending_balance_to_withdraw(state, vid) = $sum_<gwei>(gwei_amount*)
+  -- if $filter_list_2_<pendingPartialWithdrawal, validatorIndex>(
+         state.PENDING_PARTIAL_WITHDRAWALS, vid, def $is_pending_withdrawal_of
+       ) = pendingPartialWithdrawal*
+  -- if (pendingPartialWithdrawal.AMOUNT = gwei_amount)*
 

@@ -42,51 +42,59 @@ def $bit_is_one_at_index((i, _), bit*)
   ;; inserted guard
   -- if $(i < |bit*|)
 
-;; [Phase0] get_attesting_indices(BeaconState, Attestation) -> Set[ValidatorIndex]
+;; [Custom | filter : get_committee_indices] committee_bits[n] = true
+dec $bit_is_set(nat, boolean*) : bool
+
+def $bit_is_set(n, bit*) = bit*[n]
+  ;; inserted guard
+  -- if $(n < |bit*|)
+
+;; [Electra] get_committee_indices(CommitteeBits) -> Sequence[CommitteeIndex]
+dec $get_committee_indices(boolean*) : committeeIndex*
+
+def $get_committee_indices(bit*) = committeeIndex*
+  -- if $range(|bit*|) = n*
+  -- if $filter_list_2_<nat, boolean*>(n*, bit*, def $bit_is_set) = committeeIndex*
+
+;; [Custom | Electra : get_attesting_indices] attesters of one committee
+;;  their bits are aggregation_bits[offset : offset + len(committee)]
+dec $committee_attesters(validatorIndex*, boolean*, nat) : validatorIndex*
+
+def $committee_attesters(vid_committee*, bit*, n_offset) = vid_attesting*
+  ;; python indexes aggregation_bits[offset + i]: IndexError if the bits are too short
+  -- if $(n_offset + |vid_committee*| <= |bit*|)
+  -- if bit*[n_offset : |vid_committee*|] = bit_committee*
+  -- if $enumerate_<validatorIndex>(vid_committee*) = (i, vid_c)*
+  -- if $filter_list_2_<(nat, validatorIndex), boolean*>(
+         (i, vid_c)*,
+         bit_committee*,
+         def $bit_is_one_at_index
+       ) = (_, vid_attesting)*
+
+;; [Custom | loop : get_attesting_indices] loop over committee indices carrying committee_offset
+dec $attesting_indices_loop(beaconState, slot, committeeIndex*, boolean*, nat) : validatorIndex*
+
+def $attesting_indices_loop(state, slot, eps, bit*, n_offset) = eps
+
+def $attesting_indices_loop(state, slot, committeeIndex_h :: committeeIndex_t*, bit*, n_offset)
+  = vid_attesting* ++ $attesting_indices_loop(state, slot, committeeIndex_t*, bit*, $(n_offset + |vid_committee*|))
+  -- if $get_beacon_committee(state, slot, committeeIndex_h) = vid_committee*
+  -- if $committee_attesters(vid_committee*, bit*, n_offset) = vid_attesting*
+
+;; [Phase0 -> Electra] get_attesting_indices(BeaconState, Attestation) -> Set[ValidatorIndex]
 dec $get_attesting_indices(beaconState, attestation) : validatorIndex*
 
-;; TODO(electra): functions `get_attesting_indices` changed upstream in specs/electra/beacon-chain.md
-;; body commented out below: uncomment it and apply the diff above
-;; --- old
-;; +++ new
-;; @@ -1,6 +1,19 @@
-;;  def get_attesting_indices(state: BeaconState, attestation: Attestation) -> set[ValidatorIndex]:
-;;      """
-;; -    Return the set of attesting indices corresponding to ``data`` and ``bits``.
-;; +    Return the set of attesting indices corresponding to ``aggregation_bits`` and ``committee_bits``.
-;;      """
-;; -    committee = get_beacon_committee(state, attestation.data.slot, attestation.data.index)
-;; -    return {index for i, index in enumerate(committee) if attestation.aggregation_bits[i]}
-;; +    output: set[ValidatorIndex] = set()
-;; +    committee_indices = get_committee_indices(attestation.committee_bits)
-;; +    committee_offset = 0
-;; +    for committee_index in committee_indices:
-;; +        committee = get_beacon_committee(state, attestation.data.slot, committee_index)
-;; +        committee_attesters = {
-;; +            attester_index
-;; +            for i, attester_index in enumerate(committee)
-;; +            if attestation.aggregation_bits[committee_offset + i]
-;; +        }
-;; +        output = output.union(committee_attesters)
-;; +
-;; +        committee_offset += len(committee)
-;; +
-;; +    return output
-
-;; def $get_attesting_indices(state, attestation) = vid_set*
-;;   -- if $get_beacon_committee(
-;;          state,
-;;          attestation.DATA.SLOT,
-;;          attestation.DATA.INDEX
-;;        ) = vid_committee*
-;;   -- if $enumerate_<validatorIndex>(vid_committee*)
-;;        = (i, vid)*
-;;   -- if $filter_list_2_<(nat, validatorIndex), boolean*>(
-;;          (i, vid)*,
-;;          attestation.AGGREGATION_BITS,
-;;          def $bit_is_one_at_index
-;;        ) = (_, vid_attesting)*
-;;   -- if $to_set_<validatorIndex>(vid_attesting*) = vid_set*
+;; [Modified in Electra:EIP7549] committees from committee_bits, bits concatenated in committee order
+def $get_attesting_indices(state, attestation)
+  = $to_set_<validatorIndex>(
+      $attesting_indices_loop(
+        state,
+        attestation.DATA.SLOT,
+        $get_committee_indices(attestation.COMMITTEE_BITS),
+        attestation.AGGREGATION_BITS,
+        0
+      )
+    )
 
 ;; [Phase0] is_slashable_attestation_data(AttestationData, AttestationData) -> bool
 dec $is_slashable_attestation_data(attestationData, attestationData) : bool
@@ -219,7 +227,7 @@ def $get_attestation_participation_flag_indices(state, attestationData, uint64_i
   ;; construct the flag list
   -- if flag_indices* = flag_source* ++ flag_target* ++ flag_head*
 
-;; [Phase0 | loop : get_next_sync_committee_indices]
+;; [Phase0 -> Electra | loop : get_next_sync_committee_indices]
 dec $next_sync_committee_indices_loop(
   beaconState, validatorIndex*, bytes32, uint64, uint64, validatorIndex*
 ) : validatorIndex*
@@ -243,12 +251,11 @@ def $next_sync_committee_indices_loop(
   ;; branch-complete: loop condition
   -- if $( |vid_sync_committee*| < $SYNC_COMMITTEE_SIZE )
   -- if vid_active*[$compute_shuffled_index($(vid \ count_active), count_active, seed)] = vid_candidate
-  -- if $hash_<bytes>($concat_bytes($bytes32_to_bytes(seed), $uint_to_bytes($(vid / 32)))) = bytes32_h
-  -- if $bytes1_to_uint64($bytes32_to_bytes1_list(bytes32_h)[vid \ 32]) = uint64_random_byte
+  -- if $compute_random_value(seed, vid) = uint64_random_value
   -- if state.VALIDATORS[vid_candidate].EFFECTIVE_BALANCE = balance_effective
   ;; inserted overflow check
-  -- if $( balance_effective <= $UINT64_MAX / $MAX_RANDOM_BYTE )
-  -- if $( balance_effective * $MAX_RANDOM_BYTE >= $MAX_EFFECTIVE_BALANCE * uint64_random_byte )
+  -- if $( balance_effective <= $UINT64_MAX / $MAX_RANDOM_VALUE )
+  -- if $( balance_effective * $MAX_RANDOM_VALUE >= $MAX_EFFECTIVE_BALANCE_ELECTRA * uint64_random_value )
   ;; procceed to next iteration
 
 ;; continue if condition not satisfied
@@ -265,65 +272,33 @@ def $next_sync_committee_indices_loop(
   ;; branch-complete: loop condition
   -- if $( |vid_sync_committee*| < $SYNC_COMMITTEE_SIZE )
   -- if vid_active*[$compute_shuffled_index($(vid \ count_active), count_active, seed)] = vid_candidate
-  -- if $hash_<bytes>($concat_bytes($bytes32_to_bytes(seed), $uint_to_bytes($(vid / 32)))) = bytes32_h
-  -- if $bytes1_to_uint64($bytes32_to_bytes1_list(bytes32_h)[vid \ 32]) = uint64_random_byte
+  -- if $compute_random_value(seed, vid) = uint64_random_value
   -- if state.VALIDATORS[vid_candidate].EFFECTIVE_BALANCE = balance_effective
   ;; inserted overflow check
-  -- if $( balance_effective <= $UINT64_MAX / $MAX_RANDOM_BYTE )
-  -- if $( balance_effective * $MAX_RANDOM_BYTE < $MAX_EFFECTIVE_BALANCE * uint64_random_byte )
+  -- if $( balance_effective <= $UINT64_MAX / $MAX_RANDOM_VALUE )
+  -- if $( balance_effective * $MAX_RANDOM_VALUE < $MAX_EFFECTIVE_BALANCE_ELECTRA * uint64_random_value )
   ;; otherwise, proceed to next iteration without appending
 
 
-;; [Phase0] get_next_sync_committee_indices(BeaconState) -> Sequence[ValidatorIndex]
+;; [Phase0 -> Electra] get_next_sync_committee_indices(BeaconState) -> Sequence[ValidatorIndex]
 dec $get_next_sync_committee_indices(beaconState) : validatorIndex*
 
-;; TODO(electra): functions `get_next_sync_committee_indices` changed upstream in specs/electra/beacon-chain.md
-;; body commented out below: uncomment it and apply the diff above
-;; --- old
-;; +++ new
-;; @@ -5,9 +5,10 @@
-;;      epoch = get_current_epoch(state) + 1
-;;
-;; -    MAX_RANDOM_BYTE = 2**8 - 1
-;; +    # [Modified in Electra]
-;; +    MAX_RANDOM_VALUE = 2**16 - 1
-;;      active_validator_indices = get_active_validator_indices(state, epoch)
-;;      active_validator_count = Uint64(len(active_validator_indices))
-;;      seed = get_seed(state, epoch, DOMAIN_SYNC_COMMITTEE)
-;; -    i = 0
-;; +    i = Uint64(0)
-;;      sync_committee_indices: list[ValidatorIndex] = []
-;;      while len(sync_committee_indices) < SYNC_COMMITTEE_SIZE:
-;; @@ -16,7 +17,11 @@
-;;          )
-;;          candidate_index = active_validator_indices[shuffled_index]
-;; -        random_byte = sha256(seed + uint_to_bytes(Uint64(i // 32)))[i % 32]
-;; +        # [Modified in Electra]
-;; +        random_bytes = sha256(seed + uint_to_bytes(i // 16))
-;; +        offset = i % 16 * 2
-;; +        random_value = bytes_to_uint64(random_bytes[offset : offset + 2])
-;;          effective_balance = state.validators[candidate_index].effective_balance
-;; -        if effective_balance * MAX_RANDOM_BYTE >= MAX_EFFECTIVE_BALANCE * random_byte:
-;; +        # [Modified in Electra:EIP7251]
-;; +        if effective_balance * MAX_RANDOM_VALUE >= MAX_EFFECTIVE_BALANCE_ELECTRA * random_value:
-;;              sync_committee_indices.append(candidate_index)
-;;          i += 1
-
-;; def $get_next_sync_committee_indices(state) = vid_out*
-;;   -- if epoch_next = $( $get_current_epoch(state) + 1 )
-;;   -- if $get_active_validator_indices(state, epoch_next) = vid_active*
-;;   -- if |vid_active*| = count_active
-;;   ;; inserted guard
-;;   -- if $(count_active > 0)
-;;   -- if $get_seed(state, epoch_next, $DOMAIN_SYNC_COMMITTEE) = seed
-;;   -- if $next_sync_committee_indices_loop(
-;;          state,
-;;          vid_active*,
-;;          seed,
-;;          count_active,
-;;          0,
-;;          eps ;; empty list
-;;        ) = vid_out*
+;; [Modified in Electra] 16-bit random value, MAX_EFFECTIVE_BALANCE_ELECTRA (in the loop)
+def $get_next_sync_committee_indices(state) = vid_out*
+  -- if epoch_next = $( $get_current_epoch(state) + 1 )
+  -- if $get_active_validator_indices(state, epoch_next) = vid_active*
+  -- if |vid_active*| = count_active
+  ;; inserted guard
+  -- if $(count_active > 0)
+  -- if $get_seed(state, epoch_next, $DOMAIN_SYNC_COMMITTEE) = seed
+  -- if $next_sync_committee_indices_loop(
+         state,
+         vid_active*,
+         seed,
+         count_active,
+         0,
+         eps ;; empty list
+       ) = vid_out*
 
 ;; [Phase0] get_next_sync_committee(BeaconState) -> SyncCommittee
 dec $get_next_sync_committee(beaconState) : syncCommittee

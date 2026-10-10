@@ -2,26 +2,8 @@
 ;; helpers for rewards, penlaties and balances
 ;; =========================
 
-;; [Phase0] get_total_balance(BeaconState, Set[ValidatorIndex]) -> Gwei
-dec $get_total_balance(beaconState, validatorIndex*) : gwei
-
-def $get_total_balance(state, vid*)
-  = $max_uint64(
-      $EFFECTIVE_BALANCE_INCREMENT,
-      gwei_sum
-    )
-  -- if (state.VALIDATORS[vid].EFFECTIVE_BALANCE = balance)*
-  -- if $sum_<gwei>(balance*) = gwei_sum
-  ;; inserted overflow check
-  -- if $(gwei_sum <= $UINT64_MAX)
-
-dec $get_total_active_balance(beaconState) : gwei
-
-def $get_total_active_balance(state) = gwei_total
-  -- if $get_current_epoch(state) = epoch_cur
-  -- if $get_active_validator_indices(state, epoch_cur) = vid_active*
-  -- if $to_set_<validatorIndex>(vid_active*) = vid_set*
-  -- if $get_total_balance(state, vid_set*) = gwei_total
+;; [Electra] get_total_balance and get_total_active_balance moved to 06-helpers-validator.spectec
+;; before the churn helpers that use them
 
 ;; [Altair] get_base_reward_per_increment(BeaconState) -> Gwei
 dec $get_base_reward_per_increment(beaconState) : gwei
