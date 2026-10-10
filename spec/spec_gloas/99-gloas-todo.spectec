@@ -2,12 +2,8 @@
 ;; Move them into the topical files once translated.
 
 ;; [gloas] specs/gloas/beacon-chain.md
-dec $CHURN_LIMIT_QUOTIENT_GLOAS : uint64
-def $CHURN_LIMIT_QUOTIENT_GLOAS = 32768
 
 ;; [gloas] specs/gloas/beacon-chain.md
-dec $CONSOLIDATION_CHURN_LIMIT_QUOTIENT : uint64
-def $CONSOLIDATION_CHURN_LIMIT_QUOTIENT = 65536
 
 ;; TODO(gloas): config_vars `GAS_LIMIT_SCHEDULE` added upstream in specs/gloas/beacon-chain.md
 ;; new upstream definition: translate it (declaration + body)
@@ -15,12 +11,8 @@ def $CONSOLIDATION_CHURN_LIMIT_QUOTIENT = 65536
 ;; )
 
 ;; [gloas] specs/gloas/beacon-chain.md
-dec $MAX_PER_EPOCH_ACTIVATION_CHURN_LIMIT_GLOAS : gwei
-def $MAX_PER_EPOCH_ACTIVATION_CHURN_LIMIT_GLOAS = 256000000000
 
 ;; [gloas] specs/gloas/beacon-chain.md
-dec $MIN_BUILDER_WITHDRAWABILITY_DELAY : epoch
-def $MIN_BUILDER_WITHDRAWABILITY_DELAY = 64
 
 ;; TODO(gloas): constant_vars `BUILDER_DEPOSIT_REQUEST_TYPE` added upstream in specs/gloas/beacon-chain.md
 ;; new upstream definition: translate it (declaration + body)
@@ -31,20 +23,14 @@ def $MIN_BUILDER_WITHDRAWABILITY_DELAY = 64
 ;; Bytes1 = "0x04"
 
 ;; [gloas] specs/gloas/beacon-chain.md
-dec $BUILDER_INDEX_FLAG : uint64
-def $BUILDER_INDEX_FLAG = 1099511627776
 
 ;; TODO(gloas): constant_vars `BUILDER_INDEX_SELF_BUILD` added upstream in specs/gloas/beacon-chain.md
 ;; new upstream definition: translate it (declaration + body)
 ;; BuilderIndex = UINT64_MAX
 
 ;; [gloas] specs/gloas/beacon-chain.md
-dec $BUILDER_PAYMENT_THRESHOLD_DENOMINATOR : uint64
-def $BUILDER_PAYMENT_THRESHOLD_DENOMINATOR = 10
 
 ;; [gloas] specs/gloas/beacon-chain.md
-dec $BUILDER_PAYMENT_THRESHOLD_NUMERATOR : uint64
-def $BUILDER_PAYMENT_THRESHOLD_NUMERATOR = 6
 
 ;; TODO(gloas): constant_vars `BUILDER_WITHDRAWAL_PREFIX` added upstream in specs/gloas/beacon-chain.md
 ;; new upstream definition: translate it (declaration + body)
@@ -67,11 +53,8 @@ def $BUILDER_PAYMENT_THRESHOLD_NUMERATOR = 6
 ;; DomainType = "0x0C000000"
 
 ;; [gloas] specs/gloas/beacon-chain.md
-dec $PAYLOAD_BUILDER_VERSION : uint8
-def $PAYLOAD_BUILDER_VERSION = 0
 
 ;; [gloas] BuilderIndex = Uint64
-syntax builderIndex = uint64
 
 ;; TODO(gloas): functions `add_builder_to_registry` added upstream in specs/gloas/beacon-chain.md
 ;; new upstream definition: translate it (declaration + body)
@@ -747,24 +730,14 @@ syntax builderIndex = uint64
 ;;     return bls.Verify(pubkey, signing_root, signed_envelope.signature)
 
 ;; [gloas] specs/gloas/beacon-chain.md
-dec $MAX_BUILDERS_PER_WITHDRAWALS_SWEEP : uint64
-def $MAX_BUILDERS_PER_WITHDRAWALS_SWEEP = 16384
 
 ;; [gloas] specs/gloas/beacon-chain.md
-dec $MAX_BUILDER_DEPOSIT_REQUESTS_PER_PAYLOAD : uint64
-def $MAX_BUILDER_DEPOSIT_REQUESTS_PER_PAYLOAD = 64
 
 ;; [gloas] specs/gloas/beacon-chain.md
-dec $MAX_BUILDER_EXIT_REQUESTS_PER_PAYLOAD : uint64
-def $MAX_BUILDER_EXIT_REQUESTS_PER_PAYLOAD = 16
 
 ;; [gloas] specs/gloas/beacon-chain.md
-dec $MAX_PAYLOAD_ATTESTATIONS : uint64
-def $MAX_PAYLOAD_ATTESTATIONS = 4
 
 ;; [gloas] specs/gloas/beacon-chain.md
-dec $PTC_SIZE : uint64
-def $PTC_SIZE = 512
 
 ;; TODO(gloas): ssz_objects `BlockAccessList` added upstream in specs/gloas/beacon-chain.md
 ;; new upstream definition: translate it (declaration + body)

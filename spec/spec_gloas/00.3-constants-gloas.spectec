@@ -1,0 +1,97 @@
+;;
+;; [Gloas] constants, presets and configuration
+;;
+
+;; --- Index flags ---
+
+;; A ValidatorIndex with this bit set is a BuilderIndex (Withdrawal.VALIDATOR_INDEX).
+dec $BUILDER_INDEX_FLAG : uint64
+def $BUILDER_INDEX_FLAG = 1099511627776                ;; 2**40
+
+;; --- Domains ---
+
+dec $DOMAIN_BEACON_BUILDER : domainType
+def $DOMAIN_BEACON_BUILDER = 184549376                 ;; 0x0B000000
+
+dec $DOMAIN_PTC_ATTESTER : domainType
+def $DOMAIN_PTC_ATTESTER = 201326592                   ;; 0x0C000000
+
+dec $DOMAIN_PROPOSER_PREFERENCES : domainType
+def $DOMAIN_PROPOSER_PREFERENCES = 218103808           ;; 0x0D000000
+
+dec $DOMAIN_BUILDER_DEPOSIT : domainType
+def $DOMAIN_BUILDER_DEPOSIT = 234881024                ;; 0x0E000000
+
+;; --- Misc ---
+
+dec $BUILDER_INDEX_SELF_BUILD : builderIndex
+def $BUILDER_INDEX_SELF_BUILD = 18446744073709551615   ;; UINT64_MAX
+
+dec $BUILDER_PAYMENT_THRESHOLD_NUMERATOR : uint64
+def $BUILDER_PAYMENT_THRESHOLD_NUMERATOR = 6
+
+dec $BUILDER_PAYMENT_THRESHOLD_DENOMINATOR : uint64
+def $BUILDER_PAYMENT_THRESHOLD_DENOMINATOR = 10
+
+;; --- Withdrawal prefixes ---
+
+dec $BUILDER_WITHDRAWAL_PREFIX : bytes1
+def $BUILDER_WITHDRAWAL_PREFIX = 176                   ;; 0xB0
+
+;; --- Builder versions ---
+
+dec $PAYLOAD_BUILDER_VERSION : uint8
+def $PAYLOAD_BUILDER_VERSION = 0
+
+;; --- Execution-layer triggered requests ---
+
+dec $BUILDER_DEPOSIT_REQUEST_TYPE : bytes1
+def $BUILDER_DEPOSIT_REQUEST_TYPE = 3                  ;; 0x03
+
+dec $BUILDER_EXIT_REQUEST_TYPE : bytes1
+def $BUILDER_EXIT_REQUEST_TYPE = 4                     ;; 0x04
+
+;; --- Presets (mainnet) ---
+
+dec $PTC_SIZE : uint64
+def $PTC_SIZE = 512                                    ;; 2**9
+
+dec $MAX_PAYLOAD_ATTESTATIONS : uint64
+def $MAX_PAYLOAD_ATTESTATIONS = 4
+
+dec $MAX_BUILDER_DEPOSIT_REQUESTS_PER_PAYLOAD : uint64
+def $MAX_BUILDER_DEPOSIT_REQUESTS_PER_PAYLOAD = 64
+
+dec $MAX_BUILDER_EXIT_REQUESTS_PER_PAYLOAD : uint64
+def $MAX_BUILDER_EXIT_REQUESTS_PER_PAYLOAD = 16
+
+dec $MAX_BUILDERS_PER_WITHDRAWALS_SWEEP : uint64
+def $MAX_BUILDERS_PER_WITHDRAWALS_SWEEP = 16384        ;; 2**14
+
+;; --- Configuration (mainnet) ---
+
+dec $CHURN_LIMIT_QUOTIENT_GLOAS : uint64
+def $CHURN_LIMIT_QUOTIENT_GLOAS = 32768
+
+dec $CONSOLIDATION_CHURN_LIMIT_QUOTIENT : uint64
+def $CONSOLIDATION_CHURN_LIMIT_QUOTIENT = 65536
+
+dec $MAX_PER_EPOCH_ACTIVATION_CHURN_LIMIT_GLOAS : gwei
+def $MAX_PER_EPOCH_ACTIVATION_CHURN_LIMIT_GLOAS = 256000000000
+
+dec $MIN_BUILDER_WITHDRAWABILITY_DELAY : epoch
+def $MIN_BUILDER_WITHDRAWABILITY_DELAY = 64
+
+;; The mainnet configuration sets GLOAS_FORK_EPOCH to 2**64-1.
+;; Every Gloas test vector that reads it (through get_ptc) comes with a config.yaml
+;; that sets all fork epochs to 0, and the harness reads no config.
+;; Thus this spec uses 0, the value of the test configuration.
+;; No vector without config.yaml calls get_ptc.
+dec $GLOAS_FORK_EPOCH : epoch
+def $GLOAS_FORK_EPOCH = 0
+
+dec $GLOAS_FORK_VERSION : version
+def $GLOAS_FORK_VERSION = 117440512                    ;; 0x07000000
+
+;; GAS_LIMIT_SCHEDULE is empty in the mainnet configuration.
+;; get_scheduled_gas_limit is not on the state-transition path; this spec does not translate it.

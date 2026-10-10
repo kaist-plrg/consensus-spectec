@@ -54,3 +54,6 @@ syntax withdrawalIndex = uint64
 syntax kzgCommitment = bytes48
 syntax versionedHash = bytes32
 syntax blobIndex = uint64
+
+;; [Gloas:EIP7732]
+syntax builderIndex = uint64
