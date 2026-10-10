@@ -1,0 +1,177 @@
+;; =======================================
+;; helpers for shuffle/committee/proposer/seed
+;; =======================================
+
+;; [Custom | branch : apply_shuffle_round]
+dec $choose_index(uint64, uint64, nat) : uint64
+def $choose_index(i, uint64_flip, nat_bit) = uint64_flip
+  -- if nat_bit = 1
+def $choose_index(i, uint64_flip, nat_bit) = i
+  -- otherwise
+
+;; [Custom | loop : compute_shuffled_index]
+;;  instead of shifting, we use division and mod operations
+;;  bit = (byte // (2^k)) % 2
+dec $apply_shuffle_round(uint64, (bytes32, uint64, uint64)) : uint64
+
+def $apply_shuffle_round(i, (seed, i_count, uint64_round)) = i_out
+  ;; 1 round_hash = hash(seed || uint8(round))
+  -- if $bytes32_to_bytes(seed) = bytes_seed
+  -- if $uint8_to_bytes_le($(uint64_round \ 256)) = bytes_round8              ;; 1B, LE
+  -- if $hash_<bytes>($concat_bytes(bytes_seed, bytes_round8)) = bytes32_round_hash
+  ;; pivot
+  -- if $bytes32_prefix8(bytes32_round_hash) = bytes8_prefix        ;; Extract first 8B
+  -- if $bytes8_to_uint64_le(bytes8_prefix) = uint64_pivot_raw      ;; Decode as LE
+  -- if $(uint64_pivot_raw \ i_count) = uint64_pivot
+  ;; flip, position
+  -- if $((uint64_pivot + i_count - i) \ i_count) = uint64_flip
+  -- if $max_uint64(i, uint64_flip) = uint64_position
+  ;; 4 source = hash(seed || uint8(round) || uint32(bucket))
+  -- if $uint32_to_bytes_le($(uint64_position / 256)) = bytes_bucket           ;; 4B, LE
+  -- if $hash_<bytes>($concat_bytes($concat_bytes(bytes_seed, bytes_round8), bytes_bucket)) = bytes32_source
+  ;; byte, bit
+  -- if $bytes1_to_uint64($bytes32_to_bytes1_list(bytes32_source)[(uint64_position \ 256) / 8]) 
+      = uint64_byte
+  -- if $($and_uint64($shr_uint64(uint64_byte, $(uint64_position \ 8)), 1) \ 2) 
+      = nat_bit ;;0 or 1
+  ;; index = flip if bit else index
+  -- if $choose_index(i, uint64_flip, nat_bit) = i_out 
+
+
+;; [Phase0] compute_shuffled_index(uint64, uint64, Bytes32) -> uint64
+;;  - loop over rounds = [0 .. SHUFFLE_ROUND_COUNT-1]
+dec $compute_shuffled_index(uint64, uint64, bytes32) : uint64
+
+def $compute_shuffled_index(i, i_count, seed) = i_shuffled
+  -- if $range($SHUFFLE_ROUND_COUNT) = uint64_round*
+  -- (if $apply_shuffle_round(i_cur, (seed, i_count, uint64_round)) = i_next)*{
+       i -> i_cur ... i_next -> i_shuffled
+     }
+
+
+;; [Custom | loop : compute_proposer_index]
+dec $compute_proposer_index_loop(beaconState, validatorIndex*, bytes32, uint64, uint64) : validatorIndex
+
+;; TODO(electra): functions `compute_proposer_index` changed upstream in specs/electra/beacon-chain.md
+;; body commented out below: uncomment it and apply the diff above
+;; --- old
+;; +++ new
+;; @@ -6,12 +6,17 @@
+;;      """
+;;      assert len(indices) > 0
+;; -    MAX_RANDOM_BYTE = 2**8 - 1
+;; +    # [Modified in Electra]
+;; +    MAX_RANDOM_VALUE = 2**16 - 1
+;;      i = Uint64(0)
+;;      total = Uint64(len(indices))
+;;      while True:
+;;          candidate_index = indices[compute_shuffled_index(i % total, total, seed)]
+;; -        random_byte = sha256(seed + uint_to_bytes(Uint64(i // 32)))[i % 32]
+;; +        # [Modified in Electra]
+;; +        random_bytes = sha256(seed + uint_to_bytes(i // 16))
+;; +        offset = i % 16 * 2
+;; +        random_value = bytes_to_uint64(random_bytes[offset : offset + 2])
+;;          effective_balance = state.validators[candidate_index].effective_balance
+;; -        if effective_balance * MAX_RANDOM_BYTE >= MAX_EFFECTIVE_BALANCE * random_byte:
+;; +        # [Modified in Electra:EIP7251]
+;; +        if effective_balance * MAX_RANDOM_VALUE >= MAX_EFFECTIVE_BALANCE_ELECTRA * random_value:
+;;              return candidate_index
+;;          i += 1
+
+;; def $compute_proposer_index_loop(state, vid*, seed, uint64_total, i)
+;;   = vid_candidate
+;;   -- if vid*[$compute_shuffled_index($(i \ uint64_total), uint64_total, seed)]
+;;       = vid_candidate
+;;   -- if $hash_<bytes>($concat_bytes($bytes32_to_bytes(seed), $uint64_to_bytes_le($(i / 32)))) = bytes32_h
+;;   -- if $bytes1_to_uint64($bytes32_to_bytes1_list(bytes32_h)[i \ 32]) = uint64_random_byte
+;;   -- if state.VALIDATORS[vid_candidate].EFFECTIVE_BALANCE = balance_effective
+;;   ;; inserted overflow check
+;;   -- if $( balance_effective <= $UINT64_MAX / $MAX_RANDOM_BYTE )
+;;   ;; loop-break
+;;   -- if $( balance_effective * $MAX_RANDOM_BYTE >= $MAX_EFFECTIVE_BALANCE * uint64_random_byte )
+;;
+;; def $compute_proposer_index_loop(state, vid*, seed, uint64_total, i)
+;;   = $compute_proposer_index_loop(
+;;       state,
+;;       vid*,
+;;       seed,
+;;       uint64_total,
+;;       $(i + 1)
+;;     )
+;;   -- if vid*[$compute_shuffled_index($(i \ uint64_total), uint64_total, seed)]
+;;       = vid_candidate
+;;   -- if $hash_<bytes>($concat_bytes($bytes32_to_bytes(seed), $uint64_to_bytes_le($(i / 32)))) = bytes32_h
+;;   -- if $bytes1_to_uint64($bytes32_to_bytes1_list(bytes32_h)[i \ 32]) = uint64_random_byte
+;;   -- if state.VALIDATORS[vid_candidate].EFFECTIVE_BALANCE = balance_effective
+;;   ;; inserted overflow check
+;;   -- if $( balance_effective <= $UINT64_MAX / $MAX_RANDOM_BYTE )
+;;   ;; loop-continue
+;;   -- if $( balance_effective * $MAX_RANDOM_BYTE < $MAX_EFFECTIVE_BALANCE * uint64_random_byte )
+
+;; break: if effective_balance * 255 >= MAX_EFFECTIVE_BALANCE * random_byte
+;; continue with i + 1 otherwise
+;; [Phase0] compute_proposer_index(BeaconState, Sequence[ValidatorIndex], Bytes32) : ValidatorIndex
+dec $compute_proposer_index(beaconState, validatorIndex*, bytes32) : validatorIndex
+
+;; TODO(electra): functions `compute_proposer_index` changed upstream in specs/electra/beacon-chain.md
+;; body commented out below: uncomment it and apply the diff above
+;; --- old
+;; +++ new
+;; @@ -6,12 +6,17 @@
+;;      """
+;;      assert len(indices) > 0
+;; -    MAX_RANDOM_BYTE = 2**8 - 1
+;; +    # [Modified in Electra]
+;; +    MAX_RANDOM_VALUE = 2**16 - 1
+;;      i = Uint64(0)
+;;      total = Uint64(len(indices))
+;;      while True:
+;;          candidate_index = indices[compute_shuffled_index(i % total, total, seed)]
+;; -        random_byte = sha256(seed + uint_to_bytes(Uint64(i // 32)))[i % 32]
+;; +        # [Modified in Electra]
+;; +        random_bytes = sha256(seed + uint_to_bytes(i // 16))
+;; +        offset = i % 16 * 2
+;; +        random_value = bytes_to_uint64(random_bytes[offset : offset + 2])
+;;          effective_balance = state.validators[candidate_index].effective_balance
+;; -        if effective_balance * MAX_RANDOM_BYTE >= MAX_EFFECTIVE_BALANCE * random_byte:
+;; +        # [Modified in Electra:EIP7251]
+;; +        if effective_balance * MAX_RANDOM_VALUE >= MAX_EFFECTIVE_BALANCE_ELECTRA * random_value:
+;;              return candidate_index
+;;          i += 1
+
+;; def $compute_proposer_index(state, vid*, seed)
+;;   = $compute_proposer_index_loop(state, vid*, seed, |vid*|, 0)
+;;   ;; assert
+;;   -- if $( |vid*| > 0 )
+
+;; [Phase0] get_seed(BeaconState, Epoch, DomainType) -> Bytes32
+
+;; seed = hash( domain_type(4B) ++ uint_to_bytes(epoch)(8B LE) ++ mix(32B) )
+dec $get_seed(beaconState, epoch, domainType) : bytes32
+
+def $get_seed(state, epoch, domainType) 
+  = $hash_<bytes>(
+      $concat_bytes(
+        $concat_bytes(
+          $bytes4_to_bytes(domainType),
+          $uint64_to_bytes_le(epoch)),
+        $bytes32_to_bytes(bytes32_mix)
+      )
+    )
+  -- if $get_randao_mix(
+          state, $(epoch + $EPOCHS_PER_HISTORICAL_VECTOR - $MIN_SEED_LOOKAHEAD - 1)
+        ) = bytes32_mix
+
+;; [Phase0] get_beacon_proposer_index(BeaconState) -> ValidatorIndex
+dec $get_beacon_proposer_index(beaconState) : validatorIndex
+
+def $get_beacon_proposer_index(state)
+  = $compute_proposer_index(state, vid*, seed)
+  -- if $get_current_epoch(state) = epoch_cur
+  -- if $hash_<bytes>(
+          $concat_bytes(
+            $bytes32_to_bytes($get_seed(state, epoch_cur, $DOMAIN_BEACON_PROPOSER)),
+            $uint64_to_bytes_le(state.SLOT)
+          )
+        ) = seed
+  -- if $get_active_validator_indices(state, epoch_cur) = vid*

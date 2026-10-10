@@ -15,7 +15,8 @@
   (sites
     (lib target_plugins)
     (share capella_specs)
-    (share deneb_specs))
+    (share deneb_specs)
+    (share electra_specs))
   (depends
     (ocaml (>= 5.1.0))
     (menhir (and :build (>= 20240715)))

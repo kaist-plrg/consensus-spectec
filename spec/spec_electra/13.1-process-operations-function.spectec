@@ -1,0 +1,359 @@
+;; [Phase0]
+;; process_proposer_slashing
+;;  mutates: .VALIDATORS[].EXIT_EPOCH, .VALIDATORS[].WITHDRAWABLE_EPOCH, .SLASHINGS, .BALANCES
+
+relation ProcessProposerSlashing:
+  beaconState proposerSlashing ~> beaconState
+  hint(input %0 %1)
+
+rule ProcessProposerSlashing:
+  state proposerSlashing ~> state_slashed
+  -- if beaconBlockHeader_1 = proposerSlashing.SIGNED_HEADER_1.MESSAGE
+  -- if beaconBlockHeader_2 = proposerSlashing.SIGNED_HEADER_2.MESSAGE
+  ;; assert 1
+  -- if beaconBlockHeader_1.SLOT = beaconBlockHeader_2.SLOT
+  ;; assert 2
+  -- if beaconBlockHeader_1.PROPOSER_INDEX = beaconBlockHeader_2.PROPOSER_INDEX
+  ;; assert 3
+  -- if beaconBlockHeader_1 =/= beaconBlockHeader_2
+  -- if vid_proposer = beaconBlockHeader_1.PROPOSER_INDEX
+  ;; inserted guard
+  -- if $(vid_proposer < |state.VALIDATORS|)
+  -- if state.VALIDATORS[vid_proposer] = validator_proposer
+  ;; assert 4
+  -- if $is_slashable_validator(validator_proposer, $get_current_epoch(state))
+  ----
+  ;; loop iter1
+  -- if signedBeaconBlockHeader_1 = proposerSlashing.SIGNED_HEADER_1
+  -- if $compute_epoch_at_slot(signedBeaconBlockHeader_1.MESSAGE.SLOT) = epoch_h1
+  -- if $get_domain(state, $DOMAIN_BEACON_PROPOSER, epoch_h1) = domain_h1
+  -- if $compute_signing_root_beaconBlockHeader(signedBeaconBlockHeader_1.MESSAGE, domain_h1) = root_sign_h1
+  ;; assert 5-1
+  -- if $bls_verify(validator_proposer.PUBKEY, root_sign_h1, signedBeaconBlockHeader_1.SIGNATURE)
+  ----
+  ;; loop iter 2
+  -- if signedBeaconBlockHeader_2 = proposerSlashing.SIGNED_HEADER_2
+  -- if $compute_epoch_at_slot(signedBeaconBlockHeader_2.MESSAGE.SLOT) = epoch_h2
+  -- if $get_domain(state, $DOMAIN_BEACON_PROPOSER, epoch_h2) = domain_h2
+  -- if $compute_signing_root_beaconBlockHeader(signedBeaconBlockHeader_2.MESSAGE, domain_h2) = root_sign_h2
+  ;; assert 5-2
+  -- if $bls_verify(validator_proposer.PUBKEY, root_sign_h2, signedBeaconBlockHeader_2.SIGNATURE)
+  ----
+  -- SlashValidator: state SLASH `[ vid_proposer `] BY eps ~> state_slashed
+
+relation ProcessProposerSlashings:
+  beaconState proposerSlashing* ~> beaconState
+  hint(input %0 %1)
+
+rule ProcessProposerSlashings/fold:
+  state proposerSlashing* ~> state_out
+  -- (ProcessProposerSlashing: state_cur proposerSlashing ~> state_next)*{
+       state -> state_cur ... state_next -> state_out
+     }
+
+
+;; [Phase0]
+;; process_attester_slashing
+;;  modifies: .VALIDATORS[].EXIT_EPOCH, .VALIDATORS[].WITHDRAWABLE_EPOCH, .SLASHINGS, .BALANCES
+
+relation ProcessAttesterSlashing:
+  beaconState attesterSlashing ~> beaconState
+  hint(input %0 %1)
+
+rule ProcessAttesterSlashing:
+  state attesterSlashing ~> state_slashed
+  -- if indexedAttestation_1 = attesterSlashing.ATTESTATION_1
+  -- if indexedAttestation_2 = attesterSlashing.ATTESTATION_2
+  ;; assert 1
+  -- if $is_slashable_attestation_data(indexedAttestation_1.DATA, indexedAttestation_2.DATA) = true
+  ;; assert 2
+  -- if $is_valid_indexed_attestation(state, indexedAttestation_1) = true
+  ;; assert 3
+  -- if $is_valid_indexed_attestation(state, indexedAttestation_2) = true
+  -- if $set_intersection_<validatorIndex>(
+          $to_set_<validatorIndex>(indexedAttestation_1.ATTESTING_INDICES),
+          $to_set_<validatorIndex>(indexedAttestation_2.ATTESTING_INDICES)
+        ) = vid_intersection*
+  -- if $sort_<validatorIndex>(vid_intersection*) = vid_sorted*
+  -- SlashIfEligible_over_validators: state SLASH '?' `[ vid_sorted* `] ~> state_slashed '#' SLASHED bit_slashed_any
+  ;; assert 4: slashed_any
+  -- if bit_slashed_any
+
+;; fold ProcessAttesterSlashing over attesterSlashing*
+relation ProcessAttesterSlashings:
+  beaconState attesterSlashing* ~> beaconState
+  hint(input %0 %1)
+
+rule ProcessAttesterSlashings/fold:
+  state attesterSlashing* ~> state_out
+  -- (ProcessAttesterSlashing: state_cur attesterSlashing ~> state_next)*{
+       state -> state_cur ... state_next -> state_out
+     }
+
+
+;; [Phase0 -> Altair]
+;; process_attestation
+;;  modifies: .CURRENT_EPOCH_PARTICIPATION / .PREVIOUS_EPOCH_PARTICIPATION, .BALANCES
+
+relation ProcessAttestation:
+  beaconState attestation ~> beaconState
+  hint(input %0 %1)
+
+;; TODO(electra): functions `process_attestation` changed upstream in specs/electra/beacon-chain.md
+;; body commented out below: uncomment it and apply the diff above
+;; --- old
+;; +++ new
+;; @@ -3,10 +3,23 @@
+;;      assert data.target.epoch in (get_previous_epoch(state), get_current_epoch(state))
+;;      assert data.target.epoch == compute_epoch_at_slot(data.slot)
+;; -    # [Modified in Deneb:EIP7045]
+;;      assert data.slot + MIN_ATTESTATION_INCLUSION_DELAY <= state.slot
+;; -    assert data.index < get_committee_count_per_slot(state, data.target.epoch)
+;;
+;; -    committee = get_beacon_committee(state, data.slot, data.index)
+;; -    assert len(attestation.aggregation_bits) == len(committee)
+;; +    # [Modified in Electra:EIP7549]
+;; +    assert data.index == 0
+;; +    committee_indices = get_committee_indices(attestation.committee_bits)
+;; +    committee_offset = 0
+;; +    for committee_index in committee_indices:
+;; +        assert committee_index < get_committee_count_per_slot(state, data.target.epoch)
+;; +        committee = get_beacon_committee(state, data.slot, committee_index)
+;; +        committee_attesters = {
+;; +            attester_index
+;; +            for i, attester_index in enumerate(committee)
+;; +            if attestation.aggregation_bits[committee_offset + i]
+;; +        }
+;; +        assert len(committee_attesters) > 0
+;; +        committee_offset += len(committee)
+;; +
+;; +    # Bitfield length matches total number of participants
+;; +    assert len(attestation.aggregation_bits) == committee_offset
+;;
+;;      # Participation flag indices
+
+;; rule ProcessAttestation/current_epoch:
+;;   state attestation ~> state_out
+;;   -- if attestationData = attestation.DATA
+;;   ----
+;;   ;; branch instead of assert 1
+;;   -- if attestationData.TARGET.EPOCH = $get_current_epoch(state)
+;;   ;; assert 2
+;;   -- if attestationData.TARGET.EPOCH = $compute_epoch_at_slot(attestationData.SLOT)
+;;   ;; assert 3
+;;   -- if $( attestationData.SLOT + $MIN_ATTESTATION_INCLUSION_DELAY <= state.SLOT )
+;;   ;; Removed in [Deneb]
+;;   ;; -- if $( state.SLOT <= attestationData.SLOT + $SLOTS_PER_EPOCH )
+;;   ;; assert 4
+;;   -- if $( attestationData.INDEX < $get_committee_count_per_slot(state, attestationData.TARGET.EPOCH) )
+;;   -- if vid_committee* = $get_beacon_committee(state, attestationData.SLOT, attestationData.INDEX)
+;;   ;; assert 5
+;;   -- if |attestation.AGGREGATION_BITS| = |vid_committee*|
+;;   ;; participation flag indices
+;;   -- if $get_attestation_participation_flag_indices(state, attestationData, $(state.SLOT - attestationData.SLOT)) = vid_participation_flag*
+;;   ;; assert 6: verify signature
+;;   -- if $is_valid_indexed_attestation(state, $get_indexed_attestation(state, attestation))
+;;   ----
+;;   ;; double loop
+;;   -- ProcessFlags_over_attesting:
+;;       state.CURRENT_EPOCH_PARTICIPATION `[ $get_attesting_indices(state, attestation) `] '++' `{ vid_participation_flag* `}
+;;         '#' state '#' SUM 0
+;;       ~> participationFlags_updated* '#' SUM reward_proposer_numerator
+;;   -- if state[.CURRENT_EPOCH_PARTICIPATION = participationFlags_updated*] = state_1
+;;   -- if $( ($WEIGHT_DENOMINATOR - $PROPOSER_WEIGHT) * $WEIGHT_DENOMINATOR / $PROPOSER_WEIGHT )
+;;       = reward_proposer_denominator
+;;   -- if $(reward_proposer_numerator / reward_proposer_denominator) = reward_proposer
+;;   -- IncreaseBalance: state_1 '.' BALANCES `[ $get_beacon_proposer_index(state_1) `] '+' reward_proposer ~> state_out
+;;
+;; rule ProcessAttestation/previous_epoch:
+;;   state attestation ~> state_out
+;;   -- if attestationData = attestation.DATA
+;;   ----
+;;   ;; branch instead of assert 1
+;;   -- if attestationData.TARGET.EPOCH = $get_previous_epoch(state)
+;;   ;; assert 2
+;;   -- if attestationData.TARGET.EPOCH = $compute_epoch_at_slot(attestationData.SLOT)
+;;   ;; assert 3
+;;   -- if $( attestationData.SLOT + $MIN_ATTESTATION_INCLUSION_DELAY <= state.SLOT )
+;;   ;; Removed in [Deneb]
+;;   ;; -- if $( state.SLOT <= attestationData.SLOT + $SLOTS_PER_EPOCH )
+;;   ;; assert 4
+;;   -- if $( attestationData.INDEX < $get_committee_count_per_slot(state, attestationData.TARGET.EPOCH) )
+;;   -- if vid_committee* = $get_beacon_committee(state, attestationData.SLOT, attestationData.INDEX)
+;;   ;; assert 5
+;;   -- if |attestation.AGGREGATION_BITS| = |vid_committee*|
+;;   ;; participation flag indices
+;;   -- if $get_attestation_participation_flag_indices(state, attestationData, $(state.SLOT - attestationData.SLOT)) = vid_participation_flag*
+;;   ;; assert 6: verify signature
+;;   -- if $is_valid_indexed_attestation(state, $get_indexed_attestation(state, attestation))
+;;   ----
+;;   ;; double loop
+;;   -- ProcessFlags_over_attesting:
+;;       state.PREVIOUS_EPOCH_PARTICIPATION `[ $get_attesting_indices(state, attestation) `] '++' `{ vid_participation_flag* `}
+;;         '#' state '#' SUM 0
+;;       ~> participationFlags_updated* '#' SUM reward_proposer_numerator
+;;   -- if state[.PREVIOUS_EPOCH_PARTICIPATION = participationFlags_updated*] = state_1
+;;   -- if $( ($WEIGHT_DENOMINATOR - $PROPOSER_WEIGHT) * $WEIGHT_DENOMINATOR / $PROPOSER_WEIGHT )
+;;       = reward_proposer_denominator
+;;   -- if $(reward_proposer_numerator / reward_proposer_denominator) = reward_proposer
+;;   -- IncreaseBalance: state_1 '.' BALANCES `[ $get_beacon_proposer_index(state_1) `] '+' reward_proposer ~> state_out
+
+;; fold ProcessAttestation over attestation*
+relation ProcessAttestations:
+  beaconState attestation* ~> beaconState
+  hint(input %0 %1)
+
+rule ProcessAttestations/fold:
+  state attestation* ~> state_out
+  -- (ProcessAttestation: state_cur attestation ~> state_next)*{
+       state -> state_cur ... state_next -> state_out
+     }
+
+
+;; [Phase0]
+;; process_deposit
+;;  modifies: ETH1_DEPOSIT_INDEX,
+;;    VALIDATORS, BALANCES, PREVIOUS_EPOCH_PARTICIPATION, CURRENT_EPOCH_PARTICIPATION, INACTIVITY_SCORES
+;; REVIEW(electra): functions `process_deposit` doc_only upstream in specs/electra/beacon-chain.md
+;; comment/docstring-only change upstream; body kept, review the contract
+;; --- old
+;; +++ new
+;; @@ -13,4 +13,5 @@
+;;      state.eth1_deposit_index += 1
+;;
+;; +    # [Modified in Electra:EIP7251]
+;;      apply_deposit(
+;;          state=state,
+
+relation ProcessDeposit:
+  beaconState deposit ~> beaconState
+  hint(input %0 %1)
+
+rule ProcessDeposit/main:
+  state deposit ~> state_applied
+  -- if $is_valid_merkle_branch(
+         $hash_tree_root_depositData(deposit.DATA),
+         deposit.PROOF,
+         $( $DEPOSIT_CONTRACT_TREE_DEPTH + 1 ),
+         state.ETH1_DEPOSIT_INDEX,
+         state.ETH1_DATA.DEPOSIT_ROOT
+       )
+  -- if state_inc = state[.ETH1_DEPOSIT_INDEX = $(state.ETH1_DEPOSIT_INDEX + 1)]
+  -- ApplyDeposit: state_inc '.' VALIDATORS '++'
+      `{
+        deposit.DATA.PUBKEY
+        deposit.DATA.WITHDRAWAL_CREDENTIALS
+        deposit.DATA.AMOUNT
+      `}
+      SIGNED deposit.DATA.SIGNATURE ~> state_applied
+
+;; fold ProcessDeposit over deposit*
+relation ProcessDeposits:
+  beaconState deposit* ~> beaconState
+  hint(input %0 %1)
+
+rule ProcessDeposits/fold:
+  state deposit* ~> state_out
+  -- (ProcessDeposit: state_cur deposit ~> state_next)*{
+       state -> state_cur ... state_next -> state_out
+     }
+
+
+;; [Phase0]
+;; process_voluntary_exit
+;;  modifies: .VALIDATORS[](.EXIT_EPOCH, .WITHDRAWABLE_EPOCH)
+
+relation ProcessVoluntaryExit:
+  beaconState signedVoluntaryExit ~> beaconState
+  hint(input %0 %1)
+
+;; TODO(electra): functions `process_voluntary_exit` changed upstream in specs/electra/beacon-chain.md
+;; body commented out below: uncomment it and apply the diff above
+;; --- old
+;; +++ new
+;; @@ -10,6 +10,8 @@
+;;      # Verify the validator has been active long enough
+;;      assert get_current_epoch(state) >= validator.activation_epoch + SHARD_COMMITTEE_PERIOD
+;; +    # [New in Electra:EIP7251]
+;; +    # Only exit validator if it has no pending withdrawals in the queue
+;; +    assert get_pending_balance_to_withdraw(state, voluntary_exit.validator_index) == 0
+;;      # Verify signature
+;; -    # [Modified in Deneb:EIP7044]
+;;      domain = compute_domain(
+;;          DOMAIN_VOLUNTARY_EXIT, CAPELLA_FORK_VERSION, state.genesis_validators_root
+
+;; rule ProcessVoluntaryExit/main:
+;;   state signedVoluntaryExit ~> state_exit
+;;   -- if voluntaryExit = signedVoluntaryExit.MESSAGE
+;;   -- if voluntaryExit.VALIDATOR_INDEX = vid_exit
+;;   ;; inserted guard
+;;   -- if $(vid_exit < |state.VALIDATORS|)
+;;   -- if state.VALIDATORS[vid_exit] = validator
+;;   -- if $get_current_epoch(state) = epoch_cur
+;;   ;; assert 1: verify the validator is active
+;;   -- if $is_active_validator(validator, epoch_cur) = true
+;;   ;; assert 2: verify exit has not been initiated
+;;   -- if validator.EXIT_EPOCH = $FAR_FUTURE_EPOCH
+;;   ;; assert 3: exits must specify an epoch when they become valid
+;;   -- if $(epoch_cur >= voluntaryExit.EPOCH)
+;;   ;; assert 4: verify the validator has been active long enough
+;;   ;; inserted overflow check
+;;   -- if $(validator.ACTIVATION_EPOCH <= $UINT64_MAX - $SHARD_COMMITTEE_PERIOD )
+;;   -- if $(epoch_cur >= validator.ACTIVATION_EPOCH + $SHARD_COMMITTEE_PERIOD)
+;;   ;; verify signature
+;;   ;; modified in [Deneb]
+;;   ;; -- if $get_domain(state, $DOMAIN_VOLUNTARY_EXIT, voluntaryExit.EPOCH) = domain_exit
+;;   -- if $compute_domain($DOMAIN_VOLUNTARY_EXIT, $CAPELLA_FORK_VERSION, state.GENESIS_VALIDATORS_ROOT) = domain_exit
+;;   -- if $compute_signing_root_voluntary_exit(voluntaryExit, domain_exit) = root_vol_exit_signing_root
+;;   ;; assert 5
+;;   -- if $bls_verify(validator.PUBKEY, root_vol_exit_signing_root, signedVoluntaryExit.SIGNATURE) = true
+;;   -- InitiateValidatorExit: state '.' VALIDATORS `[ vid_exit `] ~> state_exit
+
+;; fold ProcessVoluntaryExit over signedVoluntaryExit*
+relation ProcessVoluntaryExits:
+  beaconState signedVoluntaryExit* ~> beaconState
+  hint(input %0 %1)
+
+rule ProcessVoluntaryExits/fold:
+  state signedVoluntaryExit* ~> state_out
+  -- (ProcessVoluntaryExit: state_cur signedVoluntaryExit ~> state_next)*{
+       state -> state_cur ... state_next -> state_out
+     }
+
+
+;; [Capella]
+;; process_bls_to_execution_change
+;;  modifies: .VALIDATORS[].WITHDRAWAL_CREDENTIALS
+
+relation ProcessBlsToExecutionChange:
+  beaconState signedBlsToExecutionChange ~> beaconState
+  hint(input %0 %1)
+
+rule ProcessBlsToExecutionChange/main:
+  state signedBlsToExecutionChange ~> state[ .VALIDATORS[vid_change].WITHDRAWAL_CREDENTIALS = bytes32_new_wc ]
+  -- if blsToExecutionChange = signedBlsToExecutionChange.MESSAGE
+  -- if vid_change = blsToExecutionChange.VALIDATOR_INDEX
+  ;; assert 1
+  -- if $(vid_change < |state.VALIDATORS|)
+  -- if state.VALIDATORS[vid_change] = validator
+  ;; assert 2
+  -- if $get_first_byte(validator.WITHDRAWAL_CREDENTIALS) = $BLS_WITHDRAWAL_PREFIX
+  ;; assert 3
+  -- if $strip_first_byte(validator.WITHDRAWAL_CREDENTIALS) =$strip_first_byte($hash_<blsPubkey>(blsToExecutionChange.FROM_BLS_PUBKEY))
+  -- if $compute_domain($DOMAIN_BLS_TO_EXECUTION_CHANGE, eps, state.GENESIS_VALIDATORS_ROOT) = domain
+  -- if $compute_signing_root_bls_to_execution_change(blsToExecutionChange, domain) = root_sign
+  ;; assert 4
+  -- if $bls_verify(blsToExecutionChange.FROM_BLS_PUBKEY, root_sign, signedBlsToExecutionChange.SIGNATURE) = true
+  ;; TODO: inline helper?
+  -- if $make_withdrawal_credentials_eth1(blsToExecutionChange.TO_EXECUTION_ADDRESS) = bytes32_new_wc
+
+;; fold ProcessBlsToExecutionChange over signedBlsToExecutionChange*
+relation ProcessBlsToExecutionChanges:
+  beaconState signedBlsToExecutionChange* ~> beaconState
+  hint(input %0 %1)
+
+rule ProcessBlsToExecutionChanges/fold:
+  state signedBlsToExecutionChange* ~> state_out
+  -- (ProcessBlsToExecutionChange: state_cur signedBlsToExecutionChange ~> state_next)*{
+       state -> state_cur ... state_next -> state_out
+     }

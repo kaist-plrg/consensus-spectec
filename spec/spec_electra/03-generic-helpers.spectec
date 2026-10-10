@@ -1,0 +1,146 @@
+;; =========================
+;; generic helpers
+;; =========================
+
+;; =========================
+;; filter_list (if bool) (X* -> X*)
+;; =========================
+dec $filter_list_<X>(X*, def $cond(X) : bool)
+  : X*
+def $filter_list_<X>(eps, def $cond) = eps
+def $filter_list_<X>(X_h :: X_t*, def $cond)
+  = X_h :: $filter_list_<X>(X_t*, def $cond)
+  -- if $cond(X_h) = true
+def $filter_list_<X>(X_h :: X_t*, def $cond)
+  = $filter_list_<X>(X_t*, def $cond)
+  -- if $cond(X_h) = false
+
+dec $filter_list_2_<X, Y>(X*, Y, def $cond(X, Y) : bool) : X*
+def $filter_list_2_<X, Y>(eps, Y, def $cond) = eps
+def $filter_list_2_<X, Y>(X_h :: X_t*, Y, def $cond)
+  = X_h :: $filter_list_2_<X, Y>(X_t*, Y, def $cond)
+  -- if $cond(X_h, Y) = true
+def $filter_list_2_<X, Y>(X_h :: X_t*, Y, def $cond)
+  = $filter_list_2_<X, Y>(X_t*, Y, def $cond)
+  -- if $cond(X_h, Y) = false
+
+;; =========================
+;; take_prefix (X* -> X*)
+;; =========================
+;; Python slice xs[:n], which returns all of xs when n exceeds its length
+dec $take_prefix_<X>(X*, nat) : X*
+def $take_prefix_<X>(X*, n) = X*[0:n]
+  -- if $(n <= |X*|)
+def $take_prefix_<X>(X*, n) = X*
+  -- otherwise
+
+;; =========================
+;; flag helpers
+;; =========================
+;; [Custom : ProcessAttestations / AddFlag ] has_flag: flags[i] = 1
+dec $has_flag(participationFlags, nat) : boolean
+
+;; range check for uint8
+def $has_flag(participationFlags, n) = false
+  -- if $( n >= 8 )
+def $has_flag(participationFlags, n) = true
+  -- if $( ((participationFlags / $pow2(n)) \ 2) = 1 )
+def $has_flag(participationFlags, n) = false
+  -- otherwise
+
+;; [Custom : ProcessAttestations / AddFlag ] add_flag: flags[i] += 1
+dec $add_flag(participationFlags, nat) : participationFlags
+
+;; range check for uint8
+def $add_flag(participationFlags, n) = participationFlags
+  -- if $( n >= 8 )
+def $add_flag(participationFlags, n) = participationFlags
+  -- if $( ((participationFlags / $pow2(n)) \ 2) = 1 )
+def $add_flag(participationFlags, n) = $( participationFlags + $pow2(n) )
+  -- otherwise
+
+
+;; =========================
+;; max, min helpers
+;; =========================
+;; max for uint64
+dec $max_uint64(uint64, uint64) : uint64
+def $max_uint64(x, y) = x
+  -- if $(x >= y)
+def $max_uint64(x, y) = y
+  -- otherwise
+
+;; min for uint64
+dec $min_uint64(uint64, uint64) : uint64
+def $min_uint64(x, y) = x
+  -- if $(x <= y)
+def $min_uint64(x, y) = y
+  -- otherwise
+
+;; [Altair: ProcessSyncAggregate] eth_fast_aggregate_verify (missing in spec?)
+dec $eth_fast_aggregate_verify(blsPubkey*, bytes32, blsSignature) : boolean
+
+def $eth_fast_aggregate_verify(blsPubkey*, bytes32_msg, blsSignature) = true
+  -- if |blsPubkey*| = 0
+  -- if blsSignature = $G2_POINT_AT_INFINITY
+
+def $eth_fast_aggregate_verify(blsPubkey*, bytes32_msg, blsSignature)
+  = $bls_fast_aggregate_verify(blsPubkey*, bytes32_msg, blsSignature)
+  -- otherwise
+
+;; [Bellatrix: ProcessExecutionPayload] execution engine
+;; TODO(electra): protocols `ExecutionEngine.verify_and_notify_new_payload` changed upstream in specs/electra/beacon-chain.md
+;; OCaml builtin (spectec/targets/ethereum/builtins); check it
+;; --- old
+;; +++ new
+;; @@ -6,20 +6,24 @@
+;;      """
+;;      execution_payload = new_payload_request.execution_payload
+;; -    # [New in Deneb:EIP4788]
+;;      parent_beacon_block_root = new_payload_request.parent_beacon_block_root
+;; +    # [New in Electra]
+;; +    execution_requests_list = get_execution_requests_list(new_payload_request.execution_requests)
+;;
+;;      if b"" in execution_payload.transactions:
+;;          return False
+;;
+;; -    # [Modified in Deneb:EIP4788]
+;; -    if not self.is_valid_block_hash(execution_payload, parent_beacon_block_root):
+;; +    # [Modified in Electra]
+;; +    if not self.is_valid_block_hash(
+;; +        execution_payload, parent_beacon_block_root, execution_requests_list
+;; +    ):
+;;          return False
+;;
+;; -    # [New in Deneb:EIP4844]
+;;      if not self.is_valid_versioned_hashes(new_payload_request):
+;;          return False
+;;
+;; -    # [Modified in Deneb:EIP4788]
+;; -    if not self.notify_new_payload(execution_payload, parent_beacon_block_root):
+;; +    # [Modified in Electra]
+;; +    if not self.notify_new_payload(
+;; +        execution_payload, parent_beacon_block_root, execution_requests_list
+;; +    ):
+;;          return False
+;;
+
+builtin dec $ee_verify_and_notify_new_payload(executionPayload) : bool
+
+;; [Custom: ProcessSyncAggregate] index_of_pubkey(state, pk) : validatorIndex
+dec $index_of_pubkey((validatorIndex, blsPubkey)*, blsPubkey) : validatorIndex
+
+def $index_of_pubkey((vid, blsPubkey_existing)*, blsPubkey_committee)
+  = vid*[$index_of_<blsPubkey>(blsPubkey_existing*, blsPubkey_committee)]
+
+;; [Deneb] kzg_commitment_to_versioned_hash(kzgCommitment) -> versionedHash
+;; Used in verify_and_notify_new_payload
+;; But it is useless because verify_and_notify_new_payload is mock-up function in spec.
+dec $kzg_commitment_to_versioned_hash(kzgCommitment) : versionedHash
+
+def $kzg_commitment_to_versioned_hash(kzgCommitment_in) = versionedHash_result
+  -- if $hash_<kzgCommitment>(kzgCommitment_in) = bytes32_hash
+  -- if $strip_first_byte(bytes32_hash) = bytes31_tail
+  -- if $VERSIONED_HASH_VERSION_KZG = bytes1_version
+  -- if $make_versioned_hash(bytes1_version, bytes31_tail) = bytes32_result
+  -- if versionedHash_result = bytes32_result

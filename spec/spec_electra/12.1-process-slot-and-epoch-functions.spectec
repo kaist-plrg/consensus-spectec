@@ -1,0 +1,413 @@
+;; === SLOT PROCESSING ===
+
+;; [Phase 0]
+;; process_slot
+
+relation ProcessSlot:
+  beaconState ~> beaconState
+  hint(input %0)
+
+;; branch1: cache state root, header state root and block root
+rule ProcessSlot/header_root_empty:
+  state ~>
+    state[.STATE_ROOTS[i] = root_state_prev]
+         [.LATEST_BLOCK_HEADER = beaconBlockHeader]
+         [.BLOCK_ROOTS[i] = root_block_prev]
+  -- if $( state.SLOT \ $SLOTS_PER_HISTORICAL_ROOT ) = i
+  ;; branch-complete
+  -- if state.LATEST_BLOCK_HEADER.STATE_ROOT = $ZERO_ROOT
+  ;; save state root
+  -- if $hash_tree_root_beaconState(state) = root_state_prev
+  ;; save latest block header state root
+  -- if state.LATEST_BLOCK_HEADER[.STATE_ROOT = $hash_tree_root_beaconState(state)]
+      = beaconBlockHeader
+  ;; save block root
+  -- if $hash_tree_root_beaconBlockHeader(beaconBlockHeader) = root_block_prev
+
+;; branch2: cache state root and block root
+rule ProcessSlot/header_root_not_empty:
+  state ~>
+    state[.STATE_ROOTS[i] = root_state_prev]
+         [.BLOCK_ROOTS[i] = root_block_prev]
+  -- if $( state.SLOT \ $SLOTS_PER_HISTORICAL_ROOT ) = i
+  ;; branch-complete
+  -- if state.LATEST_BLOCK_HEADER.STATE_ROOT =/= $ZERO_ROOT
+  ;; save state root
+  -- if $hash_tree_root_beaconState(state) = root_state_prev
+  ;; save block root
+  -- if $hash_tree_root_beaconBlockHeader(state.LATEST_BLOCK_HEADER) = root_block_prev
+
+;; === EPOCH PROCESSING ===
+
+;; [Phase0 -> Altair]
+;; process_justification_and_finalization
+;;  mutates: .JUSTIFICATION_BITS, .FINALIZED_CHECKPOINT, .PREVIOUS_JUSTIFIED_CHECKPOINT, .CURRENT_JUSTIFIED_CHECKPOINT
+
+relation ProcessJustificationAndFinalization:
+  beaconState ~> beaconState
+  hint(input %0)
+
+rule ProcessJustificationAndFinalization/skip:
+  state ~> state
+  -- if $get_current_epoch(state) = epoch_cur
+  -- if $(epoch_cur <= ($GENESIS_EPOCH + 1))
+
+rule ProcessJustificationAndFinalization/main:
+  state ~> state_updated
+  -- if $get_unslashed_participating_indices(
+          state, $TIMELY_TARGET_FLAG_INDEX, $get_previous_epoch(state)
+        ) = vid_prev*
+  -- if $get_unslashed_participating_indices(
+          state, $TIMELY_TARGET_FLAG_INDEX, $get_current_epoch(state)
+        ) = vid_cur*
+  -- if $get_total_active_balance(state) = balance_total_active
+  -- if $get_total_balance(state, vid_prev*) = balance_prev_target
+  -- if $get_total_balance(state, vid_cur*) = balance_cur_target
+  -- WeighJustificationAndFinalization:
+      state
+        TOTAL balance_total_active
+        PREV balance_prev_target
+        CUR balance_cur_target
+        ~> state_updated
+
+;; [Altair]
+;; process_inactivity_updates
+;;  mutates: .INACTIVITY_SCORES
+
+relation ProcessInactivityUpdates:
+  beaconState ~> beaconState
+  hint(input %0)
+
+rule ProcessInactivityUpdates/skip:
+  state ~> state
+  ;; branch-complete
+  -- if $get_current_epoch(state) = $GENESIS_EPOCH
+
+rule ProcessInactivityUpdates/main:
+  state ~> state_updated
+  -- otherwise
+  -- if $get_eligible_validator_indices(state) = vid_eligible*
+  -- ApplyInactivity_over_vids: state '.' INACTIVITY_SCORES `[ vid_eligible* `] ~>* state_updated
+
+;; [Capella]
+;; process_rewards_and_penalties
+;;  mutates: .BALANCES
+
+relation ProcessRewardsAndPenalties:
+  beaconState ~> beaconState
+  hint(input %0)
+
+rule ProcessRewardsAndPenalties/skip:
+  state ~> state
+  -- if $get_current_epoch(state) = $GENESIS_EPOCH
+
+rule ProcessRewardsAndPenalties/main:
+  state ~> state_out
+  -- otherwise
+  ;; 1: create flag indices: 0..|PARTICIPATION_FLAG_WEIGHTS|-1
+  -- if $range(|$PARTICIPATION_FLAG_WEIGHTS|) = vid_flag*
+  -- if ( $get_flag_index_deltas(state, vid_flag) = (reward_flag*, penalty_flag*) )*
+  ;; 2: get flag rewards and penalties
+  ;; 3: get inactivity rewards and penalties
+  -- if $get_inactivity_penalty_deltas(state) = (reward_inactivity*, penalty_inactivity*)
+  -- if reward_flag** ++ [reward_inactivity*] = reward**
+  -- if penalty_flag** ++ [penalty_inactivity*] = penalty**
+  ;; 4: create validator indices
+  -- if $range(|state.VALIDATORS|) = vid*
+  ;; 5: apply rewards and penalties to each validator
+  -- ApplyRewardsAndPenalties_over_deltas: state '.' BALANCES `[ vid* `] '+' reward** '-' penalty** ~>* state_out
+
+;; [Phase 0]
+;; Modified in [Deneb]
+;; process_registry_updates
+;;  mutates: .VALIDATORS[](.ACTIVATION_ELIGIBILITY_EPOCH, .EXIT_EPOCH, .WITHDRAWABLE_EPOCH, .ACTIVATION_EPOCH)
+
+relation ProcessRegistryUpdates:
+  beaconState ~> beaconState
+  hint(input %0)
+
+;; TODO(electra): functions `process_registry_updates` changed upstream in specs/electra/beacon-chain.md
+;; body commented out below: uncomment it and apply the diff above
+;; --- old
+;; +++ new
+;; @@ -1,27 +1,17 @@
+;;  def process_registry_updates(state: BeaconState) -> None:
+;; -    # Process activation eligibility and ejections
+;; +    current_epoch = get_current_epoch(state)
+;; +    activation_epoch = compute_activation_exit_epoch(current_epoch)
+;; +
+;; +    # Process activation eligibility, ejections, and activations
+;;      for index, validator in enumerate(state.validators):
+;; +        # [Modified in Electra:EIP7251]
+;;          if is_eligible_for_activation_queue(validator):
+;; -            validator.activation_eligibility_epoch = get_current_epoch(state) + 1
+;; -
+;; -        if (
+;; -            is_active_validator(validator, get_current_epoch(state))
+;; +            validator.activation_eligibility_epoch = current_epoch + 1
+;; +        elif (
+;; +            is_active_validator(validator, current_epoch)
+;;              and validator.effective_balance <= EJECTION_BALANCE
+;;          ):
+;; +            # [Modified in Electra:EIP7251]
+;;              initiate_validator_exit(state, ValidatorIndex(index))
+;; -
+;; -    # Queue validators eligible for activation and not yet dequeued for activation
+;; -    activation_queue = sorted(
+;; -        [
+;; -            index
+;; -            for index, validator in enumerate(state.validators)
+;; -            if is_eligible_for_activation(state, validator)
+;; -        ],
+;; -        # Order by the sequence of activation_eligibility_epoch setting and then index
+;; -        key=lambda index: (state.validators[index].activation_eligibility_epoch, index),
+;; -    )
+;; -    # Dequeued validators for activation up to activation churn limit
+;; -    # [Modified in Deneb:EIP7514]
+;; -    for index in activation_queue[: get_validator_activation_churn_limit(state)]:
+;; -        validator = state.validators[index]
+;; -        validator.activation_epoch = compute_activation_exit_epoch(get_current_epoch(state))
+;; +        elif is_eligible_for_activation(state, validator):
+;; +            validator.activation_epoch = activation_epoch
+
+;; rule ProcessRegistryUpdates:
+;;   state ~> state_out
+;;   ;; 1. process eligibility and ejections for each validator
+;;   -- if $range(|state.VALIDATORS|) = vid*
+;;   -- ProcessEligibilityAndEjection_over_vids:
+;;       state '.' VALIDATORS `[ vid* `] ~> state_1
+;;   ;; queue validators eligible for activation and not yet dequeued for activattion
+;;   -- if $enumerate_<validator>(state_1.VALIDATORS) = (vid_1, validator)*
+;;   -- if $filter_list_2_<(nat, validator), beaconState>(
+;;          (vid_1, validator)*,
+;;          state_1,
+;;          def $is_eligible_activation_en
+;;        ) = (vid_elg, validator_elg)*
+;;   -- if (validator_elg.ACTIVATION_ELIGIBILITY_EPOCH = epoch_elg)*
+;;   -- if $sort_<(epoch, validatorIndex)>((epoch_elg, vid_elg)*) =
+;;          (_, vid_activation_queue)*
+;;   ;; 3. dequeue validators up to the churn limit for activation
+;;   ;; Modified in [Deneb], changed get_validator_churn_limit -> get_validator_activation_churn_limit
+;;   -- if $take_prefix_<validatorIndex>(vid_activation_queue*, $get_validator_activation_churn_limit(state_1)) = vid_dequeued*
+;;   -- ApplyActivations:
+;;       state_1 '.' VALIDATORS `[ vid_dequeued* `] '.' ACTIVATION_EPOCH ~>* state_out
+
+;; [Phase 0] -> [Altair] -> [Bellatrix]
+;; process_slashings
+;;  mutates: .BALANCES
+
+relation ProcessSlashings:
+  beaconState ~> beaconState
+  hint(input %0)
+
+;; TODO(electra): functions `process_slashings` changed upstream in specs/electra/beacon-chain.md
+;; body commented out below: uncomment it and apply the diff above
+;; --- old
+;; +++ new
+;; @@ -3,8 +3,11 @@
+;;      total_balance = get_total_active_balance(state)
+;;      adjusted_total_slashing_balance = min(
+;; -        Gwei(sum(state.slashings))
+;; -        # [Modified in Bellatrix]
+;; -        * PROPORTIONAL_SLASHING_MULTIPLIER_BELLATRIX,
+;; -        total_balance,
+;; +        Gwei(sum(state.slashings)) * PROPORTIONAL_SLASHING_MULTIPLIER_BELLATRIX, total_balance
+;; +    )
+;; +    increment = (
+;; +        EFFECTIVE_BALANCE_INCREMENT  # Factored out from total balance to avoid Uint64 overflow
+;; +    )
+;; +    penalty_per_effective_balance_increment = adjusted_total_slashing_balance // (
+;; +        total_balance // increment
+;;      )
+;;      for index, validator in enumerate(state.validators):
+;; @@ -13,8 +16,6 @@
+;;              and epoch + EPOCHS_PER_SLASHINGS_VECTOR // 2 == validator.withdrawable_epoch
+;;          ):
+;; -            increment = EFFECTIVE_BALANCE_INCREMENT  # Factored out from penalty numerator to avoid Uint64 overflow
+;; -            penalty_numerator = (
+;; -                validator.effective_balance // increment * adjusted_total_slashing_balance
+;; -            )
+;; -            penalty = penalty_numerator // total_balance * increment
+;; +            effective_balance_increments = validator.effective_balance // increment
+;; +            # [Modified in Electra:EIP7251]
+;; +            penalty = penalty_per_effective_balance_increment * effective_balance_increments
+;;              decrease_balance(state, ValidatorIndex(index), penalty)
+
+;; rule ProcessSlashings:
+;;   state ~> state_out
+;;   -- if $get_current_epoch(state) = epoch_cur
+;;   -- if $get_total_active_balance(state) = balance_total
+;;   ;; inserted overflow check
+;;   -- if $( $sum_<gwei>(state.SLASHINGS) <= $UINT64_MAX / $PROPORTIONAL_SLASHING_MULTIPLIER_BELLATRIX )
+;;   -- if $min_uint64(
+;;         $( $sum_<gwei>(state.SLASHINGS) * $PROPORTIONAL_SLASHING_MULTIPLIER_BELLATRIX ),
+;;         balance_total
+;;       ) = balance_adjusted_total_slashing
+;;   -- if $enumerate_<validator>(state.VALIDATORS) = (vid, validator)*
+;;   -- if $filter_list_2_<(validatorIndex, validator), epoch>(
+;;          (vid, validator)*,
+;;          epoch_cur,
+;;          def $is_due_slashing_en
+;;        ) = (vid_due, validator_due)*
+;;   ;; 3. get penalties
+;;   -- if gwei_increment = $EFFECTIVE_BALANCE_INCREMENT
+;;   -- if ($( (validator_due.EFFECTIVE_BALANCE / gwei_increment) * balance_adjusted_total_slashing )
+;;       = penalty_numerator)*
+;;   ;; inserted overflow check
+;;   -- if ($(penalty_numerator <= $UINT64_MAX))*
+;;   -- if ($( (penalty_numerator / balance_total) * gwei_increment ) = penalty)*
+;;   ;; 4. apply penalties
+;;   -- DecreaseBalances: state '.' BALANCES `[ vid_due* `] '-' penalty* ~> state_out
+
+;; [Phase 0]
+;; process_eth1_data_reset
+;;  mutates: .ETH1_DATA_VOTES
+
+relation ProcessEth1DataReset:
+  beaconState ~> beaconState
+  hint(input %0)
+
+rule ProcessEth1DataReset/skip:
+  state ~> state
+  -- if $($get_current_epoch(state) + 1) = epoch_next
+  ;; branch-complete
+  -- if $(epoch_next \ $EPOCHS_PER_ETH1_VOTING_PERIOD) =/= 0
+
+rule ProcessEth1DataReset/main:
+  state ~> state[.ETH1_DATA_VOTES = eps]
+  -- otherwise
+  ;; -- if $($get_current_epoch(state) + 1) = epoch_next
+  ;; ;; branch-complete
+  ;; -- if $(epoch_next \ $EPOCHS_PER_ETH1_VOTING_PERIOD) = 0
+
+;; [Phase 0]
+;; process_effective_balance_updates
+;;  mutates: .VALIDATORS[].EFFECTIVE_BALANCE
+
+relation ProcessEffectiveBalanceUpdates:
+  beaconState ~> beaconState
+  hint(input %0)
+
+;; TODO(electra): functions `process_effective_balance_updates` changed upstream in specs/electra/beacon-chain.md
+;; body commented out below: uncomment it and apply the diff above
+;; --- old
+;; +++ new
+;; @@ -6,4 +6,7 @@
+;;          DOWNWARD_THRESHOLD = HYSTERESIS_INCREMENT * HYSTERESIS_DOWNWARD_MULTIPLIER
+;;          UPWARD_THRESHOLD = HYSTERESIS_INCREMENT * HYSTERESIS_UPWARD_MULTIPLIER
+;; +        # [Modified in Electra:EIP7251]
+;; +        max_effective_balance = get_max_effective_balance(validator)
+;; +
+;;          if (
+;;              balance + DOWNWARD_THRESHOLD < validator.effective_balance
+;; @@ -11,4 +14,4 @@
+;;          ):
+;;              validator.effective_balance = min(
+;; -                balance - balance % EFFECTIVE_BALANCE_INCREMENT, MAX_EFFECTIVE_BALANCE
+;; +                balance - balance % EFFECTIVE_BALANCE_INCREMENT, max_effective_balance
+;;              )
+
+;; rule ProcessEffectiveBalanceUpdates:
+;;   state ~> state[.VALIDATORS = validator_updated*]
+;;   -- if $enumerate_<validator>(state.VALIDATORS) = (vid, validator)*
+;;   ;; inserted guard
+;;   -- if $(|state.VALIDATORS| <= |state.BALANCES|)
+;;   -- if (state.BALANCES[vid] = balance)*
+;;   -- (ApplyEffectiveBalance:
+;;       validator '.' EFFECTIVE_BALANCE balance ~> validator_updated)*
+
+;; [Phase 0]
+;; process_slashings_reset
+;;  mutates: .SLASHINGS
+
+relation ProcessSlashingsReset:
+  beaconState ~> beaconState
+  hint(input %0)
+
+rule ProcessSlashingsReset:
+  state ~> state[.SLASHINGS[i] = 0]
+  -- if $($get_current_epoch(state) + 1) = epoch_next
+  -- if $(epoch_next \ $EPOCHS_PER_SLASHINGS_VECTOR) = i
+  ;; inserted guard
+  -- if $(i < |state.SLASHINGS|)
+
+
+;; [Phase 0]
+;; process_randao_mixes_reset
+;;  mutates: .RANDAO_MIXES
+
+relation ProcessRandaoMixesReset:
+  beaconState ~> beaconState
+  hint(input %0)
+
+rule ProcessRandaoMixesReset:
+  state ~> state[.RANDAO_MIXES[i] = $get_randao_mix(state, epoch_cur)]
+  -- if $get_current_epoch(state) = epoch_cur
+  -- if $(epoch_cur + 1) = epoch_next
+  -- if $(epoch_next \ $EPOCHS_PER_HISTORICAL_VECTOR) = i
+  ;; inserted guard
+  -- if $(i < |state.RANDAO_MIXES|)
+
+;; [Phase 0 -> Capella]
+;; process_historical_summaries_update
+;;  mutates: .HISTORICAL_SUMMARIES
+
+relation ProcessHistoricalSummariesUpdate:
+  beaconState ~> beaconState
+  hint(input %0)
+
+rule ProcessHistoricalSummariesUpdate/skip:
+  state ~> state
+  -- if $($get_current_epoch(state) + 1) = epoch_next
+  ;; branch-complete
+  -- if $(epoch_next \ ($SLOTS_PER_HISTORICAL_ROOT / $SLOTS_PER_EPOCH)) =/= 0
+
+rule ProcessHistoricalSummariesUpdate/main:
+  state ~>
+    state[.HISTORICAL_SUMMARIES = state.HISTORICAL_SUMMARIES ++ [ historicalSummary ]]
+  -- otherwise
+  ;; -- if $($get_current_epoch(state) + 1) = epoch_next
+  ;; ;; branch-complete
+  ;; -- if $( epoch_next \ ($SLOTS_PER_HISTORICAL_ROOT / $SLOTS_PER_EPOCH) ) = 0
+  -- if $hash_tree_root_roots(state.BLOCK_ROOTS) = root_block_summary
+  -- if $hash_tree_root_roots(state.STATE_ROOTS) = root_state_summary
+  -- if { BLOCK_SUMMARY_ROOT root_block_summary, STATE_SUMMARY_ROOT root_state_summary } = historicalSummary
+
+;; [Altair]
+;; process_participation_flag_updates:
+;;  initialize current participation flags to zero
+;;  mutates: .PREVIOUS_EPOCH_PARTICIPATION, .CURRENT_EPOCH_PARTICIPATION
+
+relation ProcessParticipationFlagUpdates:
+  beaconState ~> beaconState
+  hint(input %0)
+
+rule ProcessParticipationFlagUpdates:
+  state ~> 
+    state[.PREVIOUS_EPOCH_PARTICIPATION = state.CURRENT_EPOCH_PARTICIPATION]
+         [.CURRENT_EPOCH_PARTICIPATION = participationFlags_zero*]
+  -- if $repeat_<participationFlags>(0, |state.VALIDATORS|) = participationFlags_zero*
+
+;; [Altair]
+;; process_sync_committee_updates:
+;;  initialize sync committees for next epoch
+;;  mutates: .CURRENT_SYNC_COMMITTEE, NEXT_SYNC_COMMITTEE
+
+relation ProcessSyncCommitteeUpdates:
+  beaconState ~> beaconState
+  hint(input %0)
+
+rule ProcessSyncCommitteeUpdates/skip:
+  state ~> state
+  -- if $($get_current_epoch(state) + 1) = epoch_next
+  ;; branch-complete
+  -- if $(epoch_next \ $EPOCHS_PER_SYNC_COMMITTEE_PERIOD) =/= 0
+
+rule ProcessSyncCommitteeUpdates/main:
+  state ~> 
+    state[.CURRENT_SYNC_COMMITTEE = state.NEXT_SYNC_COMMITTEE]
+         [.NEXT_SYNC_COMMITTEE    = $get_next_sync_committee(state)]
+  -- otherwise
+  ;; -- if $($get_current_epoch(state) + 1) = epoch_next
+  ;; ;; branch-complete
+  ;; -- if $(epoch_next \ $EPOCHS_PER_SYNC_COMMITTEE_PERIOD) = 0

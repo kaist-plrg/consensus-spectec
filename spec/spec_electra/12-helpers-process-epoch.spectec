@@ -1,0 +1,500 @@
+;; === ProcessRewardsAndPenalties ===
+
+;; [Custom] loop helper for ProcessRewardsAndPenalties
+;; apply reward -> penalty for a single index
+relation ApplyRewardAndPenalty: 
+  beaconState '.' BALANCES `[ validatorIndex `] '+' gwei '-' gwei ~> beaconState
+  hint(input %0 %1 %2 %3)
+
+rule ApplyRewardAndPenalty:
+  state '.' BALANCES `[ vid `] '+' reward '-' penalty ~> state_out
+  -- IncreaseBalance: state   '.' BALANCES `[ vid `] '+' reward  ~> state_r
+  -- DecreaseBalance: state_r '.' BALANCES `[ vid `] '-' penalty ~> state_out
+
+;; implicit: should fail on length mismatch
+;; apply reward -> penalty -> reward -> penalty -> ...
+relation ApplyRewardsAndPenalties:
+  beaconState '.' BALANCES `[ validatorIndex* `] '+' gwei* '-' gwei* ~> beaconState
+  hint(input %0 %1 %2 %3)
+
+rule ApplyRewardsAndPenalties/fold:
+  state '.' BALANCES `[ vid* `] '+' reward* '-' penalty* ~> state_out
+  -- (ApplyRewardAndPenalty: state_cur '.' BALANCES `[ vid `] '+' reward '-' penalty ~> state_next)*{
+       state -> state_cur ... state_next -> state_out
+     }
+
+;; implicit: should fail on length mismatch
+;; apply rewards and penalties for multiple validators
+relation ApplyRewardsAndPenalties_over_deltas:
+  beaconState '.' BALANCES `[ validatorIndex* `] '+' gwei** '-' gwei** ~>* beaconState
+  hint(input %0 %1 %2 %3)
+
+rule ApplyRewardsAndPenalties_over_deltas/fold:
+  state '.' BALANCES `[ vid* `] '+' reward** '-' penalty** ~>* state_out
+  -- (ApplyRewardsAndPenalties: state_cur '.' BALANCES `[ vid* `] '+' reward* '-' penalty* ~> state_next)*{
+       state -> state_cur ... state_next -> state_out
+     }
+
+;; === ProcessInactivityUpdates ===
+
+;; [Custom]
+;; apply inactivity score update for a single index
+relation ApplyInactivity:
+  beaconState '.' INACTIVITY_SCORES `[ validatorIndex `] ~> beaconState
+  hint(input %0 %1)
+
+rule ApplyInactivity/unslashed_participating_no_leak:
+  state '.' INACTIVITY_SCORES `[ vid `]
+    ~> state[.INACTIVITY_SCORES[vid]
+              = $max_uint64($(state.INACTIVITY_SCORES[vid] - 1 - $INACTIVITY_SCORE_RECOVERY_RATE), 0)
+            ]
+  ----
+  ;; branch 1 : true
+  -- if vid <- $get_unslashed_participating_indices(state, $TIMELY_TARGET_FLAG_INDEX, $get_previous_epoch(state))
+  ;; branch 2 : false
+  -- if ~ $is_in_inactivity_leak(state)
+  ;; inserted guard
+  -- if $(vid < |state.INACTIVITY_SCORES|)
+
+rule ApplyInactivity/unslashed_participating_leak:
+  state '.' INACTIVITY_SCORES `[ vid `]
+    ~> state[.INACTIVITY_SCORES[vid]
+              = $max_uint64($(state.INACTIVITY_SCORES[vid] - 1), 0)
+            ]
+  ----
+  ;; branch 1 : true
+  -- if vid <- $get_unslashed_participating_indices(state, $TIMELY_TARGET_FLAG_INDEX, $get_previous_epoch(state))
+  ;; branch 2 : true
+  -- if $is_in_inactivity_leak(state)
+  ;; inserted guard
+  -- if $(vid < |state.INACTIVITY_SCORES|)
+
+rule ApplyInactivity/inactive_no_leak:
+  state '.' INACTIVITY_SCORES `[ vid `]
+    ~> state[.INACTIVITY_SCORES[vid]
+              = $max_uint64($(state.INACTIVITY_SCORES[vid] + n_leak_penalty), 0)
+            ]
+  ----
+  ;; branch 1 : false
+  -- if ~(vid <- $get_unslashed_participating_indices(state, $TIMELY_TARGET_FLAG_INDEX, $get_previous_epoch(state)))
+  ;; branch 2 : false
+  -- if ~ $is_in_inactivity_leak(state)
+  -- if n_leak_penalty = $($INACTIVITY_SCORE_BIAS - $INACTIVITY_SCORE_RECOVERY_RATE)
+  ;; inserted guard
+  -- if $(vid < |state.INACTIVITY_SCORES|)
+  ;; inserted overflow check
+  -- if $(state.INACTIVITY_SCORES[vid] <= $UINT64_MAX - $INACTIVITY_SCORE_BIAS)
+
+rule ApplyInactivity/inactive_leak:
+  state '.' INACTIVITY_SCORES `[ vid `]
+    ~> state[.INACTIVITY_SCORES[vid]
+              = $max_uint64($(state.INACTIVITY_SCORES[vid] + $INACTIVITY_SCORE_BIAS), 0)
+            ]
+  ----
+  ;; branch 1 : false
+  -- if ~(vid <- $get_unslashed_participating_indices(state, $TIMELY_TARGET_FLAG_INDEX, $get_previous_epoch(state)))
+  ;; branch 2 : true
+  -- if $is_in_inactivity_leak(state)
+  ;; inserted guard
+  -- if $(vid < |state.INACTIVITY_SCORES|)
+  ;; inserted overflow check
+  -- if $(state.INACTIVITY_SCORES[vid] <= $UINT64_MAX - $INACTIVITY_SCORE_BIAS)
+
+relation ApplyInactivity_over_vids:
+  beaconState '.' INACTIVITY_SCORES `[ validatorIndex* `] ~>* beaconState
+  hint(input %0 %1)
+
+rule ApplyInactivity_over_vids/fold:
+  state '.' INACTIVITY_SCORES `[ vid* `] ~>* state_out
+  -- (ApplyInactivity: state_cur '.' INACTIVITY_SCORES `[ vid `] ~> state_next)*{
+       state -> state_cur ... state_next -> state_out
+     }
+
+;; === ProcessSlashings ===
+
+;; [Custom] filter predicate
+
+dec $is_due_slashing_en(enumerated_<validator>, epoch) : boolean
+
+def $is_due_slashing_en((_, validator), epoch) = true
+  -- if validator.SLASHED = true
+  -- if $( epoch + ($EPOCHS_PER_SLASHINGS_VECTOR / 2) = validator.WITHDRAWABLE_EPOCH )
+
+def $is_due_slashing_en((_, _), _) = false
+  -- otherwise
+
+relation DecreaseBalances:
+  beaconState '.' BALANCES `[ validatorIndex* `] '-' gwei* ~> beaconState
+  hint(input %0 %1 %2)
+
+rule DecreaseBalances/fold:
+  state '.' BALANCES `[ vid* `] '-' penalty* ~> state_out
+  -- (DecreaseBalance: state_cur '.' BALANCES `[ vid `] '-' penalty ~> state_next)*{
+       state -> state_cur ... state_next -> state_out
+     }
+
+;; === ProcessJustificationAndFinalization ===
+
+;; [Phase0]
+;; weigh_justification_and_finalization
+;;  mutates: .JUSTIFICATION_BITS, .FINALIZED_CHECKPOINT, .PREVIOUS_JUSTIFIED_CHECKPOINT, .CURRENT_JUSTIFIED_CHECKPOINT
+
+;; Note: both justification and finalization have three distinct semantic branches:
+;; justify/finalize current, justify/finalize previous, neither
+
+relation WeighJustificationAndFinalization:
+  beaconState
+    TOTAL gwei
+    PREV gwei
+    CUR gwei
+    ~> beaconState
+  hint(input %0 %1 %2 %3)
+
+;; === justify neither: two branches ===
+
+rule WeighJustificationAndFinalization/justify_neither_finalize_prev:
+  state
+    TOTAL balance_total_active
+    PREV balance_prev_epoch_target
+    CUR balance_current_epoch_target
+    ~> state[.PREVIOUS_JUSTIFIED_CHECKPOINT = checkpoint_cur]
+            [.FINALIZED_CHECKPOINT = checkpoint_prev]
+            [.JUSTIFICATION_BITS = bit*]
+  ----
+  ;; inserted overflow checks
+  -- if $(balance_prev_epoch_target <= $UINT64_MAX / 3)
+  -- if $(balance_total_active <= $UINT64_MAX / 2)
+  -- if $(balance_current_epoch_target <= $UINT64_MAX / 3)
+  ;; branch 1: (false, false)
+  -- if ~ $(balance_prev_epoch_target * 3 >= balance_total_active * 2)
+  -- if ~ $(balance_current_epoch_target  * 3 >= balance_total_active * 2)
+  -- if bit* = [
+          false,
+          state.JUSTIFICATION_BITS[0],
+          state.JUSTIFICATION_BITS[1],
+          state.JUSTIFICATION_BITS[2]
+        ]
+  -- if state.PREVIOUS_JUSTIFIED_CHECKPOINT = checkpoint_prev
+  -- if state.CURRENT_JUSTIFIED_CHECKPOINT = checkpoint_cur
+  -- if $get_current_epoch(state)  = epoch_cur
+  ;; inserted overflow checks: pyspec evaluates each addition only when its bits conjunct holds
+  -- if ~(bit*[1] /\ bit*[2] /\ bit*[3]) \/ $(checkpoint_prev.EPOCH <= $UINT64_MAX - 3)
+  -- if ~(bit*[1] /\ bit*[2]) \/ $(checkpoint_prev.EPOCH <= $UINT64_MAX - 2)
+  -- if ~(bit*[0] /\ bit*[1] /\ bit*[2]) \/ $(checkpoint_cur.EPOCH <= $UINT64_MAX - 2)
+  -- if ~(bit*[0] /\ bit*[1]) \/ $(checkpoint_cur.EPOCH <= $UINT64_MAX - 1)
+  ----
+  ;; branch 2: true
+  -- if (bit*[1] /\ bit*[2] /\ bit*[3]  /\ epoch_cur = $(checkpoint_prev.EPOCH + 3))
+     \/ (bit*[1] /\ bit*[2] /\ epoch_cur = $(checkpoint_prev.EPOCH + 2))
+
+rule WeighJustificationAndFinalization/justify_neither_finalize_neither:
+  state
+    TOTAL balance_total_active
+    PREV balance_prev_epoch_target
+    CUR balance_current_epoch_target
+    ~> state[.PREVIOUS_JUSTIFIED_CHECKPOINT = checkpoint_cur]
+            [.JUSTIFICATION_BITS = bit*]
+  ----
+  ;; inserted overflow checks
+  -- if $(balance_prev_epoch_target <= $UINT64_MAX / 3)
+  -- if $(balance_total_active <= $UINT64_MAX / 2)
+  -- if $(balance_current_epoch_target <= $UINT64_MAX / 3)
+  ;; branch 1: (false, false)
+  -- if ~ $(balance_prev_epoch_target * 3 >= balance_total_active * 2)
+  -- if ~ $(balance_current_epoch_target  * 3 >= balance_total_active * 2)
+  -- if bit* = [
+          false,
+          state.JUSTIFICATION_BITS[0],
+          state.JUSTIFICATION_BITS[1],
+          state.JUSTIFICATION_BITS[2]
+        ]
+  -- if state.PREVIOUS_JUSTIFIED_CHECKPOINT = checkpoint_prev
+  -- if state.CURRENT_JUSTIFIED_CHECKPOINT = checkpoint_cur
+  -- if $get_current_epoch(state)  = epoch_cur
+  ;; inserted overflow checks: pyspec evaluates each addition only when its bits conjunct holds
+  -- if ~(bit*[1] /\ bit*[2] /\ bit*[3]) \/ $(checkpoint_prev.EPOCH <= $UINT64_MAX - 3)
+  -- if ~(bit*[1] /\ bit*[2]) \/ $(checkpoint_prev.EPOCH <= $UINT64_MAX - 2)
+  -- if ~(bit*[0] /\ bit*[1] /\ bit*[2]) \/ $(checkpoint_cur.EPOCH <= $UINT64_MAX - 2)
+  -- if ~(bit*[0] /\ bit*[1]) \/ $(checkpoint_cur.EPOCH <= $UINT64_MAX - 1)
+  ----
+  ;; branch 2: false
+  -- if ~(bit*[1] /\ bit*[2] /\ bit*[3] /\ epoch_cur = $(checkpoint_prev.EPOCH + 3))
+     /\ ~(bit*[1] /\ bit*[2] /\ epoch_cur = $(checkpoint_prev.EPOCH + 2))
+
+rule WeighJustificationAndFinalization/justify_prev_finalize_prev:
+  state
+    TOTAL balance_total_active
+    PREV balance_prev_epoch_target
+    CUR balance_current_epoch_target
+    ~> state[.PREVIOUS_JUSTIFIED_CHECKPOINT = checkpoint_cur]
+            [.CURRENT_JUSTIFIED_CHECKPOINT
+              = { EPOCH epoch_prev,
+                  ROOT $get_block_root(state, epoch_prev) }]
+            [.FINALIZED_CHECKPOINT = checkpoint_prev]
+            [.JUSTIFICATION_BITS = bit*]
+  ----
+  ;; inserted overflow checks
+  -- if $(balance_prev_epoch_target <= $UINT64_MAX / 3)
+  -- if $(balance_total_active <= $UINT64_MAX / 2)
+  -- if $(balance_current_epoch_target <= $UINT64_MAX / 3)
+  ;; branch 1: (true, false)
+  -- if $(balance_prev_epoch_target * 3 >= balance_total_active * 2)
+  -- if ~ $(balance_current_epoch_target  * 3 >= balance_total_active * 2)
+  -- if bit* = [
+          false,
+          true,
+          state.JUSTIFICATION_BITS[1],
+          state.JUSTIFICATION_BITS[2]
+        ]
+  -- if state.PREVIOUS_JUSTIFIED_CHECKPOINT = checkpoint_prev
+  -- if state.CURRENT_JUSTIFIED_CHECKPOINT = checkpoint_cur
+  -- if $get_previous_epoch(state) = epoch_prev
+  -- if $get_current_epoch(state)  = epoch_cur
+  ;; inserted overflow checks: pyspec evaluates each addition only when its bits conjunct holds
+  -- if ~(bit*[1] /\ bit*[2] /\ bit*[3]) \/ $(checkpoint_prev.EPOCH <= $UINT64_MAX - 3)
+  -- if ~(bit*[1] /\ bit*[2]) \/ $(checkpoint_prev.EPOCH <= $UINT64_MAX - 2)
+  -- if ~(bit*[0] /\ bit*[1] /\ bit*[2]) \/ $(checkpoint_cur.EPOCH <= $UINT64_MAX - 2)
+  -- if ~(bit*[0] /\ bit*[1]) \/ $(checkpoint_cur.EPOCH <= $UINT64_MAX - 1)
+  ----
+  ;; branch 2: true
+  -- if (bit*[1] /\ bit*[2] /\ bit*[3]  /\ epoch_cur = $(checkpoint_prev.EPOCH + 3))
+     \/ (bit*[1] /\ bit*[2] /\ epoch_cur = $(checkpoint_prev.EPOCH + 2))
+
+rule WeighJustificationAndFinalization/justify_prev_finalize_neither:
+  state
+    TOTAL balance_total_active
+    PREV balance_prev_epoch_target
+    CUR balance_current_epoch_target
+    ~> state[.PREVIOUS_JUSTIFIED_CHECKPOINT = checkpoint_cur]
+            [.CURRENT_JUSTIFIED_CHECKPOINT
+              = { EPOCH epoch_prev,
+                  ROOT $get_block_root(state, epoch_prev) }]
+            [.JUSTIFICATION_BITS = bit*]
+  ----
+  ;; inserted overflow checks
+  -- if $(balance_prev_epoch_target <= $UINT64_MAX / 3)
+  -- if $(balance_total_active <= $UINT64_MAX / 2)
+  -- if $(balance_current_epoch_target <= $UINT64_MAX / 3)
+  ;; branch 1: (true, false)
+  -- if $(balance_prev_epoch_target * 3 >= balance_total_active * 2)
+  -- if ~ $(balance_current_epoch_target  * 3 >= balance_total_active * 2)
+  -- if bit* = [
+          false,
+          true,
+          state.JUSTIFICATION_BITS[1],
+          state.JUSTIFICATION_BITS[2]
+        ]
+  -- if state.PREVIOUS_JUSTIFIED_CHECKPOINT = checkpoint_prev
+  -- if state.CURRENT_JUSTIFIED_CHECKPOINT = checkpoint_cur
+  -- if $get_previous_epoch(state) = epoch_prev
+  -- if $get_current_epoch(state)  = epoch_cur
+  ;; inserted overflow checks: pyspec evaluates each addition only when its bits conjunct holds
+  -- if ~(bit*[1] /\ bit*[2] /\ bit*[3]) \/ $(checkpoint_prev.EPOCH <= $UINT64_MAX - 3)
+  -- if ~(bit*[1] /\ bit*[2]) \/ $(checkpoint_prev.EPOCH <= $UINT64_MAX - 2)
+  -- if ~(bit*[0] /\ bit*[1] /\ bit*[2]) \/ $(checkpoint_cur.EPOCH <= $UINT64_MAX - 2)
+  -- if ~(bit*[0] /\ bit*[1]) \/ $(checkpoint_cur.EPOCH <= $UINT64_MAX - 1)
+  ----
+  ;; branch 2: false
+  -- if ~(bit*[1] /\ bit*[2] /\ bit*[3]  /\ epoch_cur = $(checkpoint_prev.EPOCH + 3))
+     /\ ~(bit*[1] /\ bit*[2] /\ epoch_cur = $(checkpoint_prev.EPOCH + 2))
+
+rule WeighJustificationAndFinalization/justify_cur_finalize_cur:
+  state
+    TOTAL balance_total_active
+    PREV balance_prev_epoch_target
+    CUR balance_current_epoch_target
+    ~> state[.PREVIOUS_JUSTIFIED_CHECKPOINT = checkpoint_cur]
+            [.CURRENT_JUSTIFIED_CHECKPOINT
+              = { EPOCH epoch_cur,
+                  ROOT $get_block_root(state, epoch_cur) }]
+            [.FINALIZED_CHECKPOINT = checkpoint_cur]
+            [.JUSTIFICATION_BITS = bit*]
+  ----
+  ;; inserted overflow checks
+  -- if $(balance_prev_epoch_target <= $UINT64_MAX / 3)
+  -- if $(balance_total_active <= $UINT64_MAX / 2)
+  -- if $(balance_current_epoch_target <= $UINT64_MAX / 3)
+  ;; branch 1: (_, true)
+  -- if $(balance_current_epoch_target * 3 >= balance_total_active * 2)
+  -- if bit* = [
+          true,
+          state.JUSTIFICATION_BITS[0]
+          \/ $(balance_prev_epoch_target * 3 >= balance_total_active * 2),
+          state.JUSTIFICATION_BITS[1],
+          state.JUSTIFICATION_BITS[2]
+        ]
+  -- if state.PREVIOUS_JUSTIFIED_CHECKPOINT = checkpoint_prev
+  -- if state.CURRENT_JUSTIFIED_CHECKPOINT = checkpoint_cur
+  -- if $get_current_epoch(state)  = epoch_cur
+  ;; inserted overflow checks: pyspec evaluates each addition only when its bits conjunct holds
+  -- if ~(bit*[1] /\ bit*[2] /\ bit*[3]) \/ $(checkpoint_prev.EPOCH <= $UINT64_MAX - 3)
+  -- if ~(bit*[1] /\ bit*[2]) \/ $(checkpoint_prev.EPOCH <= $UINT64_MAX - 2)
+  -- if ~(bit*[0] /\ bit*[1] /\ bit*[2]) \/ $(checkpoint_cur.EPOCH <= $UINT64_MAX - 2)
+  -- if ~(bit*[0] /\ bit*[1]) \/ $(checkpoint_cur.EPOCH <= $UINT64_MAX - 1)
+  ----
+  ;; branch 2: (true, _)
+  -- if (bit*[0] /\ bit*[1] /\ bit*[2] /\ epoch_cur = $(checkpoint_cur.EPOCH + 2))
+     \/ (bit*[0] /\ bit*[1] /\ epoch_cur = $(checkpoint_cur.EPOCH + 1))
+
+rule WeighJustificationAndFinalization/justify_cur_finalize_prev:
+  state
+    TOTAL balance_total_active
+    PREV balance_prev_epoch_target
+    CUR balance_current_epoch_target
+    ~> state[.PREVIOUS_JUSTIFIED_CHECKPOINT = checkpoint_cur]
+            [.CURRENT_JUSTIFIED_CHECKPOINT
+              = { EPOCH epoch_cur,
+                  ROOT $get_block_root(state, epoch_cur) }]
+            [.FINALIZED_CHECKPOINT = checkpoint_prev]
+            [.JUSTIFICATION_BITS = bit*]
+  ----
+  ;; inserted overflow checks
+  -- if $(balance_prev_epoch_target <= $UINT64_MAX / 3)
+  -- if $(balance_total_active <= $UINT64_MAX / 2)
+  -- if $(balance_current_epoch_target <= $UINT64_MAX / 3)
+  ;; branch 1: (_, true)
+  -- if $(balance_current_epoch_target * 3 >= balance_total_active * 2)
+  -- if bit* = [
+          true,
+          state.JUSTIFICATION_BITS[0]
+          \/ $(balance_prev_epoch_target * 3 >= balance_total_active * 2),
+          state.JUSTIFICATION_BITS[1],
+          state.JUSTIFICATION_BITS[2]
+        ]
+  -- if state.PREVIOUS_JUSTIFIED_CHECKPOINT = checkpoint_prev
+  -- if state.CURRENT_JUSTIFIED_CHECKPOINT = checkpoint_cur
+  -- if $get_current_epoch(state)  = epoch_cur
+  ;; inserted overflow checks: pyspec evaluates each addition only when its bits conjunct holds
+  -- if ~(bit*[1] /\ bit*[2] /\ bit*[3]) \/ $(checkpoint_prev.EPOCH <= $UINT64_MAX - 3)
+  -- if ~(bit*[1] /\ bit*[2]) \/ $(checkpoint_prev.EPOCH <= $UINT64_MAX - 2)
+  -- if ~(bit*[0] /\ bit*[1] /\ bit*[2]) \/ $(checkpoint_cur.EPOCH <= $UINT64_MAX - 2)
+  -- if ~(bit*[0] /\ bit*[1]) \/ $(checkpoint_cur.EPOCH <= $UINT64_MAX - 1)
+  ----
+  ;; branch 2: (false, true)
+  -- if ~(bit*[0] /\ bit*[1] /\ bit*[2] /\ epoch_cur = $(checkpoint_cur.EPOCH + 2))
+     /\ ~(bit*[0] /\ bit*[1] /\ epoch_cur = $(checkpoint_cur.EPOCH + 1))
+     /\ ((bit*[1] /\ bit*[2] /\ bit*[3]  /\ epoch_cur = $(checkpoint_prev.EPOCH + 3))
+     \/  (bit*[1] /\ bit*[2] /\ epoch_cur = $(checkpoint_prev.EPOCH + 2)))
+
+rule WeighJustificationAndFinalization/justify_cur_finalize_neither:
+  state
+    TOTAL balance_total_active
+    PREV balance_prev_epoch_target
+    CUR balance_current_epoch_target
+    ~> state[.PREVIOUS_JUSTIFIED_CHECKPOINT = checkpoint_cur]
+            [.CURRENT_JUSTIFIED_CHECKPOINT
+              = { EPOCH epoch_cur,
+                  ROOT $get_block_root(state, epoch_cur) }]
+            [.JUSTIFICATION_BITS = bit*]
+  ----
+  ;; inserted overflow checks
+  -- if $(balance_prev_epoch_target <= $UINT64_MAX / 3)
+  -- if $(balance_total_active <= $UINT64_MAX / 2)
+  -- if $(balance_current_epoch_target <= $UINT64_MAX / 3)
+  ;; branch 1: (_, true)
+  -- if $(balance_current_epoch_target * 3 >= balance_total_active * 2)
+  -- if bit* = [
+          true,
+          state.JUSTIFICATION_BITS[0]
+          \/ $(balance_prev_epoch_target * 3 >= balance_total_active * 2),
+          state.JUSTIFICATION_BITS[1],
+          state.JUSTIFICATION_BITS[2]
+        ]
+  ----
+  -- if state.PREVIOUS_JUSTIFIED_CHECKPOINT = checkpoint_prev
+  -- if state.CURRENT_JUSTIFIED_CHECKPOINT = checkpoint_cur
+  -- if $get_current_epoch(state)  = epoch_cur
+  ;; inserted overflow checks: pyspec evaluates each addition only when its bits conjunct holds
+  -- if ~(bit*[1] /\ bit*[2] /\ bit*[3]) \/ $(checkpoint_prev.EPOCH <= $UINT64_MAX - 3)
+  -- if ~(bit*[1] /\ bit*[2]) \/ $(checkpoint_prev.EPOCH <= $UINT64_MAX - 2)
+  -- if ~(bit*[0] /\ bit*[1] /\ bit*[2]) \/ $(checkpoint_cur.EPOCH <= $UINT64_MAX - 2)
+  -- if ~(bit*[0] /\ bit*[1]) \/ $(checkpoint_cur.EPOCH <= $UINT64_MAX - 1)
+  ;; branch 2: (false, false)
+  -- if ~(bit*[0] /\ bit*[1] /\ bit*[2] /\ epoch_cur = $(checkpoint_cur.EPOCH + 2))
+     /\ ~(bit*[0] /\ bit*[1] /\ epoch_cur = $(checkpoint_cur.EPOCH + 1))
+     /\ ~(bit*[1] /\ bit*[2] /\ bit*[3]  /\ epoch_cur = $(checkpoint_prev.EPOCH + 3))
+     /\ ~(bit*[1] /\ bit*[2] /\ epoch_cur = $(checkpoint_prev.EPOCH + 2))
+
+;; === ProcessRegistryUpdates ===
+
+relation ProcessEligibilityAndEjection:
+  beaconState '.' VALIDATORS `[ validatorIndex `] ~> beaconState
+  hint(input %0 %1)
+
+rule ProcessEligibilityAndEjection/eligible_and_eject:
+  state '.' VALIDATORS `[ vid `] ~> state_updated
+  -- if state.VALIDATORS[vid] = validator
+  -- if $get_current_epoch(state) = epoch_cur
+  -- if $is_eligible_for_activation_queue(validator)
+  -- if $is_active_validator(validator, epoch_cur)
+     /\ $(validator.EFFECTIVE_BALANCE <= $EJECTION_BALANCE)
+  -- InitiateValidatorExit: 
+       state [.VALIDATORS[vid].ACTIVATION_ELIGIBILITY_EPOCH 
+              = $(epoch_cur + 1)]
+         '.' VALIDATORS `[ vid `] ~> state_updated
+
+rule ProcessEligibilityAndEjection/eligible:
+  state '.' VALIDATORS `[ vid `] ~>
+    state [.VALIDATORS[vid].ACTIVATION_ELIGIBILITY_EPOCH 
+          = $(epoch_cur + 1)]
+  -- if state.VALIDATORS[vid] = validator
+  -- if $get_current_epoch(state) = epoch_cur
+  -- if $is_eligible_for_activation_queue(validator)
+  -- if ~( $is_active_validator(validator, epoch_cur)
+        /\ $(validator.EFFECTIVE_BALANCE <= $EJECTION_BALANCE))
+
+rule ProcessEligibilityAndEjection/eject:
+  state '.' VALIDATORS `[ vid `] ~> state_updated
+  -- if state.VALIDATORS[vid] = validator
+  -- if $get_current_epoch(state) = epoch_cur
+  -- if ~$is_eligible_for_activation_queue(validator)
+  -- if $is_active_validator(validator, epoch_cur)
+     /\ $(validator.EFFECTIVE_BALANCE <= $EJECTION_BALANCE)
+  -- InitiateValidatorExit: 
+       state '.' VALIDATORS `[ vid `] ~> state_updated
+
+rule ProcessEligibilityAndEjection/skip:
+  state '.' VALIDATORS `[ vid `] ~> state
+  -- if state.VALIDATORS[vid] = validator
+  -- if $get_current_epoch(state) = epoch_cur
+  -- if ~$is_eligible_for_activation_queue(validator)
+  -- if ~( $is_active_validator(validator, epoch_cur)
+        /\ $(validator.EFFECTIVE_BALANCE <= $EJECTION_BALANCE))
+
+relation ProcessEligibilityAndEjection_over_vids:
+  beaconState '.' VALIDATORS `[ validatorIndex* `] ~> beaconState
+  hint(input %0 %1)
+
+rule ProcessEligibilityAndEjection_over_vids/fold:
+  state '.' VALIDATORS `[ vid* `] ~> state_out
+  -- (ProcessEligibilityAndEjection: state_cur '.' VALIDATORS `[ vid `] ~> state_next)*{
+       state -> state_cur ... state_next -> state_out
+     }
+
+;; filter predicate
+dec $is_eligible_activation_en((nat, validator), beaconState) : boolean
+def $is_eligible_activation_en((_, validator), state)
+  = $is_eligible_for_activation(state, validator)
+
+;; [Custom]
+;; mutates: .VALIDATORS[].ACTIVATION_EPOCH
+relation ApplyActivation:
+  beaconState '.' VALIDATORS `[ validatorIndex `] '.' ACTIVATION_EPOCH ~> beaconState
+  hint(input %0 %1)
+
+rule ApplyActivation:
+  state '.' VALIDATORS `[ vid `] '.' ACTIVATION_EPOCH ~>
+    state[.VALIDATORS[vid].ACTIVATION_EPOCH
+          = $compute_activation_exit_epoch($get_current_epoch(state))]
+
+relation ApplyActivations:
+  beaconState 
+    '.' VALIDATORS `[ validatorIndex* `] '.' ACTIVATION_EPOCH
+    ~>* beaconState
+  hint(input %0 %1)
+
+rule ApplyActivations/fold:
+  state '.' VALIDATORS `[ vid* `] '.' ACTIVATION_EPOCH ~>* state_out
+  -- (ApplyActivation: state_cur '.' VALIDATORS `[ vid `] '.' ACTIVATION_EPOCH ~> state_next)*{
+       state -> state_cur ... state_next -> state_out
+     }
