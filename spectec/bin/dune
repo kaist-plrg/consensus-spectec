@@ -10,7 +10,7 @@
   spectec.cli
   spectec.grammar
   spectec.backend.splice
-  digestif.ocaml
+  digestif.c
   core
   core_unix
   core_unix.command_unix))

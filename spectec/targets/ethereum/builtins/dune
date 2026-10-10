@@ -9,7 +9,7 @@
   spectec.interp.builtins
   bls12-381
   bls12-381-signature
-  digestif.ocaml
+  digestif.c
   ssz
   ssz.schema
   yojson
