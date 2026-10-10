@@ -101,13 +101,13 @@ let elements (v : Value.t) =
 (* Root cache. SpecTec values are immutable, so a value object keeps its root
    for a given SSZ type. A state update shares the unchanged parts of the old
    value, so the next hash_tree_root of the state reuses their roots. The key is
-   the value object itself (physical equality), held weakly; vhash only spreads
+   the value object itself (physical equality), held weakly; Value.hash only spreads
    the table. *)
 module Roots = Ephemeron.K1.Make (struct
   type t = Value.t
 
   let equal = ( == )
-  let hash (v : Value.t) = v.note.vhash
+  let hash = Value.hash
 end)
 
 let roots : (Ssz.typ * string) list Roots.t = Roots.create 4096
