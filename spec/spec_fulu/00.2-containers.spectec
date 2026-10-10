@@ -1,0 +1,346 @@
+;;
+;; Containers: defined as SpecTec struct types
+;;
+
+;; === beaconState type definitions ===
+
+syntax fork =
+  { PREVIOUS_VERSION version,
+    CURRENT_VERSION version,
+    EPOCH epoch }
+
+syntax beaconBlockHeader =
+  { SLOT slot,
+    PROPOSER_INDEX validatorIndex,
+    PARENT_ROOT root,
+    STATE_ROOT root,
+    BODY_ROOT root }
+
+syntax eth1Data =
+  { DEPOSIT_ROOT root,
+    DEPOSIT_COUNT uint64,
+    BLOCK_HASH hash32 }
+
+syntax validator =
+  { PUBKEY blsPubkey,
+    WITHDRAWAL_CREDENTIALS bytes32,
+    EFFECTIVE_BALANCE gwei,
+    SLASHED bool,
+    ACTIVATION_ELIGIBILITY_EPOCH epoch,
+    ACTIVATION_EPOCH epoch,
+    EXIT_EPOCH epoch,
+    WITHDRAWABLE_EPOCH epoch }
+
+syntax checkpoint =
+  { EPOCH epoch,
+    ROOT root }
+
+syntax syncCommittee =
+  { PUBKEYS blsPubkey*,
+    AGGREGATE_PUBKEY blsPubkey }
+
+syntax executionPayloadHeader =
+  { PARENT_HASH hash32,
+    FEE_RECIPIENT executionAddress,
+    STATE_ROOT bytes32,
+    RECEIPTS_ROOT bytes32,
+    LOGS_BLOOM bytes256,
+    PREV_RANDAO bytes32,
+    BLOCK_NUMBER uint64,
+    GAS_LIMIT uint64,
+    GAS_USED uint64,
+    TIMESTAMP uint64,
+    EXTRA_DATA bytes,
+    BASE_FEE_PER_GAS uint256,
+    BLOCK_HASH hash32,
+    TRANSACTIONS_ROOT root,
+    WITHDRAWALS_ROOT root,
+    ;;[Deneb] 
+    BLOB_GAS_USED uint64,
+    EXCESS_BLOB_GAS uint64 }
+
+syntax historicalSummary =
+  { BLOCK_SUMMARY_ROOT root,
+    STATE_SUMMARY_ROOT root }
+
+;; [Electra]
+syntax pendingDeposit =
+  { PUBKEY blsPubkey,
+    WITHDRAWAL_CREDENTIALS bytes32,
+    AMOUNT gwei,
+    SIGNATURE blsSignature,
+    SLOT slot }
+
+;; [Electra]
+syntax pendingPartialWithdrawal =
+  { VALIDATOR_INDEX validatorIndex,
+    AMOUNT gwei,
+    WITHDRAWABLE_EPOCH epoch }
+
+;; [Electra]
+syntax pendingConsolidation =
+  { SOURCE_INDEX validatorIndex,
+    TARGET_INDEX validatorIndex }
+
+;; TODO(fulu): ssz_objects `BeaconState` changed upstream in specs/fulu/beacon-chain.md
+;; edit the type/fields by hand; callers listed in PLAN.md
+;; --- old
+;; +++ new
+;; @@ -28,20 +28,13 @@
+;;      next_withdrawal_validator_index: ValidatorIndex
+;;      historical_summaries: HistoricalSummaries
+;; -    # [New in Electra:EIP6110]
+;;      deposit_requests_start_index: Uint64
+;; -    # [New in Electra:EIP7251]
+;;      deposit_balance_to_consume: Gwei
+;; -    # [New in Electra:EIP7251]
+;;      exit_balance_to_consume: Gwei
+;; -    # [New in Electra:EIP7251]
+;;      earliest_exit_epoch: Epoch
+;; -    # [New in Electra:EIP7251]
+;;      consolidation_balance_to_consume: Gwei
+;; -    # [New in Electra:EIP7251]
+;;      earliest_consolidation_epoch: Epoch
+;; -    # [New in Electra:EIP7251]
+;;      pending_deposits: PendingDeposits
+;; -    # [New in Electra:EIP7251]
+;;      pending_partial_withdrawals: PendingPartialWithdrawals
+;; -    # [New in Electra:EIP7251]
+;;      pending_consolidations: PendingConsolidations
+;; +    # [New in Fulu:EIP7917]
+;; +    proposer_lookahead: ProposerLookahead
+
+syntax beaconState =
+  { GENESIS_TIME uint64,
+    GENESIS_VALIDATORS_ROOT bytes32,
+    SLOT slot,
+    FORK fork,
+    LATEST_BLOCK_HEADER beaconBlockHeader,
+    BLOCK_ROOTS root*,
+    STATE_ROOTS root*,
+    HISTORICAL_ROOTS root*,
+    ETH1_DATA eth1Data,
+    ETH1_DATA_VOTES eth1Data*,
+    ETH1_DEPOSIT_INDEX uint64,
+    VALIDATORS validator*,
+    BALANCES gwei*,
+    RANDAO_MIXES bytes32*,
+    SLASHINGS gwei*,
+    PREVIOUS_EPOCH_PARTICIPATION participationFlags*,
+    CURRENT_EPOCH_PARTICIPATION participationFlags*,
+    JUSTIFICATION_BITS bool*,
+    PREVIOUS_JUSTIFIED_CHECKPOINT checkpoint,
+    CURRENT_JUSTIFIED_CHECKPOINT checkpoint,
+    FINALIZED_CHECKPOINT checkpoint,
+    INACTIVITY_SCORES uint64*,
+    CURRENT_SYNC_COMMITTEE syncCommittee,
+    NEXT_SYNC_COMMITTEE syncCommittee,
+    LATEST_EXECUTION_PAYLOAD_HEADER executionPayloadHeader,
+    NEXT_WITHDRAWAL_INDEX withdrawalIndex,
+    NEXT_WITHDRAWAL_VALIDATOR_INDEX validatorIndex,
+    HISTORICAL_SUMMARIES historicalSummary*,
+    ;; [Electra]
+    DEPOSIT_REQUESTS_START_INDEX uint64,
+    DEPOSIT_BALANCE_TO_CONSUME gwei,
+    EXIT_BALANCE_TO_CONSUME gwei,
+    EARLIEST_EXIT_EPOCH epoch,
+    CONSOLIDATION_BALANCE_TO_CONSUME gwei,
+    EARLIEST_CONSOLIDATION_EPOCH epoch,
+    PENDING_DEPOSITS pendingDeposit*,
+    PENDING_PARTIAL_WITHDRAWALS pendingPartialWithdrawal*,
+    PENDING_CONSOLIDATIONS pendingConsolidation* }
+
+;; === beaconBlockBody type definitions ===
+
+;; proposerSlashing
+
+syntax signedBeaconBlockHeader =
+  { MESSAGE beaconBlockHeader,
+    SIGNATURE blsSignature }
+
+syntax proposerSlashing =
+  { SIGNED_HEADER_1 signedBeaconBlockHeader,
+    SIGNED_HEADER_2 signedBeaconBlockHeader }
+
+;; attesterSlashing
+
+syntax attestationData =
+  { SLOT slot,
+    INDEX committeeIndex,
+    BEACON_BLOCK_ROOT root,
+    SOURCE checkpoint,
+    TARGET checkpoint }
+
+;; [Modified in Electra:EIP7549] list limits only
+syntax indexedAttestation =
+  { ATTESTING_INDICES validatorIndex*,
+    DATA attestationData,
+    SIGNATURE blsSignature }
+
+;; [Modified in Electra:EIP7549] list limits only
+syntax attesterSlashing =
+  { ATTESTATION_1 indexedAttestation,
+    ATTESTATION_2 indexedAttestation }
+
+;; attestation
+
+syntax attestation =
+  { AGGREGATION_BITS bool*,
+    DATA attestationData,
+    SIGNATURE blsSignature,
+    ;; [Electra:EIP7549]
+    COMMITTEE_BITS bool* }
+
+;; [Electra:EIP7549]
+syntax singleAttestation =
+  { COMMITTEE_INDEX committeeIndex,
+    ATTESTER_INDEX validatorIndex,
+    DATA attestationData,
+    SIGNATURE blsSignature }
+
+;; deposit
+
+syntax depositData =
+  { PUBKEY blsPubkey,
+    WITHDRAWAL_CREDENTIALS bytes32,
+    AMOUNT gwei,
+    SIGNATURE blsSignature }
+
+syntax deposit =
+  { PROOF bytes32*,
+    DATA depositData }
+
+;; signedVoluntaryExit
+
+syntax voluntaryExit =
+  { EPOCH epoch,
+    VALIDATOR_INDEX validatorIndex }
+
+syntax signedVoluntaryExit =
+  { MESSAGE voluntaryExit,
+    SIGNATURE blsSignature }
+
+;; syncAggregate
+
+syntax syncAggregate =
+  { SYNC_COMMITTEE_BITS bool*,
+    SYNC_COMMITTEE_SIGNATURE blsSignature }
+
+;; executionPayload
+
+syntax withdrawal =
+  { INDEX withdrawalIndex,
+    VALIDATOR_INDEX validatorIndex,
+    ADDRESS executionAddress,
+    AMOUNT gwei }
+
+syntax executionPayload =
+  { PARENT_HASH hash32,
+    FEE_RECIPIENT executionAddress,
+    STATE_ROOT bytes32,
+    RECEIPTS_ROOT bytes32,
+    LOGS_BLOOM bytes256,
+    PREV_RANDAO bytes32,
+    BLOCK_NUMBER uint64,
+    GAS_LIMIT uint64,
+    GAS_USED uint64,
+    TIMESTAMP uint64,
+    EXTRA_DATA bytes,
+    BASE_FEE_PER_GAS uint256,
+    BLOCK_HASH hash32,
+    TRANSACTIONS bytes*,
+    WITHDRAWALS withdrawal*,
+    ;;[Deneb] 
+    BLOB_GAS_USED uint64,
+    EXCESS_BLOB_GAS uint64 }
+
+;; signedBlsToExecutionChange
+
+syntax blsToExecutionChange =
+  { VALIDATOR_INDEX validatorIndex,
+    FROM_BLS_PUBKEY blsPubkey,
+    TO_EXECUTION_ADDRESS executionAddress }
+
+syntax signedBlsToExecutionChange =
+  { MESSAGE blsToExecutionChange,
+    SIGNATURE blsSignature }
+
+;; executionRequests [Electra]
+
+syntax depositRequest =
+  { PUBKEY blsPubkey,
+    WITHDRAWAL_CREDENTIALS bytes32,
+    AMOUNT gwei,
+    SIGNATURE blsSignature,
+    INDEX uint64 }
+
+syntax withdrawalRequest =
+  { SOURCE_ADDRESS executionAddress,
+    VALIDATOR_PUBKEY blsPubkey,
+    AMOUNT gwei }
+
+syntax consolidationRequest =
+  { SOURCE_ADDRESS executionAddress,
+    SOURCE_PUBKEY blsPubkey,
+    TARGET_PUBKEY blsPubkey }
+
+syntax executionRequests =
+  { DEPOSITS depositRequest*,
+    WITHDRAWALS withdrawalRequest*,
+    CONSOLIDATIONS consolidationRequest* }
+
+syntax beaconBlockBody =
+  {
+    RANDAO_REVEAL blsSignature,
+    ETH1_DATA eth1Data,
+    GRAFFITI bytes32,
+    PROPOSER_SLASHINGS proposerSlashing*,
+    ATTESTER_SLASHINGS attesterSlashing*,
+    ATTESTATIONS attestation*,
+    DEPOSITS deposit*,
+    VOLUNTARY_EXITS signedVoluntaryExit*,
+    ;; [Altair] sync committee aggregation
+    SYNC_AGGREGATE syncAggregate,
+    ;; [Bellatrix/Capella/Deneb] execution-layer payload
+    EXECUTION_PAYLOAD executionPayload,
+    ;; [Capella] BLS to Execution address change
+    BLS_TO_EXECUTION_CHANGES signedBlsToExecutionChange*,
+    ;; [Deneb] KZGCommitment
+    BLOB_KZG_COMMITMENTS kzgCommitment*,
+    ;; [Electra] execution-layer triggered requests
+    EXECUTION_REQUESTS executionRequests
+  }
+
+syntax beaconBlock =
+  { SLOT slot,
+    PROPOSER_INDEX validatorIndex,
+    PARENT_ROOT root,
+    STATE_ROOT root,
+    BODY beaconBlockBody }
+
+syntax signedBeaconBlock =
+  { MESSAGE beaconBlock,
+    SIGNATURE blsSignature }
+
+;; Auxiliary types
+syntax forkdata =
+  { CURRENT_VERSION version,
+    GENESIS_VALIDATORS_ROOT root }
+
+syntax depositMessage =
+  { PUBKEY blsPubkey,
+    WITHDRAWAL_CREDENTIALS bytes32,
+    AMOUNT gwei }
+
+syntax seedInput =
+  { DOMAIN domainType,
+    BYTES bytes,
+    MIX bytes32 }
+
+;; [Electra] dataclass ExpectedWithdrawals, not an SSZ container
+;;  processed_sweep_withdrawals_count is omitted: no Electra caller reads it
+syntax expectedWithdrawals =
+  { WITHDRAWALS withdrawal*,
+    PROCESSED_PARTIAL_WITHDRAWALS_COUNT uint64 }
+
+syntax enumerated_<X> = (nat, X)
