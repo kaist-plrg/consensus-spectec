@@ -41,7 +41,9 @@ def generate(fork, preset):
     containers = {
         n: t
         for n, t in vars(spec).items()
-        if isinstance(t, type) and issubclass(t, ssz.Container) and t.__module__ != "ssz.container"
+        if isinstance(t, type)
+        and issubclass(t, (ssz.Container, ssz.ProgressiveContainer))
+        and t.__module__ != "ssz.container"
     }
     schema = Schema(lambda t: t.__name__)
     for name, t in containers.items():
