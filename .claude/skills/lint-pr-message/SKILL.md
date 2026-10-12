@@ -26,6 +26,11 @@ git log --format=%B origin/main..HEAD | awk 'length > 72 { print "too long: " $0
   `Fixes:` may exceed it.
 - Separate the subject from the body with one blank line.
 - No trailing period on the subject.
+- No `Co-Authored-By` lines:
+
+  ```sh
+  git log --format=%B origin/main..HEAD | grep -n '^Co-Authored-By:'
+  ```
 
 ## Subject
 
@@ -66,6 +71,9 @@ Then check the wording:
   it. Do not pad with restatements of the diff.
 - For regressions, add `Fixes: <12-char sha> ("<subject>")` trailers.
   Reference issues with `Closes #N.` on its own line.
+- Do not add `Co-Authored-By` trailers, including for AI agents. Remove
+  any that a tool adds. This rule takes precedence over default agent
+  attribution settings.
 
 ## Format the prose with ASD-STE100
 
@@ -80,7 +88,7 @@ so it misses long sentences that are wrapped across lines:
 
 ```sh
 git log -1 --format=%b <commit> \
-  | grep -vE '^(Co-Authored-By|Fixes|Closes):? ' \
+  | grep -vE '^(Fixes|Closes):? ' \
   | awk 'NF == 0 { if (p != "") print p; print ""; p = ""; next }
          /^([-*+]|[0-9]+[.)]) / { if (p != "") print p; p = $0; next }
          { sub(/^ +/, ""); p = (p == "" ? $0 : p " " $0) }
