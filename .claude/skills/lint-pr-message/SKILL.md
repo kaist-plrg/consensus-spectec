@@ -67,6 +67,32 @@ Then check the wording:
 - For regressions, add `Fixes: <12-char sha> ("<subject>")` trailers.
   Reference issues with `Closes #N.` on its own line.
 
+## Format the prose with ASD-STE100
+
+After the checks above, apply the `asd-ste100` skill in STE-flavored
+mode to each commit body and the PR description. Keep the structure this
+skill requires: the subject format, the motivation and solution
+paragraphs, the trailers, and the 72-column wrap. Where the two skills
+disagree, this skill wins.
+
+Run its linter on the unwrapped text. It counts sentence length per line,
+so it misses long sentences that are wrapped across lines:
+
+```sh
+git log -1 --format=%b <commit> \
+  | grep -vE '^(Co-Authored-By|Fixes|Closes):? ' \
+  | awk 'NF == 0 { if (p != "") print p; print ""; p = ""; next }
+         /^([-*+]|[0-9]+[.)]) / { if (p != "") print p; p = $0; next }
+         { sub(/^ +/, ""); p = (p == "" ? $0 : p " " $0) }
+         END { if (p != "") print p }' \
+  | python3 .claude/skills/asd-ste100/scripts/ste-lint.py
+```
+
+For the PR description, pipe the draft text through the same `awk` and
+linter. Fix each hard finding, or keep the wording and say why in the
+report. Treat the advisory findings (passive voice, compound tenses) as
+prompts to check the sentence, not as errors.
+
 ## PR title and description
 
 - A single-commit PR uses the commit subject as its title and the commit
