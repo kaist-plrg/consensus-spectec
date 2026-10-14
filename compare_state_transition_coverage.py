@@ -598,7 +598,7 @@ def lodestar_matcher() -> PathMatcher:
 def eth2spec_matcher() -> PathMatcher:
     return make_matcher(
         include_regexes=(
-            r"(^|.*/)eth2spec/(capella|deneb)/mainnet\.py$",
+            r"(^|.*/)eth_consensus_specs/(capella|deneb)/mainnet\.py$",
         ),
     )
 
@@ -637,7 +637,7 @@ def _eth2spec_report_entry(report_dir: Path, matcher: PathMatcher) -> tuple[str,
     for file_path, info in data.get("files", {}).items():
         norm = normalize_path(file_path)
         rel = norm
-        anchor = norm.find("/eth2spec/")
+        anchor = norm.find("/eth_consensus_specs/")
         if anchor != -1:
             rel = norm[anchor + 1 :]
         if matcher(norm) or matcher(rel):

@@ -204,7 +204,7 @@ class TestRunner:
             type_name = "BeaconState" if is_beacon_state else "SignedBeaconBlock"
 
             # Fork에 맞는 type-module 지정
-            type_module = f"eth2spec.{self.fork}.mainnet"
+            type_module = f"eth_consensus_specs.{self.fork}.mainnet"
 
             result = subprocess.run(
                 [sys.executable, str(self.ssz_to_json_script),
@@ -224,7 +224,7 @@ class TestRunner:
         """JSON 파일을 SSZ로 변환합니다."""
         try:
             # Fork에 맞는 type-module 지정
-            type_module = f"eth2spec.{self.fork}.mainnet"
+            type_module = f"eth_consensus_specs.{self.fork}.mainnet"
             
             result = subprocess.run(
                 [sys.executable, str(self.json_to_ssz_script),
@@ -348,12 +348,12 @@ class TestRunner:
             sys.path.insert(0, str(self.consensus_specs_path))
 
         try:
-            from eth2spec.utils.ssz.ssz_impl import deserialize
+            from eth_consensus_specs.utils.ssz.ssz_impl import deserialize
 
             if self.fork == "deneb":
-                from eth2spec.deneb import mainnet as spec
+                from eth_consensus_specs.deneb import mainnet as spec
             elif self.fork == "capella":
-                from eth2spec.capella import mainnet as spec
+                from eth_consensus_specs.capella import mainnet as spec
             else:
                 raise ValueError(f"Unsupported fork: {self.fork}")
 

@@ -12,7 +12,7 @@ VERBOSE="${VERBOSE:-0}"
 mkdir -p "$OUTPUT_BASE"
 
 CMD=(
-  python3 run_test_suite.py
+  uv run --project "$ROOT_DIR/consensus-specs" --no-sync python run_test_suite.py
   --eth2spec-only
   --test-suite "$DENEB_ETH2SPECTEC_DIR"
   --test-type state-transition
