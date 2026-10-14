@@ -193,14 +193,11 @@ RUN curl -LsSf https://astral.sh/uv/${UV_VERSION}/install.sh | sh
 # Note: /root/.cargo/bin is already in PATH from Rust installation (line 57)
 ENV PATH="/root/.local/bin:${PATH}"
 
-# Build Python specification files (mainnet.py, minimal.py)
-# Note: make _pyspec automatically runs uv sync first (see Makefile _pyspec: _sync dependency)
+# Build the pyspec (eth_consensus_specs) and its uv environment (.venv, Python 3.12+).
+# `make build` runs `uv sync --all-extras` first, which also installs python-snappy
+# and coverage. Run the Python scripts with `uv run --project consensus-specs --no-sync`.
 WORKDIR /workspace/spectec-core/consensus-specs
-RUN make _pyspec
-
-# Install Python dependencies (including snappy for decompression)
-WORKDIR /workspace/spectec-core
-RUN pip3 install --no-cache-dir -r requirements.txt
+RUN make build
 
 # Build the checkout launcher
 WORKDIR /workspace/spectec-core

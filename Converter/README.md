@@ -57,6 +57,14 @@ See `CLIENT_CODE_MODIFICATIONS.md` for details on how each client is configured.
 
 ## Tool Usage
 
+The Python tools run in the uv environment of the `consensus-specs` submodule. The environment requires Python 3.12 or later. Build it once from the repository root:
+
+```bash
+make -C consensus-specs build
+```
+
+Run every command below from the repository root.
+
 ### 1. SSZ-byte Equivalence Checker
 
 Exact-byte comparison needs no fork or type information, so `cmp` covers it:
@@ -77,10 +85,10 @@ Python callers use `filecmp.cmp(a, b, shallow=False)`.
 Decompresses `.ssz_snappy` files. Input that does not decompress is passed through unchanged. Pipeline scripts import `decompress` directly. The CLI supports manual use.
 
 ```bash
-python snappy_decompressor.py <input_file> <output_file>
+uv run --project consensus-specs --no-sync python Converter/snappy_decompressor.py <input_file> <output_file>
 
 # Example
-python snappy_decompressor.py compressed.ssz_snappy decompressed.ssz
+uv run --project consensus-specs --no-sync python Converter/snappy_decompressor.py compressed.ssz_snappy decompressed.ssz
 ```
 
 ### 3. SSZ → JSON Conversion
@@ -88,12 +96,12 @@ python snappy_decompressor.py compressed.ssz_snappy decompressed.ssz
 One script handles every SSZ type. The `--type` option selects the type inside `--type-module`.
 
 ```bash
-python SSZToJson/SSZToJson.py --type <type_name> --in <input_ssz> --out <output_json> [--type-module <module>]
+uv run --project consensus-specs --no-sync python Converter/SSZToJson/SSZToJson.py --type <type_name> --in <input_ssz> --out <output_json> [--type-module <module>]
 
 # Examples
-python SSZToJson/SSZToJson.py --type BeaconState --in beaconstate.ssz --out beaconstate.json
-python SSZToJson/SSZToJson.py --type SignedBeaconBlock --in block.ssz --out block.json
-python SSZToJson/SSZToJson.py --type Attestation --in attestation.ssz --out attestation.json
+uv run --project consensus-specs --no-sync python Converter/SSZToJson/SSZToJson.py --type BeaconState --in beaconstate.ssz --out beaconstate.json
+uv run --project consensus-specs --no-sync python Converter/SSZToJson/SSZToJson.py --type SignedBeaconBlock --in block.ssz --out block.json
+uv run --project consensus-specs --no-sync python Converter/SSZToJson/SSZToJson.py --type Attestation --in attestation.ssz --out attestation.json
 ```
 
 ### 4. JSON → SSZ Conversion
@@ -101,11 +109,11 @@ python SSZToJson/SSZToJson.py --type Attestation --in attestation.ssz --out atte
 One script handles every SSZ type. The `--type` option selects the type inside `--type-module`.
 
 ```bash
-python JsonToSSZ/JsonToSSZ.py --type <type_name> --in <input_json> --out <output_ssz> [--type-module <module>]
+uv run --project consensus-specs --no-sync python Converter/JsonToSSZ/JsonToSSZ.py --type <type_name> --in <input_json> --out <output_ssz> [--type-module <module>]
 
 # Examples
-python JsonToSSZ/JsonToSSZ.py --type BeaconState --in beaconstate.json --out beaconstate.ssz
-python JsonToSSZ/JsonToSSZ.py --type SignedBeaconBlock --in block.json --out block.ssz
+uv run --project consensus-specs --no-sync python Converter/JsonToSSZ/JsonToSSZ.py --type BeaconState --in beaconstate.json --out beaconstate.ssz
+uv run --project consensus-specs --no-sync python Converter/JsonToSSZ/JsonToSSZ.py --type SignedBeaconBlock --in block.json --out block.ssz
 ```
 
 ### 5. eth2spec State Transition (eth2specResult.py)
@@ -113,13 +121,13 @@ python JsonToSSZ/JsonToSSZ.py --type SignedBeaconBlock --in block.json --out blo
 Executes state transition using eth2spec and saves the result as an SSZ file.
 
 ```bash
-python eth2specResult.py --pre <pre_ssz> --block <block_ssz> --out <output_ssz> [--fork <fork>]
+uv run --project consensus-specs --no-sync python Converter/eth2specResult.py --pre <pre_ssz> --block <block_ssz> --out <output_ssz> [--fork <fork>]
 
 # Example (using Capella, default)
-python eth2specResult.py --pre pre.ssz --block blocks_0.ssz --out eth2specResult.ssz
+uv run --project consensus-specs --no-sync python Converter/eth2specResult.py --pre pre.ssz --block blocks_0.ssz --out eth2specResult.ssz
 
 # Example (using Deneb)
-python eth2specResult.py --pre pre.ssz --block blocks_0.ssz --out eth2specResult.ssz --fork deneb
+uv run --project consensus-specs --no-sync python Converter/eth2specResult.py --pre pre.ssz --block blocks_0.ssz --out eth2specResult.ssz --fork deneb
 ```
 
 **Parameters:**
@@ -128,7 +136,7 @@ python eth2specResult.py --pre pre.ssz --block blocks_0.ssz --out eth2specResult
 - `--out`: Path to output SSZ file (default: eth2specResult.ssz)
 - `--fork`: Fork name to use (`capella` or `deneb`, default: `capella`)
 
-**Note:** This script uses eth2spec from the `consensus-specs/tests/core/pyspec` path.
+**Note:** This script imports `eth_consensus_specs` from the `consensus-specs/tests/core/pyspec` path.
 
 ### 6. Complete Test Suite Runner (run_test_suite.py)
 
@@ -156,26 +164,24 @@ Automatically runs the complete workflow for official test suites.
 
 **Usage:**
 
-Run the test-suite commands from the repository root.
-
 ```bash
-python run_test_suite.py <test_suite_dir> --converter-dir Converter --spectec-bin <spectec_binary> [options]
+uv run --project consensus-specs --no-sync python run_test_suite.py <test_suite_dir> --converter-dir Converter --spectec-bin <spectec_binary> [options]
 
 # Examples (independent mode, default, using Deneb fork)
-python run_test_suite.py Converter/OfficialTestSuite/deneb/random --converter-dir Converter --spectec-bin ./spectecx
-python run_test_suite.py Converter/OfficialTestSuite/deneb/sanity/blocks --converter-dir Converter --spectec-bin ./spectecx --verbose
+uv run --project consensus-specs --no-sync python run_test_suite.py Converter/OfficialTestSuite/deneb/random --converter-dir Converter --spectec-bin ./spectecx
+uv run --project consensus-specs --no-sync python run_test_suite.py Converter/OfficialTestSuite/deneb/sanity/blocks --converter-dir Converter --spectec-bin ./spectecx --verbose
 
 # Examples (using Capella fork)
-python run_test_suite.py Converter/OfficialTestSuite/capella/random --converter-dir Converter --spectec-bin ./spectecx --fork capella
-python run_test_suite.py Converter/OfficialTestSuite/capella/sanity/blocks --converter-dir Converter --spectec-bin ./spectecx --fork capella --verbose
+uv run --project consensus-specs --no-sync python run_test_suite.py Converter/OfficialTestSuite/capella/random --converter-dir Converter --spectec-bin ./spectecx --fork capella
+uv run --project consensus-specs --no-sync python run_test_suite.py Converter/OfficialTestSuite/capella/sanity/blocks --converter-dir Converter --spectec-bin ./spectecx --fork capella --verbose
 
 # Examples (sequential mode, v2-style chained execution)
-python run_test_suite.py Converter/OfficialTestSuite/deneb/random --converter-dir Converter --spectec-bin ./spectecx --workflow sequential
-python run_test_suite.py Converter/OfficialTestSuite/deneb/sanity/blocks --converter-dir Converter --spectec-bin ./spectecx --workflow sequential --verbose
+uv run --project consensus-specs --no-sync python run_test_suite.py Converter/OfficialTestSuite/deneb/random --converter-dir Converter --spectec-bin ./spectecx --workflow sequential
+uv run --project consensus-specs --no-sync python run_test_suite.py Converter/OfficialTestSuite/deneb/sanity/blocks --converter-dir Converter --spectec-bin ./spectecx --workflow sequential --verbose
 
 # Examples with custom output directory
-python run_test_suite.py Converter/OfficialTestSuite/deneb/random --converter-dir Converter --spectec-bin ./spectecx --output-dir custom_results
-python run_test_suite.py Converter/OfficialTestSuite/deneb/sanity/blocks --converter-dir Converter --spectec-bin ./spectecx --workflow sequential --output-dir ./my_test_results --verbose
+uv run --project consensus-specs --no-sync python run_test_suite.py Converter/OfficialTestSuite/deneb/random --converter-dir Converter --spectec-bin ./spectecx --output-dir custom_results
+uv run --project consensus-specs --no-sync python run_test_suite.py Converter/OfficialTestSuite/deneb/sanity/blocks --converter-dir Converter --spectec-bin ./spectecx --workflow sequential --output-dir ./my_test_results --verbose
 ```
 
 **Required Arguments:**
@@ -206,7 +212,7 @@ Use `--run-mode il` for the Capella and Deneb specifications. Structuring these 
 
 The `OfficialTestSuite` directory is not tracked in git. Run `make
 download-fixture` from the repository root: it pulls the
-[ethereum/consensus-specs v1.6.0 release asset](https://github.com/ethereum/consensus-specs/releases/tag/v1.6.0),
+[ethereum/consensus-specs v1.7.0-beta.3 release asset](https://github.com/ethereum/consensus-specs/releases/tag/v1.7.0-beta.3),
 matching the pinned `consensus-specs` submodule. The version and SHA-256 digest
 are pinned in the root `Makefile`; cached archives are verified on every run.
 Extraction finishes in a temporary directory before replacing this entire
@@ -306,15 +312,15 @@ This ensures **single-fork consistency** throughout each test case, avoiding the
 ```bash
 # 1. Extract SSZ files from official tests
 # 2. Decompress Snappy files
-python snappy_decompressor.py pre.ssz_snappy pre.ssz
-python snappy_decompressor.py post.ssz_snappy post.ssz
+uv run --project consensus-specs --no-sync python Converter/snappy_decompressor.py pre.ssz_snappy pre.ssz
+uv run --project consensus-specs --no-sync python Converter/snappy_decompressor.py post.ssz_snappy post.ssz
 
 # 3. SSZ → JSON conversion
-python SSZToJson/SSZToJson.py --type BeaconState --in pre.ssz --out pre.json
-python SSZToJson/SSZToJson.py --type BeaconState --in post.ssz --out post.json
+uv run --project consensus-specs --no-sync python Converter/SSZToJson/SSZToJson.py --type BeaconState --in pre.ssz --out pre.json
+uv run --project consensus-specs --no-sync python Converter/SSZToJson/SSZToJson.py --type BeaconState --in post.ssz --out post.json
 
 # 4. JSON → SSZ conversion (verification)
-python JsonToSSZ/JsonToSSZ.py --type BeaconState --in pre.json --out pre_converted.ssz
+uv run --project consensus-specs --no-sync python Converter/JsonToSSZ/JsonToSSZ.py --type BeaconState --in pre.json --out pre_converted.ssz
 
 # 5. Compare results
 cmp -s pre.ssz pre_converted.ssz && echo identical || echo different
@@ -322,37 +328,28 @@ cmp -s pre.ssz pre_converted.ssz && echo identical || echo different
 
 ### Complete Test Suite Workflow
 
-Run these commands from the repository root.
-
 ```bash
 # Run complete test suite (automated workflow, using Deneb by default)
-python run_test_suite.py Converter/OfficialTestSuite/deneb/random --converter-dir Converter --spectec-bin ./spectecx --verbose
+uv run --project consensus-specs --no-sync python run_test_suite.py Converter/OfficialTestSuite/deneb/random --converter-dir Converter --spectec-bin ./spectecx --verbose
 
 # Run with Capella fork
-python run_test_suite.py Converter/OfficialTestSuite/capella/random --converter-dir Converter --spectec-bin ./spectecx --fork capella --verbose
+uv run --project consensus-specs --no-sync python run_test_suite.py Converter/OfficialTestSuite/capella/random --converter-dir Converter --spectec-bin ./spectecx --fork capella --verbose
 
 # Run with specific test filter
-python run_test_suite.py Converter/OfficialTestSuite/deneb/sanity/blocks --converter-dir Converter --spectec-bin ./spectecx --filter randomized_0
+uv run --project consensus-specs --no-sync python run_test_suite.py Converter/OfficialTestSuite/deneb/sanity/blocks --converter-dir Converter --spectec-bin ./spectecx --filter randomized_0
 
 # Run with custom output directory
-python run_test_suite.py Converter/OfficialTestSuite/deneb/random --converter-dir Converter --spectec-bin ./spectecx --output-dir custom_results
+uv run --project consensus-specs --no-sync python run_test_suite.py Converter/OfficialTestSuite/deneb/random --converter-dir Converter --spectec-bin ./spectecx --output-dir custom_results
 ```
 
 ### eth2spec State Transition
 ```bash
 # Execute state transition using eth2spec (Capella, default)
-python eth2specResult.py --pre pre.ssz --block blocks_0.ssz --out eth2specResult.ssz
+uv run --project consensus-specs --no-sync python Converter/eth2specResult.py --pre pre.ssz --block blocks_0.ssz --out eth2specResult.ssz
 
 # Execute state transition using eth2spec (Deneb)
-python eth2specResult.py --pre pre.ssz --block blocks_0.ssz --out eth2specResult.ssz --fork deneb
+uv run --project consensus-specs --no-sync python Converter/eth2specResult.py --pre pre.ssz --block blocks_0.ssz --out eth2specResult.ssz --fork deneb
 ```
-
-## Dependencies
-
-These tools require the following Python packages:
-- `remerkleable`: SSZ serialization/deserialization
-- `eth2spec`: Ethereum 2.0 specification implementation
-- `snappy`: Snappy compression/decompression
 
 ## Important Notes
 
