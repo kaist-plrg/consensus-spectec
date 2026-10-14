@@ -249,6 +249,7 @@ class TestRunner:
             output_json.parent.mkdir(parents=True, exist_ok=True)
             cmd = [
                 str(self.spectec_bin), "ethereum", "run", "state-transition",
+                "--fork", self.fork,
                 "--spec-dir", str(self.spec_dir),
                 "--pre", str(pre_json),
                 "--block", str(block_json),

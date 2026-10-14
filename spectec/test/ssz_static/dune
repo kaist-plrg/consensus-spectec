@@ -1,0 +1,11 @@
+; SpecTec-side SSZ check over consensus-spec-tests ssz_static; see main.ml.
+
+(executable
+ (name main)
+ (libraries
+  spectec
+  spectec.targets.ethereum
+  spectec.interp.builtins.eth
+  spectec.interface.json
+  ssz
+  yojson))

@@ -16,7 +16,7 @@ The differential runner selects the current state-transition command in each mod
   >         output.touch()
   >         with patch('run_test_suite.subprocess.run', return_value=subprocess.CompletedProcess([], 0, '', '')) as run:
   >             assert runner.run_spectec(root / 'pre.json', root / 'block.json', output) == (True, None)
-  >             expected = [str(root / 'spectecx'), 'ethereum', 'run', 'state-transition', '--spec-dir', str(root / 'spec/spec_capella'), '--pre', str(root / 'pre.json'), '--block', str(root / 'block.json'), '--output', str(output)]
+  >             expected = [str(root / 'spectecx'), 'ethereum', 'run', 'state-transition', '--fork', 'capella', '--spec-dir', str(root / 'spec/spec_capella'), '--pre', str(root / 'pre.json'), '--block', str(root / 'block.json'), '--output', str(output)]
   >             if mode != 'il':
   >                 expected.append('--' + mode)
   >             assert run.call_args.args[0] == expected

@@ -21,3 +21,6 @@ Converter/.fixture-cache/
 
 # Python cache files
 __pycache__/
+
+# SSZ test vectors - fetched by ssz/scripts/fetch-vectors.sh, not git
+ssz/_vectors/

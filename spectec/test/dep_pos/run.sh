@@ -11,6 +11,7 @@ trap 'rm -f "$dir/pre.json" "$log"' EXIT
 gunzip -c "$dir/pre.json.gz" > "$dir/pre.json"
 
 if ! ./spectecx ethereum run state-transition \
+  --fork capella \
   --pre "$dir/pre.json" \
   --block "$dir/block.json" \
   --dep-pos.output "$dir/dep_pos.actual" \
