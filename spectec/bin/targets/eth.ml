@@ -245,14 +245,18 @@ end
 
 let target = (module Target : Spectec.Target.S)
 
-(* The SSZ schema hash_tree_root merkleizes with: one per fork, mainnet preset. *)
+(* The SSZ schema hash_tree_root merkleizes with: one per fork and preset. *)
 let ssz_flags =
   let open Core.Command.Let_syntax in
   let open Core.Command.Param in
   let%map fork =
     flag "--fork" (required string) ~doc:"FORK consensus fork (capella, deneb)"
+  and preset =
+    flag "--preset"
+      (optional_with_default "mainnet" string)
+      ~doc:"PRESET SSZ preset (minimal, mainnet; default: mainnet)"
   in
-  match Builtin_eth.SszImpl.configure ~fork ~preset:"mainnet" with
+  match Builtin_eth.SszImpl.configure ~fork ~preset with
   | Ok () -> ()
   | Error msg ->
       prerr_endline msg;

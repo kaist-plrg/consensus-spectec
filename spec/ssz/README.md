@@ -1,7 +1,7 @@
 # SSZ schemas
 
 The executor's `hash_tree_root` builtins merkleize with the [`ssz`](../../ssz) library,
-using one schema per fork and preset (mainnet only, so far):
+using one schema per fork and preset:
 
 | File | Source |
 |---|---|
@@ -10,11 +10,11 @@ using one schema per fork and preset (mainnet only, so far):
 | `build_static.py` | flattens `ssz_static` vectors for the `ssz_static` CI job |
 
 The schemas are embedded in `spectec/targets/ethereum/builtins` at build time.
-The fork is chosen when the executor runs; the preset is mainnet:
+The fork and preset are chosen when the executor runs (`--preset` defaults to mainnet):
 
 ```sh
 ./spectecx ethereum run state-transition --spec-dir spec/spec_deneb \
-  --fork deneb --pre pre.json --block block.json --output post.json
+  --fork deneb --preset minimal --pre pre.json --block block.json --output post.json
 ```
 
 `x-spectec.types` in each schema maps SpecTec struct names to SSZ containers.
