@@ -37,7 +37,7 @@ let pow2' (w : Bigint.t) : Bigint.t = shl' Bigint.one w
 
 let pow2 ~at (width : Bigint.t) : Value.t result =
   at |> ignore;
-  Ok (Value.int (pow2' width))
+  Ok (Value.nat (pow2' width))
 
 let builtins : (string * Define.t) list =
   [
