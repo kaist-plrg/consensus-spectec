@@ -83,7 +83,11 @@ let compute_zero_hashes ~max_depth : Bytes.t array =
 let merkleize_chunks_with_limit (leaves : Bytes.t array) (limit : int) : Bytes.t
     =
   let n = Array.length leaves in
-  if limit = 0 then zero32
+  if n > limit then
+    invalid_arg
+      (Printf.sprintf
+         "merkleize_chunks_with_limit: %d chunks exceed the limit %d" n limit)
+  else if limit = 0 then zero32
   else if n = 0 then
     let max_depth = if limit <= 1 then 0 else bit_length_of (limit - 1) in
     let zero_hashes = compute_zero_hashes ~max_depth in
@@ -185,8 +189,15 @@ let merkleize_leaves (leaves : Bytes.t array) : Bytes.t =
 let merkleize_list_composite_with_limit (leaves : Bytes.t array) (limit : int) :
     Bytes.t =
   let n = Array.length leaves in
-  (* limit 0  *)
-  if limit = 0 then zero32
+  if n > limit then
+    invalid_arg
+      (Printf.sprintf
+         "merkleize_list_composite_with_limit: %d chunks exceed the limit %d" n
+         limit)
+  else if
+    (* limit 0  *)
+    limit = 0
+  then zero32
   else if
     (* Python merkleize_chunks : depth = max(count-1, 0).bit_length(), max_depth = (limit-1).bit_length() *)
     (*    zerohashes[max_depth]  *)

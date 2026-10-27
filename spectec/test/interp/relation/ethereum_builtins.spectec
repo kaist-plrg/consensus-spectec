@@ -20,3 +20,16 @@ relation Fast_aggregate_verify:
 
 rule Fast_aggregate_verify:
   k*; m; s |- $bls_fast_aggregate_verify(k*, m, s)
+
+syntax withdrawal = (nat, nat, nat, nat)
+
+var w : withdrawal
+
+builtin dec $hash_tree_root_withdrawals(withdrawal*): nat
+
+relation Withdrawals_root:
+  withdrawal* |- nat
+  hint(input %0)
+
+rule Withdrawals_root:
+  w* |- $hash_tree_root_withdrawals(w*)

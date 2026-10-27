@@ -13,6 +13,7 @@ type mode = Il | Sl | Pl
 
 type expectation =
   | Returns of (unit -> Value.t list)
+  | Satisfies of (Value.t list -> unit)
   | Fails
   | Fails_with of string
 
@@ -62,6 +63,7 @@ let compile_file filename =
   compile_source ~filename (In_channel.read_all filename)
 
 let returns expected = Returns expected
+let satisfies check = Satisfies check
 let fails = Fails
 let fails_with message = Fails_with message
 let string_of_mode = function Il -> "IL" | Sl -> "SL" | Pl -> "PL"
@@ -99,7 +101,8 @@ let check_result ~name ~mode expectation result =
           (sprintf "expected %s but returned %s"
              (string_of_values expected)
              (string_of_values actual))
-  | Returns _, Error error ->
+  | Satisfies check, Ok actual -> check actual
+  | (Returns _ | Satisfies _), Error error ->
       fail_check ~name ~mode ("evaluation failed:\n" ^ render_error error)
   | Fails, Error _ -> ()
   | Fails_with expected, Error error ->
