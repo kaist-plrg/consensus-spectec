@@ -185,6 +185,48 @@ relation Bytes_get:
 rule Bytes_get:
   b; n |- $bytes_get(b, n)
 
+syntax epoch = nat
+syntax other = nat
+
+var e : epoch
+var x : other
+
+builtin dec $ssz_hash_tree_root<X>(X): nat
+
+relation Hash_epoch:
+  epoch |- nat
+  hint(input %0)
+
+rule Hash_epoch:
+  e |- $ssz_hash_tree_root<epoch>(e)
+
+relation Hash_other:
+  other |- nat
+  hint(input %0)
+
+rule Hash_other:
+  x |- $ssz_hash_tree_root<other>(x)
+
+syntax root = nat
+syntax signingData = { OBJECT_ROOT root, DOMAIN nat }
+
+var r : root
+var d : signingData
+
+relation Hash_root:
+  root |- nat
+  hint(input %0)
+
+rule Hash_root:
+  r |- $ssz_hash_tree_root<root>(r)
+
+relation Hash_signing_data:
+  signingData |- nat
+  hint(input %0)
+
+rule Hash_signing_data:
+  d |- $ssz_hash_tree_root<signingData>(d)
+
 builtin dec $enumerate_<X>(X*): (nat, X)*
 
 relation Enumerate:
