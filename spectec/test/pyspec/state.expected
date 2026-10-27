@@ -1,0 +1,75 @@
+relation Advance: beaconState slot ~> beaconState
+  hint(input %0 %1)
+
+relation AssignValues: beaconState validatorIndex int int ~> beaconState
+  hint(input %0 %1 %2 %3)
+
+relation Update: beaconState validatorIndex gwei ~> beaconState
+  hint(input %0 %1 %2)
+
+rule Advance/path0:
+  beaconState_state slot_amount ~> beaconState_translated0
+  -- if $(slot_amount <= 18446744073709551615)
+  -- if $(beaconState_state.SLOT <= (18446744073709551615 - slot_amount))
+  -- if beaconState_state[.SLOT = $(beaconState_state.SLOT + slot_amount)]
+        = beaconState_translated0
+
+rule AssignValues/path0:
+  beaconState_state validatorIndex_index int_amount int_balance
+    ~> beaconState_translated3
+  -- if $(0 <= int_amount)
+  -- if $(int_amount <= 18446744073709551615)
+  -- if int_amount = slot_translated0
+  -- if beaconState_state[.SLOT = slot_translated0] = beaconState_translated1
+  -- if $(validatorIndex_index < |beaconState_translated1.BALANCES|)
+  -- if $(0 <= int_balance)
+  -- if $(int_balance <= 18446744073709551615)
+  -- if int_balance = gwei_translated2
+  -- if beaconState_translated1[.BALANCES[validatorIndex_index] = gwei_translated2]
+        = beaconState_translated3
+
+rule Update/path0:
+  beaconState_state validatorIndex_index gwei_amount ~> beaconState_translated9
+  -- if beaconState_state.BALANCES = gwei_translated0*
+  -- if $(validatorIndex_index < |gwei_translated0*|)
+  -- if gwei_translated0*[validatorIndex_index] = gwei_translated1
+  -- if gwei_translated1 = gwei_translated2
+  -- if $(gwei_amount <= 18446744073709551615)
+  -- if $(gwei_translated2 <= (18446744073709551615 - gwei_amount))
+  -- if gwei_translated0*[[validatorIndex_index] = $(gwei_translated2
+        + gwei_amount)]
+        = gwei_translated3*
+  -- if beaconState_state[.BALANCES = gwei_translated3*]
+        = beaconState_translated4
+  -- if $(0 <= 1)
+  -- if $(1 <= 18446744073709551615)
+  -- if 1 = slot_translated5
+  -- if beaconState_translated4 = beaconState_translated6
+  -- if slot_translated5 = slot_translated7
+  -- Advance:
+       beaconState_translated6 slot_translated7 ~> beaconState_translated8
+  -- if $(beaconState_translated8.SLOT > 0)
+  -- if beaconState_translated8[.LATEST_BLOCK_HEADER.SLOT = beaconState_translated8.SLOT]
+        = beaconState_translated9
+
+rule Update/path1:
+  beaconState_state validatorIndex_index gwei_amount ~> beaconState_translated8
+  -- if beaconState_state.BALANCES = gwei_translated0*
+  -- if $(validatorIndex_index < |gwei_translated0*|)
+  -- if gwei_translated0*[validatorIndex_index] = gwei_translated1
+  -- if gwei_translated1 = gwei_translated2
+  -- if $(gwei_amount <= 18446744073709551615)
+  -- if $(gwei_translated2 <= (18446744073709551615 - gwei_amount))
+  -- if gwei_translated0*[[validatorIndex_index] = $(gwei_translated2
+        + gwei_amount)]
+        = gwei_translated3*
+  -- if beaconState_state[.BALANCES = gwei_translated3*]
+        = beaconState_translated4
+  -- if $(0 <= 1)
+  -- if $(1 <= 18446744073709551615)
+  -- if 1 = slot_translated5
+  -- if beaconState_translated4 = beaconState_translated6
+  -- if slot_translated5 = slot_translated7
+  -- Advance:
+       beaconState_translated6 slot_translated7 ~> beaconState_translated8
+  -- if $(beaconState_translated8.SLOT <= 0)

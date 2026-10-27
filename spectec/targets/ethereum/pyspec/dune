@@ -1,0 +1,29 @@
+(library
+ (name pyspec)
+ (public_name spectec.targets.ethereum.pyspec)
+ (private_modules
+  assembly
+  translate
+  registry
+  spec_names
+  python_builtins
+  list_results
+  store
+  kind
+  loop_plan
+  operand
+  ctx
+  branch
+  target_builtins
+  numeric_ops
+  byte_ops
+  sequence_ops
+  ssz_ops
+  call_ops
+  operators
+  loop
+  expr
+  write
+  effect
+  stmt)
+ (libraries spectec spectec.common spectec.lang yojson bignum))
