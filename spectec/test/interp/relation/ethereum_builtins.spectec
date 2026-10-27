@@ -1,0 +1,10 @@
+var k : nat
+
+builtin dec $eth_aggregate_pubkeys(nat*): nat
+
+relation Aggregate:
+  nat* |- nat
+  hint(input %0)
+
+rule Aggregate:
+  k* |- $eth_aggregate_pubkeys(k*)
