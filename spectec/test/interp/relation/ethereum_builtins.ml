@@ -32,6 +32,10 @@ let check ~name ~relation ~args expectation =
   H.check spec ~builtins:Builtin_eth.builtins ~name ~relation ~args expectation
 
 let aggregation () =
+  check ~name:"translated aggregation has its own builtin entry point"
+    ~relation:"Aggregate_translated"
+    ~args:(fun () -> [ keys [ key ] ])
+    (H.returns (fun () -> [ bytes key ]));
   check ~name:"aggregation rejects an empty key list" ~relation:"Aggregate"
     ~args:(fun () -> [ keys [] ])
     (H.fails_with "empty public key list");

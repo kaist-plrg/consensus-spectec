@@ -9,6 +9,15 @@ relation Aggregate:
 rule Aggregate:
   k* |- $eth_aggregate_pubkeys(k*)
 
+builtin dec $bls_aggregate_pubkeys(nat*): nat
+
+relation Aggregate_translated:
+  nat* |- nat
+  hint(input %0)
+
+rule Aggregate_translated:
+  k* |- $bls_aggregate_pubkeys(k*)
+
 var m : nat
 var s : nat
 
