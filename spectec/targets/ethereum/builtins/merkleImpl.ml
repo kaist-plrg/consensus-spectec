@@ -186,62 +186,6 @@ let merkleize_leaves (leaves : Bytes.t array) : Bytes.t =
   let n = Array.length leaves in
   merkleize_chunks_with_limit leaves n
 
-let merkleize_list_composite_with_limit (leaves : Bytes.t array) (limit : int) :
-    Bytes.t =
-  let n = Array.length leaves in
-  if n > limit then
-    invalid_arg
-      (Printf.sprintf
-         "merkleize_list_composite_with_limit: %d chunks exceed the limit %d" n
-         limit)
-  else if
-    (* limit 0  *)
-    limit = 0
-  then zero32
-  else if
-    (* Python merkleize_chunks : depth = max(count-1, 0).bit_length(), max_depth = (limit-1).bit_length() *)
-    (*    zerohashes[max_depth]  *)
-    (* Python: max_depth = (limit-1).bit_length() *)
-    n = 0
-  then
-    let max_depth = if limit <= 1 then 0 else bit_length_of (limit - 1) in
-    let zero_hashes = compute_zero_hashes ~max_depth in
-    zero_hashes.(max_depth)
-  else
-    (*  : limit    (1 )    *)
-    let threshold = 100_000_000 in
-    (* 1 *)
-    if limit > threshold then
-      (*  limit:    *)
-      (* 1)  : len -> pow2(len) zero32  merkleize_leaves  *)
-      let h0 = merkleize_leaves leaves in
-      (* 2)  : limit    "" *)
-      (* Python: depth = max(count-1, 0).bit_length(), max_depth = (limit-1).bit_length() *)
-      let depth = if n = 0 then 0 else bit_length_of (n - 1) in
-      let max_depth = if limit <= 1 then 0 else bit_length_of (limit - 1) in
-      (*    ZERO_HASHES    *)
-      let zero_hashes = compute_zero_hashes ~max_depth in
-      let rec lift h current_depth =
-        if current_depth >= max_depth then h
-        else
-          (*   zero      *)
-          (* Python: tmp[j+1] = hash(tmp[j] + zerohashes[j]) *)
-          let zero_at_depth = zero_hashes.(current_depth) in
-          let h_next = merkle_hash_ h zero_at_depth in
-          lift h_next (current_depth + 1)
-      in
-      lift h0 depth
-    else
-      (*  limit:    (  ) *)
-      let arr =
-        if limit <= n then leaves
-        else
-          let a = Array.make limit zero32 in
-          Array.blit leaves 0 a 0 n;
-          a
-      in
-      merkleize_leaves arr
-
 let mix_in_length (root : Bytes.t) (len : Bigint.t) : Bytes.t =
   let le32 = Bytes.make 32 '\x00' in
   let v = ref len in
@@ -605,7 +549,7 @@ let hash_tree_root_tx ~at (txs_list : Value.t list) : Value.t result =
   (* SSZ : MAX_TRANSACTIONS_PER_PAYLOAD (1048576) zero32   merkleize *)
   let tx_limit = 1048576 in
   (* MAX_TRANSACTIONS_PER_PAYLOAD *)
-  let root_tx_vec = merkleize_list_composite_with_limit tx_roots tx_limit in
+  let root_tx_vec = merkleize_chunks_with_limit tx_roots tx_limit in
   (*    mix_in_length *)
   let out = mix_in_length root_tx_vec (Bigint.of_int (Array.length tx_roots)) in
   Ok (make_bytes ~num:(bigint_of_be_bytes out) ~len:32)
@@ -772,7 +716,7 @@ let hash_tree_root_withdrawals ~at (ws : Value.t list) : Value.t result =
   (* SSZ : MAX_WITHDRAWALS_PER_PAYLOAD (16) zero32   merkleize *)
   let wd_limit = 16 in
   (* MAX_WITHDRAWALS_PER_PAYLOAD *)
-  let root_vec = merkleize_list_composite_with_limit leaves wd_limit in
+  let root_vec = merkleize_chunks_with_limit leaves wd_limit in
   (*    mix_in_length *)
   let root_final =
     mix_in_length root_vec (Bigint.of_int (Array.length leaves))
@@ -1163,7 +1107,7 @@ let hash_tree_root_executionPayload ~at (v : Value.t) : Value.t result =
   (* SSZ : MAX_TRANSACTIONS_PER_PAYLOAD (1048576) zero32   merkleize *)
   let tx_limit = 1048576 in
   (* MAX_TRANSACTIONS_PER_PAYLOAD *)
-  let root_tx_vec = merkleize_list_composite_with_limit tx_roots tx_limit in
+  let root_tx_vec = merkleize_chunks_with_limit tx_roots tx_limit in
   (* Printf.printf "[DEBUG exec transactions] merkle root (before mix_in_length): %s\n%!" (bytes_to_hex root_tx_vec); *)
   (* Printf.printf "[DEBUG exec transactions] tx count for mix_in_length: %d\n%!" (Array.length tx_roots); *)
   (*    mix_in_length *)
@@ -2242,7 +2186,7 @@ let hash_tree_root_beaconBlockBody ~at (v : Value.t) : Value.t result =
     let* leaves_list = mapM [] xs in
     let arr = Array.of_list leaves_list in
     (* SSZ :   N zero32   merkleize *)
-    let vec_root = merkleize_list_composite_with_limit arr limit in
+    let vec_root = merkleize_chunks_with_limit arr limit in
     Ok (mix_in_length vec_root (Bigint.of_int (Array.length arr)))
   in
   (* Capella    *)
@@ -2340,9 +2284,7 @@ let hash_tree_root_beaconBlockBody ~at (v : Value.t) : Value.t result =
         let* commitment_roots = mapM [] commitments_list in
         let arr = Array.of_list commitment_roots in
         (* SSZ :   zero32   merkleize *)
-        let vec_root =
-          merkleize_list_composite_with_limit arr max_blob_commitments
-        in
+        let vec_root = merkleize_chunks_with_limit arr max_blob_commitments in
         Ok (mix_in_length vec_root (Bigint.of_int (Array.length arr)))
     | None -> Ok zero32
   in
@@ -2609,7 +2551,7 @@ let hash_tree_root_beaconState ~at (v : Value.t) : Value.t result =
   let eth1_votes_arr = Array.of_list eth1_votes_roots in
   (* SSZ :   N zero32   merkleize *)
   let eth1_votes_vec =
-    merkleize_list_composite_with_limit eth1_votes_arr eth1_data_votes_limit
+    merkleize_chunks_with_limit eth1_votes_arr eth1_data_votes_limit
   in
   let r_eth1_data_votes =
     mix_in_length eth1_votes_vec (Bigint.of_int (Array.length eth1_votes_arr))
@@ -2634,7 +2576,7 @@ let hash_tree_root_beaconState ~at (v : Value.t) : Value.t result =
   let validators_arr = Array.of_list validators_roots in
   (* SSZ :   N zero32   merkleize *)
   let validators_vec =
-    merkleize_list_composite_with_limit validators_arr validator_registry_limit
+    merkleize_chunks_with_limit validators_arr validator_registry_limit
   in
   let r_validators =
     mix_in_length validators_vec (Bigint.of_int (Array.length validators_arr))
@@ -2761,8 +2703,7 @@ let hash_tree_root_beaconState ~at (v : Value.t) : Value.t result =
   let historical_summaries_arr = Array.of_list historical_summaries_roots in
   (* SSZ :   N zero32   merkleize *)
   let historical_summaries_vec =
-    merkleize_list_composite_with_limit historical_summaries_arr
-      historical_roots_limit
+    merkleize_chunks_with_limit historical_summaries_arr historical_roots_limit
   in
   let r_historical_summaries =
     mix_in_length historical_summaries_vec
