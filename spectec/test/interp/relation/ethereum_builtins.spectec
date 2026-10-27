@@ -33,3 +33,12 @@ relation Withdrawals_root:
 
 rule Withdrawals_root:
   w* |- $hash_tree_root_withdrawals(w*)
+
+builtin dec $bls_key_validate(nat): bool
+
+relation Key_validate:
+  nat |- bool
+  hint(input %0)
+
+rule Key_validate:
+  k |- $bls_key_validate(k)

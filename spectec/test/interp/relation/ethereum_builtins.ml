@@ -89,7 +89,18 @@ let withdrawal_limit () =
     when String.is_substring message ~substring:"exceed the limit" ->
       ()
 
+let key_validation () =
+  check ~name:"a valid public key passes key validation"
+    ~relation:"Key_validate"
+    ~args:(fun () -> [ bytes key ])
+    (H.returns (fun () -> [ V.bool true ]));
+  check ~name:"the point at infinity fails key validation"
+    ~relation:"Key_validate"
+    ~args:(fun () -> [ bytes infinity ])
+    (H.returns (fun () -> [ V.bool false ]))
+
 let run () =
   aggregation ();
   fast_verification ();
-  withdrawal_limit ()
+  withdrawal_limit ();
+  key_validation ()

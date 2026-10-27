@@ -74,6 +74,9 @@ let decode_pubkey ~at n =
   | Some point when not (Bls12_381.G1.is_zero point) -> Ok point
   | _ -> Error (runtime at "invalid BLS public key")
 
+let bls_key_validate ~at pubkey =
+  Ok (Value.bool (Result.is_ok (decode_pubkey ~at (Num.to_int pubkey))))
+
 (* dec $eth_aggregate_pubkeys(blsPubkey* ) : blsPubkey *)
 
 let eth_aggregate_pubkeys ~at (pubkeys_num : Num.t list) : Value.t result =
@@ -161,6 +164,7 @@ let bls_fast_aggregate_verify ~at (pubkeys_num : Num.t list) (root : Num.t)
 
 let builtins : (string * Define.t) list =
   [
+    ("bls_key_validate", Define.T0.a1 Arg.num bls_key_validate);
     ("bls_verify", Define.T0.a3 Arg.num Arg.num Arg.num bls_verify);
     ( "eth_aggregate_pubkeys",
       Define.T0.a1 (Arg.list_of Arg.num) eth_aggregate_pubkeys );
