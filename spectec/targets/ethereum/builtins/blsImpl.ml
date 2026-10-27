@@ -67,19 +67,24 @@ let bls_verify ~at (bls_pubkey : Num.t) (root : Num.t) (bls_signature : Num.t) :
           Ok (Value.bool ok)
           (* valid signature *))
 
+let decode_pubkey ~at n =
+  let* () = ensure_fits_bytes ~at n ~len:48 in
+  let bytes = be_of_bigint_fixed n ~len:48 in
+  match Bls12_381.G1.of_compressed_bytes_opt bytes with
+  | Some point when not (Bls12_381.G1.is_zero point) -> Ok point
+  | _ -> Error (runtime at "invalid BLS public key")
+
 (* dec $eth_aggregate_pubkeys(blsPubkey* ) : blsPubkey *)
 
 let eth_aggregate_pubkeys ~at (pubkeys_num : Num.t list) : Value.t result =
+  let* () =
+    if pubkeys_num = [] then
+      Error (runtime at "eth_aggregate_pubkeys: empty public key list")
+    else Ok ()
+  in
   let pubkeys_int = List.map Num.to_int pubkeys_num in
   (* 1) int -> bytes48 -> G1 (validation) *)
-  let conv_one n =
-    let* () = ensure_fits_bytes ~at n ~len:48 in
-    let b = be_of_bigint_fixed n ~len:48 in
-    match Bls12_381.G1.of_compressed_bytes_opt b with
-    | None ->
-        Error (runtime at "eth_aggregate_pubkeys: invalid G1 pubkey (bytes48)")
-    | Some p -> Ok p
-  in
+  let conv_one = decode_pubkey ~at in
   let rec mapM f = function
     | [] -> Ok []
     | x :: xs ->
