@@ -49,4 +49,23 @@ let aggregation () =
     ~args:(fun () -> [ keys [ key; negated_key ] ])
     (H.returns (fun () -> [ bytes infinity ]))
 
-let run () = aggregation ()
+let message = String.make 32 '\002'
+
+let signature =
+  Signature.(
+    Pop.sign secret (Stdlib.Bytes.of_string message) |> signature_to_bytes)
+  |> Stdlib.Bytes.to_string
+
+let fast_verification () =
+  check ~name:"fast aggregate verification accepts a valid signature"
+    ~relation:"Fast_aggregate_verify"
+    ~args:(fun () -> [ keys [ key ]; bytes message; bytes signature ])
+    (H.returns (fun () -> [ V.bool true ]));
+  check ~name:"fast aggregate verification rejects a key at infinity"
+    ~relation:"Fast_aggregate_verify"
+    ~args:(fun () -> [ keys [ key; infinity ]; bytes message; bytes signature ])
+    (H.returns (fun () -> [ V.bool false ]))
+
+let run () =
+  aggregation ();
+  fast_verification ()

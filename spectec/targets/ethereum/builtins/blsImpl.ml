@@ -134,8 +134,8 @@ let bls_fast_aggregate_verify ~at (pubkeys_num : Num.t list) (root : Num.t)
       let* () = ensure_fits_bytes ~at n ~len:48 in
       let b = be_of_bigint_fixed n ~len:48 in
       match Bls12_381.G1.of_compressed_bytes_opt b with
-      | None -> Ok None
-      | Some p -> Ok (Some p)
+      | Some p when not (Bls12_381.G1.is_zero p) -> Ok (Some p)
+      | _ -> Ok None
     in
     let* points_opt = mapM conv_pk pubkeys_int in
     if List.exists (fun o -> o = None) points_opt then Ok (Value.bool false)
