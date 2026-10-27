@@ -186,68 +186,12 @@ let merkleize_leaves (leaves : Bytes.t array) : Bytes.t =
   let n = Array.length leaves in
   merkleize_chunks_with_limit leaves n
 
-let merkleize_list_composite_with_limit (leaves : Bytes.t array) (limit : int) :
-    Bytes.t =
-  let n = Array.length leaves in
-  if n > limit then
-    invalid_arg
-      (Printf.sprintf
-         "merkleize_list_composite_with_limit: %d chunks exceed the limit %d" n
-         limit)
-  else if
-    (* limit 0  *)
-    limit = 0
-  then zero32
-  else if
-    (* Python merkleize_chunks : depth = max(count-1, 0).bit_length(), max_depth = (limit-1).bit_length() *)
-    (*    zerohashes[max_depth]  *)
-    (* Python: max_depth = (limit-1).bit_length() *)
-    n = 0
-  then
-    let max_depth = if limit <= 1 then 0 else bit_length_of (limit - 1) in
-    let zero_hashes = compute_zero_hashes ~max_depth in
-    zero_hashes.(max_depth)
-  else
-    (*  : limit    (1 )    *)
-    let threshold = 100_000_000 in
-    (* 1 *)
-    if limit > threshold then
-      (*  limit:    *)
-      (* 1)  : len -> pow2(len) zero32  merkleize_leaves  *)
-      let h0 = merkleize_leaves leaves in
-      (* 2)  : limit    "" *)
-      (* Python: depth = max(count-1, 0).bit_length(), max_depth = (limit-1).bit_length() *)
-      let depth = if n = 0 then 0 else bit_length_of (n - 1) in
-      let max_depth = if limit <= 1 then 0 else bit_length_of (limit - 1) in
-      (*    ZERO_HASHES    *)
-      let zero_hashes = compute_zero_hashes ~max_depth in
-      let rec lift h current_depth =
-        if current_depth >= max_depth then h
-        else
-          (*   zero      *)
-          (* Python: tmp[j+1] = hash(tmp[j] + zerohashes[j]) *)
-          let zero_at_depth = zero_hashes.(current_depth) in
-          let h_next = merkle_hash_ h zero_at_depth in
-          lift h_next (current_depth + 1)
-      in
-      lift h0 depth
-    else
-      (*  limit:    (  ) *)
-      let arr =
-        if limit <= n then leaves
-        else
-          let a = Array.make limit zero32 in
-          Array.blit leaves 0 a 0 n;
-          a
-      in
-      merkleize_leaves arr
-
 let merkleize_list_composite ~at leaves ~limit =
   let count = Array.length leaves in
   if count > limit then
     Error
       (runtime at (Printf.sprintf "%d chunks exceed the limit %d" count limit))
-  else Ok (merkleize_list_composite_with_limit leaves limit)
+  else Ok (merkleize_chunks_with_limit leaves limit)
 
 let mix_in_length (root : Bytes.t) (len : Bigint.t) : Bytes.t =
   let le32 = Bytes.make 32 '\x00' in
