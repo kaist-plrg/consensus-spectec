@@ -75,6 +75,16 @@ let withdrawal_limit () =
     ~args:(fun () -> [ withdrawals 17 ])
     (H.fails_with "17 chunks exceed the limit 16")
 
+let key_validation () =
+  check ~name:"a valid public key passes key validation"
+    ~relation:"Key_validate"
+    ~args:(fun () -> [ bytes key ])
+    (H.returns (fun () -> [ V.bool true ]));
+  check ~name:"the point at infinity fails key validation"
+    ~relation:"Key_validate"
+    ~args:(fun () -> [ bytes infinity ])
+    (H.returns (fun () -> [ V.bool false ]))
+
 let enumeration () =
   List.iter
     [ []; [ 4; 9 ] ]
@@ -102,4 +112,5 @@ let run () =
   enumeration ();
   aggregation ();
   fast_verification ();
-  withdrawal_limit ()
+  withdrawal_limit ();
+  key_validation ()
