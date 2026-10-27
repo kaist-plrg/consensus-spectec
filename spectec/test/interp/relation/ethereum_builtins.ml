@@ -126,9 +126,46 @@ let g1_points () =
     ~args:(fun () -> [ bytes key ])
     (H.returns (fun () -> [ bytes infinity ]))
 
+let byte_strings () =
+  check ~name:"fixed_bytes encodes a number at its width"
+    ~relation:"Fixed_bytes"
+    ~args:(fun () -> [ nat 255; nat 1 ])
+    (H.returns (fun () -> [ bytes "\xff" ]));
+  check ~name:"fixed_bytes rejects a number wider than its width"
+    ~relation:"Fixed_bytes"
+    ~args:(fun () -> [ nat 256; nat 1 ])
+    (H.fails_with "value does not fit its width");
+  check ~name:"fixed_bytes rejects bytes of another width"
+    ~relation:"Fixed_bytes"
+    ~args:(fun () -> [ bytes "\001\002"; nat 1 ])
+    (H.fails_with "value has an incompatible width");
+  check ~name:"bytes_valid accepts a byte string" ~relation:"Bytes_valid"
+    ~args:(fun () -> [ bytes "\001" ])
+    (H.returns (fun () -> [ V.bool true ]));
+  check ~name:"bytes_valid refuses a number" ~relation:"Bytes_valid"
+    ~args:(fun () -> [ nat 5 ])
+    (H.returns (fun () -> [ V.bool false ]));
+  check ~name:"bytes_length measures a byte string" ~relation:"Bytes_length"
+    ~args:(fun () -> [ bytes "\001\002\003" ])
+    (H.returns (fun () -> [ nat 3 ]));
+  check ~name:"bytes_length measures an empty byte string"
+    ~relation:"Bytes_length"
+    ~args:(fun () -> [ bytes "" ])
+    (H.returns (fun () -> [ nat 0 ]));
+  check ~name:"bytes_length rejects a number" ~relation:"Bytes_length"
+    ~args:(fun () -> [ nat 5 ])
+    (H.fails_with "not a well-formed byte string");
+  check ~name:"bytes_slice reads a range" ~relation:"Bytes_slice"
+    ~args:(fun () -> [ bytes "\001\002\003"; nat 1; nat 2 ])
+    (H.returns (fun () -> [ bytes "\002\003" ]));
+  check ~name:"bytes_slice rejects a range past the end" ~relation:"Bytes_slice"
+    ~args:(fun () -> [ bytes "\001\002\003"; nat 2; nat 2 ])
+    (H.fails_with "invalid byte value or slice bounds")
+
 let run () =
   aggregation ();
   fast_verification ();
   withdrawal_limit ();
   key_validation ();
-  g1_points ()
+  g1_points ();
+  byte_strings ()

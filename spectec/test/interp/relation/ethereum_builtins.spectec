@@ -75,3 +75,39 @@ relation G1_cancel:
 
 rule G1_cancel:
   k |- $bls_g1_add(k, $bls_g1_neg(k))
+
+var b : nat
+var n : nat
+
+builtin dec $fixed_bytes(nat, nat): nat
+builtin dec $bytes_valid(nat): bool
+builtin dec $bytes_length(nat): nat
+builtin dec $bytes_slice(nat, nat, nat): nat
+
+relation Fixed_bytes:
+  nat; nat |- nat
+  hint(input %0 %1)
+
+rule Fixed_bytes:
+  b; n |- $fixed_bytes(b, n)
+
+relation Bytes_valid:
+  nat |- bool
+  hint(input %0)
+
+rule Bytes_valid:
+  b |- $bytes_valid(b)
+
+relation Bytes_length:
+  nat |- nat
+  hint(input %0)
+
+rule Bytes_length:
+  b |- $bytes_length(b)
+
+relation Bytes_slice:
+  nat; nat; nat |- nat
+  hint(input %0 %1 %2)
+
+rule Bytes_slice:
+  b; m; n |- $bytes_slice(b, m, n)
