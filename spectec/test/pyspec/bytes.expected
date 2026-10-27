@@ -1,0 +1,39 @@
+builtin dec $bytes32_to_bytes(bytes32) : bytes
+
+builtin dec $bytes_slice(bytes, nat, nat) : bytes
+
+dec $root_prefix(root) : bytes
+
+syntax signingData = {OBJECT_ROOT root, DOMAIN domain}
+
+builtin dec $ssz_hash_tree_root<X>(X) : root
+
+dec $signing_root(root, domain) : root
+
+builtin dec $bls_verify(blsPubkey, root, blsSignature) : boolean
+
+dec $verify_signature(blsPubkey, root, blsSignature) : boolean
+
+def $root_prefix(root_root) = bytes_translated0
+  -- if $(0 <= root_root)
+  -- if $(root_root
+        < 115792089237316195423570985008687907853269984665640564039457584007913129639936)
+  -- if $bytes_slice($bytes32_to_bytes(root_root), 0, 4) = bytes_translated0
+
+def $signing_root(root_root, domain_domain)
+  = $ssz_hash_tree_root<signingData>(signingData_translated4)
+  -- if root_root = root_translated0
+  -- if domain_domain = domain_translated1
+  -- if {OBJECT_ROOT root_translated0, DOMAIN domain_translated1}
+        = signingData_translated2
+  -- if signingData_translated2 = signingData_translated3
+  -- if signingData_translated3 = signingData_translated4
+  -- if $(0 <= signingData_translated4.OBJECT_ROOT)
+  -- if $(signingData_translated4.OBJECT_ROOT
+        < 115792089237316195423570985008687907853269984665640564039457584007913129639936)
+  -- if $(0 <= signingData_translated4.DOMAIN)
+  -- if $(signingData_translated4.DOMAIN
+        < 115792089237316195423570985008687907853269984665640564039457584007913129639936)
+
+def $verify_signature(blsPubkey_pubkey, root_message, blsSignature_signature)
+  = $bls_verify(blsPubkey_pubkey, root_message, blsSignature_signature)

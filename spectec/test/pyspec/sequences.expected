@@ -1,0 +1,99 @@
+dec $translated_accumulate_for4(uint64, uint64*, uint64, uint64*, nat) : uint64
+
+dec $accumulate(uint64*, uint64) : uint64
+
+dec $translated_selected_comprehension2(uint64, uint64*, nat) : uint64*
+
+dec $selected(uint64*, uint64, uint64?) : uint64*
+
+def $translated_accumulate_for4(uint64_translated1,
+                                uint64_values*,
+                                uint64_limit,
+                                uint64_translated2*,
+                                nat_translated3)
+  = uint64_translated1
+  -- if $(0 <= nat_translated3)
+  -- if $(nat_translated3 >= |uint64_translated2*|)
+
+def $translated_accumulate_for4(uint64_translated1,
+                                uint64_values*,
+                                uint64_limit,
+                                uint64_translated2*,
+                                nat_translated3)
+  = uint64_translated1
+  -- if $(0 <= nat_translated3)
+  -- if $(nat_translated3 < |uint64_translated2*|)
+  -- if uint64_translated2*[nat_translated3] = uint64_translated5
+  -- if $(uint64_translated5 > uint64_limit)
+
+def $translated_accumulate_for4(uint64_translated1,
+                                uint64_values*,
+                                uint64_limit,
+                                uint64_translated2*,
+                                nat_translated3)
+  = $translated_accumulate_for4(uint64_translated6,
+                                uint64_values*,
+                                uint64_limit,
+                                uint64_translated2*,
+                                $(nat_translated3 + 1))
+  -- if $(0 <= nat_translated3)
+  -- if $(nat_translated3 < |uint64_translated2*|)
+  -- if uint64_translated2*[nat_translated3] = uint64_translated5
+  -- if $(uint64_translated5 <= uint64_limit)
+  -- if $(uint64_translated5 <= 18446744073709551615)
+  -- if $(uint64_translated1 <= (18446744073709551615 - uint64_translated5))
+  -- if $(uint64_translated1 + uint64_translated5) = uint64_translated6
+
+def $accumulate(uint64_values*, uint64_limit) = uint64_translated7
+  -- if $(0 <= 0)
+  -- if $(0 <= 18446744073709551615)
+  -- if 0 = uint64_translated0
+  -- if uint64_translated0 = uint64_translated1
+  -- if uint64_values* = uint64_translated2*
+  -- if $translated_accumulate_for4(uint64_translated1,
+                                    uint64_values*,
+                                    uint64_limit,
+                                    uint64_translated2*,
+                                    0)
+        = uint64_translated7
+
+def $translated_selected_comprehension2(uint64_limit,
+                                        uint64_translated0*,
+                                        nat_translated1)
+  = eps
+  -- if $(0 <= nat_translated1)
+  -- if $(nat_translated1 >= |uint64_translated0*|)
+
+def $translated_selected_comprehension2(uint64_limit,
+                                        uint64_translated0*,
+                                        nat_translated1)
+  = [uint64_translated4] ++ $translated_selected_comprehension2(uint64_limit,
+                                                                uint64_translated0*,
+                                                                $(nat_translated1
+                                                                + 1))
+  -- if $(0 <= nat_translated1)
+  -- if $(nat_translated1 < |uint64_translated0*|)
+  -- if uint64_translated0*[nat_translated1] = uint64_translated3
+  -- if $(uint64_translated3 < uint64_limit)
+  -- if uint64_translated3 = uint64_translated4
+
+def $translated_selected_comprehension2(uint64_limit,
+                                        uint64_translated0*,
+                                        nat_translated1)
+  = $translated_selected_comprehension2(uint64_limit,
+                                        uint64_translated0*,
+                                        $(nat_translated1 + 1))
+  -- if $(0 <= nat_translated1)
+  -- if $(nat_translated1 < |uint64_translated0*|)
+  -- if uint64_translated0*[nat_translated1] = uint64_translated3
+  -- if $(uint64_translated3 >= uint64_limit)
+
+def $selected(uint64_values*, uint64_limit, uint64_unused?)
+  = uint64_translated9*
+  -- if uint64_values* = uint64_translated0*
+  -- if $translated_selected_comprehension2(uint64_limit, uint64_translated0*, 0)
+        = uint64_translated5*
+  -- if uint64_translated5* = uint64_translated6*
+  -- if uint64_translated6* = uint64_translated7*
+  -- if uint64_limit = uint64_translated8
+  -- if uint64_translated7* ++ [uint64_translated8] = uint64_translated9*
