@@ -8,3 +8,15 @@ relation Aggregate:
 
 rule Aggregate:
   k* |- $eth_aggregate_pubkeys(k*)
+
+var m : nat
+var s : nat
+
+builtin dec $bls_fast_aggregate_verify(nat*, nat, nat): bool
+
+relation Fast_aggregate_verify:
+  nat*; nat; nat |- bool
+  hint(input %0 %1 %2)
+
+rule Fast_aggregate_verify:
+  k*; m; s |- $bls_fast_aggregate_verify(k*, m, s)
