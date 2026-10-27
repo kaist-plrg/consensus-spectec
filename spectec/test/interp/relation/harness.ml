@@ -116,11 +116,11 @@ let check_result ~name ~mode expectation result =
         (sprintf "expected an error containing %S but returned %s" expected
            (string_of_values actual))
 
-let check spec ?(modes = [ Il; Sl; Pl ]) ~name ~relation ~args expectation =
+let check spec ?(modes = [ Il; Sl; Pl ])
+    ?(target = (module Pure_target : Interp.Target.S)) ~name ~relation ~args
+    expectation =
   List.iter modes ~f:(fun mode ->
-      Interp.with_target_state
-        (module Pure_target)
-        (fun target_state ->
+      Interp.with_target_state target (fun target_state ->
           let args = args () in
           eval target_state spec mode relation args
           |> check_result ~name ~mode expectation))
