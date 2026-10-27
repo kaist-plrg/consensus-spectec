@@ -89,6 +89,12 @@ let withdrawal_limit () =
     when String.is_substring message ~substring:"exceed the limit" ->
       ()
 
+let doubled_key =
+  Bls12_381.G1.(
+    let point = of_compressed_bytes_exn (Stdlib.Bytes.of_string key) in
+    add point point |> to_compressed_bytes)
+  |> Stdlib.Bytes.to_string
+
 let key_validation () =
   check ~name:"a valid public key passes key validation"
     ~relation:"Key_validate"
@@ -99,8 +105,26 @@ let key_validation () =
     ~args:(fun () -> [ bytes infinity ])
     (H.returns (fun () -> [ V.bool false ]))
 
+let g1_points () =
+  check ~name:"G1 canonicalization returns a canonical point"
+    ~relation:"G1_canonicalize"
+    ~args:(fun () -> [ bytes key ])
+    (H.returns (fun () -> [ bytes key ]));
+  check ~name:"G1 canonicalization rejects an uncompressed encoding"
+    ~relation:"G1_canonicalize"
+    ~args:(fun () -> [ nat 0 ])
+    (H.fails_with "invalid compressed G1 point");
+  check ~name:"G1 addition doubles a point" ~relation:"G1_double"
+    ~args:(fun () -> [ bytes key ])
+    (H.returns (fun () -> [ bytes doubled_key ]));
+  check ~name:"G1 addition of a point and its negation is infinity"
+    ~relation:"G1_cancel"
+    ~args:(fun () -> [ bytes key ])
+    (H.returns (fun () -> [ bytes infinity ]))
+
 let run () =
   aggregation ();
   fast_verification ();
   withdrawal_limit ();
-  key_validation ()
+  key_validation ();
+  g1_points ()

@@ -35,6 +35,9 @@ rule Withdrawals_root:
   w* |- $hash_tree_root_withdrawals(w*)
 
 builtin dec $bls_key_validate(nat): bool
+builtin dec $bls_g1_canonicalize(nat): nat
+builtin dec $bls_g1_add(nat, nat): nat
+builtin dec $bls_g1_neg(nat): nat
 
 relation Key_validate:
   nat |- bool
@@ -42,3 +45,24 @@ relation Key_validate:
 
 rule Key_validate:
   k |- $bls_key_validate(k)
+
+relation G1_canonicalize:
+  nat |- nat
+  hint(input %0)
+
+rule G1_canonicalize:
+  k |- $bls_g1_canonicalize(k)
+
+relation G1_double:
+  nat |- nat
+  hint(input %0)
+
+rule G1_double:
+  k |- $bls_g1_add(k, k)
+
+relation G1_cancel:
+  nat |- nat
+  hint(input %0)
+
+rule G1_cancel:
+  k |- $bls_g1_add(k, $bls_g1_neg(k))
