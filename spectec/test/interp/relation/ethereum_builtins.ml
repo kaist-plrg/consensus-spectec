@@ -60,6 +60,22 @@ let fast_verification () =
     ~args:(fun () -> [ keys [ key; infinity ]; bytes message; bytes signature ])
     (H.returns (fun () -> [ V.bool false ]))
 
+let withdrawals count =
+  V.list
+    (Typ.var "withdrawal" [] $ at)
+    (List.init count ~f:(fun index ->
+         V.tuple [ nat index; nat 0; nat 0; nat 0 ]))
+
+let withdrawal_limit () =
+  check ~name:"a full withdrawal list is hashed" ~relation:"Withdrawals_root"
+    ~args:(fun () -> [ withdrawals 16 ])
+    (H.satisfies (fun _ -> ()));
+  check ~name:"an over-limit withdrawal list is not hashed"
+    ~relation:"Withdrawals_root"
+    ~args:(fun () -> [ withdrawals 17 ])
+    (H.fails_with "17 chunks exceed the limit 16")
+
 let run () =
   aggregation ();
-  fast_verification ()
+  fast_verification ();
+  withdrawal_limit ()

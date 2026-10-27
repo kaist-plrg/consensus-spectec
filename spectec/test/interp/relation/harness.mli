@@ -11,6 +11,10 @@ val compile_file : string -> compiled_spec
     constructed by [expected]. *)
 val returns : (unit -> Lang.Il.Value.t list) -> expectation
 
+(** [satisfies check] runs [check] on the returned values after evaluation.
+    Callback failures include the test name and interpreter mode. *)
+val satisfies : (Lang.Il.Value.t list -> unit) -> expectation
+
 (** [fails] accepts any evaluation error. *)
 val fails : expectation
 
