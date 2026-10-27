@@ -1,0 +1,52 @@
+name: Capella translation
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: pyspec-translation-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+jobs:
+  checks:
+    name: Pinned translation output
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Check out the pinned Capella source
+        uses: actions/checkout@v4
+        with:
+          repository: ethereum/consensus-specs
+          ref: f96d3e7acf35125295d234da4b0c67591fdef49c
+          path: consensus-specs-capella
+
+      - uses: ocaml/setup-ocaml@v3
+        with:
+          ocaml-compiler: "5.1.1"
+          opam-pin: false
+          opam-local-packages: "*.opam"
+
+      - name: Install compiler dependencies
+        run: opam install . --deps-only --locked
+
+      - uses: astral-sh/setup-uv@v6
+        with:
+          enable-cache: true
+          cache-dependency-glob: consensus-specs-capella/uv.lock
+
+      - name: Set up source extraction dependencies
+        run: uv sync --project consensus-specs-capella --python 3.12 --frozen --no-install-project
+
+      - name: Check pinned translation output
+        env:
+          CAPELLA_SOURCE: ${{ github.workspace }}/consensus-specs-capella
+          CAPELLA_PYTHON: ${{ github.workspace }}/consensus-specs-capella/.venv/bin/python
+        run: make test-pyspec SWITCH="$(opam switch show -s)"
