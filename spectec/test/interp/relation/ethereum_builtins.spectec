@@ -92,6 +92,9 @@ rule Execution_payload_header_root:
   eph |- $hash_tree_root_ExecutionPayloadHeader(eph)
 
 builtin dec $bls_key_validate(nat): bool
+builtin dec $bls_g1_canonicalize(nat): nat
+builtin dec $bls_g1_add(nat, nat): nat
+builtin dec $bls_g1_neg(nat): nat
 
 relation Key_validate:
   nat |- bool
@@ -99,6 +102,34 @@ relation Key_validate:
 
 rule Key_validate:
   k |- $bls_key_validate(k)
+
+relation G1_canonicalize:
+  nat |- nat
+  hint(input %0)
+
+rule G1_canonicalize:
+  k |- $bls_g1_canonicalize(k)
+
+relation G1_double:
+  nat |- nat
+  hint(input %0)
+
+rule G1_double:
+  k |- $bls_g1_add(k, k)
+
+relation G1_cancel:
+  nat |- nat
+  hint(input %0)
+
+rule G1_cancel:
+  k |- $bls_g1_add(k, $bls_g1_neg(k))
+
+relation G1_add:
+  nat; nat |- nat
+  hint(input %0 %1)
+
+rule G1_add:
+  k; m |- $bls_g1_add(k, m)
 
 builtin dec $enumerate_<X>(X*): (nat, X)*
 

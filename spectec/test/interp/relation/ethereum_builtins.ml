@@ -181,6 +181,24 @@ let list_limits () =
       [ execution_payload_header ~extra_data:(String.make 33 '\001') ])
     (H.fails_with "extra_data: a list of 33 elements exceeds its limit of 32")
 
+let doubled_key =
+  Bls12_381.G1.(
+    let point = of_compressed_bytes_exn (Stdlib.Bytes.of_string key) in
+    add point point |> to_compressed_bytes)
+  |> Stdlib.Bytes.to_string
+
+let other_key =
+  Signature.(
+    derive_pk (Bls12_381_signature.generate_sk (Stdlib.Bytes.make 32 '\002'))
+    |> pk_to_bytes)
+  |> Stdlib.Bytes.to_string
+
+let key_sum =
+  Bls12_381.G1.(
+    let point text = of_compressed_bytes_exn (Stdlib.Bytes.of_string text) in
+    add (point key) (point other_key) |> to_compressed_bytes)
+  |> Stdlib.Bytes.to_string
+
 let key_validation () =
   check ~name:"a valid public key passes key validation"
     ~relation:"Key_validate"
@@ -190,6 +208,53 @@ let key_validation () =
     ~relation:"Key_validate"
     ~args:(fun () -> [ bytes infinity ])
     (H.returns (fun () -> [ V.bool false ]))
+
+(* x = 4 lies on the curve, and its point is outside the prime-order subgroup. *)
+let outside_subgroup = "\x80" ^ String.make 46 '\000' ^ "\x04"
+
+(* x = 1 is not the x-coordinate of any curve point. *)
+let off_curve = "\x80" ^ String.make 46 '\000' ^ "\x01"
+
+(* The coordinate is the base field's modulus, with the compression flag set. *)
+let outside_field =
+  "9a0111ea397fe69a4b1ba7b6434bacd764774b84f38512bf6730d2a0f6b0f6241eabfffeb153ffffb9feffffffffaaab"
+
+let g1_points () =
+  check ~name:"G1 canonicalization accepts a curve point outside the subgroup"
+    ~relation:"G1_canonicalize"
+    ~args:(fun () -> [ bytes outside_subgroup ])
+    (H.returns (fun () -> [ bytes outside_subgroup ]));
+  check ~name:"G1 canonicalization rejects a coordinate outside the base field"
+    ~relation:"G1_canonicalize"
+    ~args:(fun () -> [ bytes_of_hex outside_field ])
+    (H.fails_with "G1 coordinate outside the base field");
+  check ~name:"G1 canonicalization rejects a point off the curve"
+    ~relation:"G1_canonicalize"
+    ~args:(fun () -> [ bytes off_curve ])
+    (H.fails_with "G1 point is not on the curve");
+  check ~name:"G1 canonicalization returns a canonical point"
+    ~relation:"G1_canonicalize"
+    ~args:(fun () -> [ bytes key ])
+    (H.returns (fun () -> [ bytes key ]));
+  check ~name:"G1 canonicalization rejects an uncompressed encoding"
+    ~relation:"G1_canonicalize"
+    ~args:(fun () -> [ nat 0 ])
+    (H.fails_with "invalid compressed G1 point");
+  check
+    ~name:"G1 canonicalization clears the other bits of an infinity encoding"
+    ~relation:"G1_canonicalize"
+    ~args:(fun () -> [ bytes ("\xe0" ^ String.make 47 '\000') ])
+    (H.returns (fun () -> [ bytes infinity ]));
+  check ~name:"G1 addition doubles a point" ~relation:"G1_double"
+    ~args:(fun () -> [ bytes key ])
+    (H.returns (fun () -> [ bytes doubled_key ]));
+  check ~name:"G1 addition adds two different points" ~relation:"G1_add"
+    ~args:(fun () -> [ bytes key; bytes other_key ])
+    (H.returns (fun () -> [ bytes key_sum ]));
+  check ~name:"G1 addition of a point and its negation is infinity"
+    ~relation:"G1_cancel"
+    ~args:(fun () -> [ bytes key ])
+    (H.returns (fun () -> [ bytes infinity ]))
 
 let enumeration () =
   List.iter
@@ -221,4 +286,5 @@ let run () =
   list_limits ();
   enumeration ();
   range_annotation ();
-  key_validation ()
+  key_validation ();
+  g1_points ()
