@@ -139,3 +139,5 @@ Dune builds the translator and runs the extraction once per invocation. Extracti
 Module documents and actual output files stay under `_build`.
 
 Review any output diff before running `opam exec --switch=5.1.0 -- dune promote`, then rerun the tests.
+
+The Capella translation CI workflow runs this target on pull requests, main-branch pushes and manual runs. `make test-quick` excludes these tests because they require the external checkout and Python environment.
