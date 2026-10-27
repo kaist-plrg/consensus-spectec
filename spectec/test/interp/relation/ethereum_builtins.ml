@@ -181,6 +181,16 @@ let list_limits () =
       [ execution_payload_header ~extra_data:(String.make 33 '\001') ])
     (H.fails_with "extra_data: a list of 33 elements exceeds its limit of 32")
 
+let key_validation () =
+  check ~name:"a valid public key passes key validation"
+    ~relation:"Key_validate"
+    ~args:(fun () -> [ bytes key ])
+    (H.returns (fun () -> [ V.bool true ]));
+  check ~name:"the point at infinity fails key validation"
+    ~relation:"Key_validate"
+    ~args:(fun () -> [ bytes infinity ])
+    (H.returns (fun () -> [ V.bool false ]))
+
 let enumeration () =
   List.iter
     [ []; [ 4; 9 ] ]
@@ -210,4 +220,5 @@ let run () =
   fast_verification ();
   list_limits ();
   enumeration ();
-  range_annotation ()
+  range_annotation ();
+  key_validation ()

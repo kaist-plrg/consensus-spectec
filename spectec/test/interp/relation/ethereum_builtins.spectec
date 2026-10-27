@@ -91,6 +91,15 @@ relation Execution_payload_header_root:
 rule Execution_payload_header_root:
   eph |- $hash_tree_root_ExecutionPayloadHeader(eph)
 
+builtin dec $bls_key_validate(nat): bool
+
+relation Key_validate:
+  nat |- bool
+  hint(input %0)
+
+rule Key_validate:
+  k |- $bls_key_validate(k)
+
 builtin dec $enumerate_<X>(X*): (nat, X)*
 
 relation Enumerate:
