@@ -509,8 +509,76 @@ let bytes8_to_uint64_le ~at (v : Value.t) : Value.t result =
       Ok (Value.nat (build_le_num 0 zero (of_int 1) bytes))
   | _ -> Error (runtime at "bytes8_to_uint64_le: expects 8-byte value")
 
+let fixed_bytes ~at (value : Value.t) (width : Num.t) : Value.t result =
+  let width = Num.to_int width in
+  if
+    Bigint.compare width Bigint.zero < 0
+    || Bigint.compare width (Bigint.of_int Sys.max_string_length) > 0
+  then Error (runtime at "fixed_bytes: invalid width")
+  else
+    let len = Bigint.to_int_exn width in
+    let* num =
+      match value.it with
+      | NumV num -> Ok (Num.to_int num)
+      | BytesV { num; len = actual } when actual = len -> Ok num
+      | _ -> Error (runtime at "fixed_bytes: value has an incompatible width")
+    in
+    if
+      Bigint.compare num Bigint.zero < 0
+      || Bigint.compare num Bigint.(pow (of_int 256) width) >= 0
+    then Error (runtime at "fixed_bytes: value does not fit its width")
+    else Ok (make_bytes ~num ~len)
+
+let well_formed (value : Value.t) =
+  match value.it with
+  | BytesV { num; len } ->
+      len >= 0
+      && Bigint.compare num Bigint.zero >= 0
+      && Bigint.compare num Bigint.(pow (of_int 256) (of_int len)) < 0
+  | _ -> false
+
+let bytes_valid ~at:_ (value : Value.t) : Value.t result =
+  Ok (Value.bool (well_formed value))
+
+let bytes_length ~at (value : Value.t) : Value.t result =
+  match value.it with
+  | BytesV { len; _ } when well_formed value ->
+      Ok (Value.nat (Bigint.of_int len))
+  | _ -> Error (runtime at "bytes_length: not a well-formed byte string")
+
+let bytes_slice ~at (value : Value.t) (start : Num.t) (count : Num.t) :
+    Value.t result =
+  let start = Num.to_int start and count = Num.to_int count in
+  match value.it with
+  | BytesV { num; len }
+    when len >= 0
+         && Bigint.compare start Bigint.zero >= 0
+         && Bigint.compare count Bigint.zero >= 0
+         && Bigint.compare Bigint.(start + count) (Bigint.of_int len) <= 0
+         && Bigint.compare num Bigint.zero >= 0
+         && Bigint.compare num Bigint.(pow (of_int 256) (of_int len)) < 0 ->
+      let start = Bigint.to_int_exn start and count = Bigint.to_int_exn count in
+      let shift = 8 * (len - start - count) in
+      let mask = Bigint.(pow (of_int 256) (of_int count) - one) in
+      Ok
+        (make_bytes
+           ~num:(Bigint.bit_and (Bigint.shift_right num shift) mask)
+           ~len:count)
+  | _ -> Error (runtime at "bytes_slice: invalid byte value or slice bounds")
+
+let bytes_get ~at (value : Value.t) (index : Num.t) : Value.t result =
+  let* byte = bytes_slice ~at value index (`Nat Bigint.one) in
+  match byte.it with
+  | BytesV { num; _ } -> Ok (Value.nat num)
+  | _ -> assert false
+
 let builtins : (string * Define.t) list =
   [
+    ("fixed_bytes", Define.T0.a2 Arg.value Arg.num fixed_bytes);
+    ("bytes_slice", Define.T0.a3 Arg.value Arg.num Arg.num bytes_slice);
+    ("bytes_get", Define.T0.a2 Arg.value Arg.num bytes_get);
+    ("bytes_valid", Define.T0.a1 Arg.value bytes_valid);
+    ("bytes_length", Define.T0.a1 Arg.value bytes_length);
     ("bytes_to_uint64", Define.T0.a1 Arg.num bytes_to_uint64);
     (* not used *)
     ("uint_to_bytes", Define.T0.a1 Arg.num uint_to_bytes);
