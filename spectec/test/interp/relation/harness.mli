@@ -21,10 +21,12 @@ val fails_with : string -> expectation
 (** [check spec ~name ~relation ~args expectation] evaluates [relation] in every
     mode in [modes], which contains all three modes by default. [check] creates
     fresh target state for each mode and runs [args], evaluation, and any
-    expected-value callback within that state. *)
+    expected-value callback within that state. [check] supplies [builtins],
+    empty by default, to its pure target. *)
 val check :
   compiled_spec ->
   ?modes:mode list ->
+  ?builtins:(string * Interp.Builtins.Define.t) list ->
   name:string ->
   relation:string ->
   args:(unit -> Lang.Il.Value.t list) ->

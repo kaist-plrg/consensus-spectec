@@ -1742,6 +1742,21 @@ and invoke_rel (ctx : Ctx.t) (id : id) (values_input : value list) :
 and invoke_func (ctx : Ctx.t) (id : id) (targs : targ list) (args : arg list) :
     Ctx.t * value =
   let ctx, values_input = eval_args ctx args in
+  let targs =
+    match targs with
+    | [] -> []
+    | targs ->
+        let theta =
+          Ctx.TDEnv.fold
+            (fun tid typdef theta ->
+              let tparams, deftyp = typdef in
+              match (tparams, deftyp.it) with
+              | [], Il.PlainT typ -> TIdMap.add tid typ theta
+              | _ -> theta)
+            ctx.local.tdenv TIdMap.empty
+        in
+        List.map (Typ.subst_typ theta) targs
+  in
   (* Builtin function invocation *)
   let invoke_func_builtin () =
     let value_output =
@@ -1755,21 +1770,6 @@ and invoke_func (ctx : Ctx.t) (id : id) (targs : targ list) (args : arg list) :
     check
       (List.length targs = List.length tparams)
       id.at "arity mismatch in type arguments";
-    let targs =
-      match targs with
-      | [] -> []
-      | targs ->
-          let theta =
-            Ctx.TDEnv.fold
-              (fun tid typdef theta ->
-                let tparams, deftyp = typdef in
-                match (tparams, deftyp.it) with
-                | [], Il.PlainT typ -> TIdMap.add tid typ theta
-                | _ -> theta)
-              ctx.local.tdenv TIdMap.empty
-          in
-          List.map (Typ.subst_typ theta) targs
-    in
     let ctx_local =
       List.fold_left2
         (fun ctx_local tparam targ ->
