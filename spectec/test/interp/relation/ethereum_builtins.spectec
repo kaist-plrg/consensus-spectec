@@ -111,3 +111,25 @@ relation Bytes_slice:
 
 rule Bytes_slice:
   b; m; n |- $bytes_slice(b, m, n)
+
+syntax epoch = nat
+syntax other = nat
+
+var e : epoch
+var x : other
+
+builtin dec $ssz_hash_tree_root<X>(X): nat
+
+relation Hash_epoch:
+  epoch |- nat
+  hint(input %0)
+
+rule Hash_epoch:
+  e |- $ssz_hash_tree_root<epoch>(e)
+
+relation Hash_other:
+  other |- nat
+  hint(input %0)
+
+rule Hash_other:
+  x |- $ssz_hash_tree_root<other>(x)

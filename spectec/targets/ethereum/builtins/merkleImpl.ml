@@ -2896,8 +2896,47 @@ let compute_signing_root_beaconBlock ~at (blk : Value.t) (domain_v : Num.t) :
   let out_b = signing_data_root_from_bytes obj_b32 dom_b in
   Ok (make_bytes ~num:(bigint_of_be_bytes out_b) ~len:32)
 
+let ssz_hash_tree_root ~at (typ : targ) (value : Value.t) : Value.t result =
+  match typ.it with
+  | VarT { synid; targs = [] } -> (
+      match synid.it with
+      | "epoch" | "slot" | "gwei" | "uint64" ->
+          let* num = Arg.num at value in
+          let num = Num.to_int num in
+          let* () = ensure_fits_bytes ~at num ~len:8 in
+          Ok
+            (make_bytes
+               ~num:(bigint_of_be_bytes (leaf_uint_le num ~nbytes:8))
+               ~len:32)
+      | "root" | "bytes32" ->
+          let* num = Arg.num at value in
+          let num = Num.to_int num in
+          let* () = ensure_fits_bytes ~at num ~len:32 in
+          Ok (make_bytes ~num ~len:32)
+      | "voluntaryExit" -> hash_tree_root_VoluntaryExit ~at value
+      | "blsToExecutionChange" -> hash_tree_root_BLSToExecutionChange ~at value
+      | "beaconBlockHeader" -> hash_tree_root_beaconBlockHeader ~at value
+      | "attestationData" -> hash_tree_root_AttestationData ~at value
+      | "depositMessage" -> hash_tree_root_DepositMessage ~at value
+      | "beaconBlock" -> hash_tree_root_beaconBlock ~at value
+      | "signingData" -> (
+          match value.it with
+          | StructV [ (_, object_root); (_, domain) ] ->
+              let* object_root = to_b32_exn ~at object_root in
+              let* domain = to_b32_exn ~at domain in
+              Ok
+                (make_bytes
+                   ~num:
+                     (bigint_of_be_bytes
+                        (signing_data_root_from_bytes object_root domain))
+                   ~len:32)
+          | _ -> Error (runtime at "Expected SigningData fields"))
+      | name -> Error (runtime at ("Unsupported SSZ hash type: " ^ name)))
+  | _ -> Error (runtime at "SSZ hashing requires a nominal type")
+
 let builtins : (string * Define.t) list =
   [
+    ("ssz_hash_tree_root", Define.T1.a1 Arg.value ssz_hash_tree_root);
     ( "is_valid_merkle_branch",
       Define.T0.a5 Arg.num (Arg.list_of Arg.num) Arg.num Arg.num Arg.num
         is_valid_merkle_branch );

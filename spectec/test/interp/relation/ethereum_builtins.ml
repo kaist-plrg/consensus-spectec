@@ -162,10 +162,20 @@ let byte_strings () =
     ~args:(fun () -> [ bytes "\001\002\003"; nat 2; nat 2 ])
     (H.fails_with "invalid byte value or slice bounds")
 
+let ssz_roots () =
+  check ~name:"ssz_hash_tree_root hashes a uint64 alias" ~relation:"Hash_epoch"
+    ~args:(fun () -> [ nat 1 ])
+    (H.returns (fun () -> [ bytes ("\001" ^ String.make 31 '\000') ]));
+  check ~name:"ssz_hash_tree_root rejects an unsupported type"
+    ~relation:"Hash_other"
+    ~args:(fun () -> [ nat 0 ])
+    (H.fails_with "Unsupported SSZ hash type: other")
+
 let run () =
   aggregation ();
   fast_verification ();
   withdrawal_limit ();
   key_validation ();
   g1_points ();
-  byte_strings ()
+  byte_strings ();
+  ssz_roots ()
