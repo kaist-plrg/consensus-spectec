@@ -166,6 +166,10 @@ let builtins : (string * Define.t) list =
   [
     ("bls_key_validate", Define.T0.a1 Arg.num bls_key_validate);
     ("bls_verify", Define.T0.a3 Arg.num Arg.num Arg.num bls_verify);
+    (* Rules translated from pyspec call bls.AggregatePKs by this name, because
+       the translated $eth_aggregate_pubkeys replaces the builtin of that name. *)
+    ( "bls_aggregate_pubkeys",
+      Define.T0.a1 (Arg.list_of Arg.num) eth_aggregate_pubkeys );
     ( "eth_aggregate_pubkeys",
       Define.T0.a1 (Arg.list_of Arg.num) eth_aggregate_pubkeys );
     ( "bls_fast_aggregate_verify",
