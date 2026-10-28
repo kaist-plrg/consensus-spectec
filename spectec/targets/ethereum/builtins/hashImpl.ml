@@ -94,5 +94,43 @@ let hash_ ~at (typ : targ) (v : Value.t) : Value.t result =
   in
   Ok (Value.make_bytes ~num:(bigint_of_be_bytes h) ~len:32)
 
+(* dec $balance_weighted_picks(gwei*, bytes32, uint64) : nat*
+   Positions that compute_balance_weighted_selection picks from the candidates
+   when shuffle_indices is False (Gloas compute_ptc). *)
+
+let balance_weighted_picks ~at (balances : Value.t list) (seed : Num.t)
+    (size : Num.t) : Value.t result =
+  let seed = bytesv_to_raw (Num.to_int seed) 32 in
+  let balances =
+    Array.of_list (List.map (fun v -> Value.get_num v |> Num.to_int) balances)
+  in
+  let total = Array.length balances in
+  let size = Bigint.to_int_exn (Num.to_int size) in
+  let max_eb = Bigint.of_string "2048000000000" in
+  if total = 0 then Error (runtime at "balance_weighted_picks: no candidates")
+  else
+    let rnd = ref Bytes.empty in
+    let rec loop i acc n =
+      if n >= size then List.rev acc
+      else (
+        if i mod 16 = 0 then (
+          let b = Bytes.create 40 in
+          Bytes.blit seed 0 b 0 32;
+          Bytes.set_int64_le b 32 (Int64.of_int (i / 16));
+          rnd :=
+            Digestif.SHA256.(digest_bytes b |> to_raw_string |> Bytes.of_string));
+        let k = i mod total in
+        let rv = Bytes.get_uint16_le !rnd (i mod 16 * 2) in
+        if Bigint.(balances.(k) * of_int 65535 >= max_eb * of_int rv) then
+          loop (i + 1) (Value.nat (Bigint.of_int k) :: acc) (n + 1)
+        else loop (i + 1) acc n)
+    in
+    Ok (Value.list' Typ.int (loop 0 [] 0))
+
 let builtins : (string * Define.t) list =
-  [ ("hash_", Define.T1.a1 Arg.value hash_) ]
+  [
+    ("hash_", Define.T1.a1 Arg.value hash_);
+    ( "balance_weighted_picks",
+      Define.T0.a3 (Arg.list_of Arg.value) Arg.num Arg.num
+        balance_weighted_picks );
+  ]

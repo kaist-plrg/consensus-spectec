@@ -20,7 +20,7 @@ opam install ./spectec-target-miniml.opam
 opam install ./spectec-target-impty.opam
 ```
 
-The `spectec` package includes the Ethereum command plugin and the Capella and Deneb specifications. Each optional target package installs its own command plugin and default specification. The `spectec` executable discovers installed target plugins at startup.
+The `spectec` package includes the Ethereum command plugin and the Capella, Deneb, Electra, Fulu and Gloas specifications. Each optional target package installs its own command plugin and default specification. The `spectec` executable discovers installed target plugins at startup.
 
 For development, install every package's pinned dependency versions without installing the packages themselves:
 
@@ -163,10 +163,10 @@ Ethereum commands are grouped under `ethereum`:
 
 ```bash
 # Run one state transition and export the validated post-state
-./spectecx ethereum run state-transition --pre pre.json --block block.json --output post.json
+./spectecx ethereum run state-transition --fork capella --pre pre.json --block block.json --output post.json
 
 # Collect premise coverage and save a resumable checkpoint
-./spectecx ethereum coverage --batch-dir eth-tests --premise-coverage.level summary --checkpoint coverage.ckpt
+./spectecx ethereum coverage --fork capella --batch-dir eth-tests --premise-coverage.level summary --checkpoint coverage.ckpt
 
 # Generate mutations for selected uncovered premise UIDs
 ./spectecx ethereum testgen --coverage coverage.ckpt --premises-file targets.txt --test-dir eth-tests --output testgen_output
@@ -239,7 +239,7 @@ make download-fixture
 
 This downloads the pinned `mainnet.tar.gz` (v1.7.0-beta.3, matching the
 `consensus-specs` submodule) once into
-`Converter/.fixture-cache/` and unpacks the Capella and Deneb `sanity`, `random`
+`Converter/.fixture-cache/` and unpacks the Capella, Deneb, Electra, Fulu and Gloas `sanity`, `random`
 and `finality` suites into `Converter/OfficialTestSuite/<fork>/<suite>/...`, the
 layout the scripts below expect. Both directories are gitignored.
 
@@ -268,7 +268,7 @@ make clean-fixture                                  # drop vectors, keep the tar
 
 The checker requires `make exe` and the pyspec environment created by `make -C consensus-specs build` (Python 3.12 or later, already in the Docker image).
 
-The `Spec tests` workflow in [`.github/workflows/spec-tests.yml`](.github/workflows/spec-tests.yml) checks the mainnet `operations`, `epoch_processing`, `sanity/blocks`, and `random` suites for Capella and Deneb on every pull request. Pushes to `main` and manual dispatches also run the slower `finality` suite.
+The `Spec tests` workflow in [`.github/workflows/spec-tests.yml`](.github/workflows/spec-tests.yml) checks the mainnet `operations`, `epoch_processing`, `sanity/blocks`, and `random` suites for Capella, Deneb, Electra, Fulu and Gloas on every pull request. Pushes to `main` and manual dispatches also run the slower `finality` suite.
 
 Scripts that import `eth_consensus_specs` run in that uv environment. Start them with `uv run --project consensus-specs --no-sync`.
 

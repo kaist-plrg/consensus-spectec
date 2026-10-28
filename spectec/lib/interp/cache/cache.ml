@@ -9,7 +9,7 @@ module Entry = struct
     && List.length values_a = List.length values_b
     && List.for_all2
          (fun (v_a : Il.Value.t) (v_b : Il.Value.t) ->
-           v_a.note.vhash = v_b.note.vhash && Il.Value.compare v_a v_b = 0)
+           Il.Value.hash v_a = Il.Value.hash v_b && Il.Value.compare v_a v_b = 0)
          values_a values_b
 
   (* Infix operator for combining hash values. *)
@@ -18,7 +18,7 @@ module Entry = struct
   let hash (id, values) =
     let base_hash = Hashtbl.hash id in
     List.fold_left
-      (fun hash (v : Il.Value.t) -> hash +! v.note.vhash)
+      (fun hash (v : Il.Value.t) -> hash +! Il.Value.hash v)
       base_hash values
 end
 

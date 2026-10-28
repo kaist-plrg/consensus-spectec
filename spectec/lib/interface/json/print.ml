@@ -120,6 +120,11 @@ let num_to_json ?field_name (typ : Typ.t') (num : Bigint.t) :
   | Some len ->
       (* It's a bytes type, convert to hex string *)
       `String (bytes_to_hex_string num len) |> Result.ok
+  (* Builder.version is a Uint8, not a Version: a nat named "version" is a number *)
+  | None
+    when typ = NumT `NatT
+         && Option.map String.lowercase_ascii field_name = Some "version" ->
+      `Intlit (Bigint.to_string num) |> Result.ok
   | None -> (
       (* Not a bytes type from type info, check field name as fallback *)
       match field_name with

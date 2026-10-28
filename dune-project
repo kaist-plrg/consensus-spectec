@@ -15,7 +15,10 @@
   (sites
     (lib target_plugins)
     (share capella_specs)
-    (share deneb_specs))
+    (share deneb_specs)
+    (share electra_specs)
+    (share fulu_specs)
+    (share gloas_specs))
   (depends
     (ocaml (>= 5.1.0))
     (menhir (and :build (>= 20240715)))
@@ -27,6 +30,7 @@
     (core_unix (>= 0.17.0))
     digestif
     dune-site
+    ssz
     ppx_let
     pprint
     linol-eio

@@ -12,7 +12,8 @@ consensus_specs_path = os.path.abspath(os.path.join(script_dir, '../../consensus
 if consensus_specs_path not in sys.path:
     sys.path.insert(0, consensus_specs_path)
 
-from ssz import BaseUint, BitList, BitVector, Boolean, ByteList, ByteVector, Container, List, Vector
+from ssz import (BaseUint, BitList, BitVector, Boolean, ByteList, ByteVector, Container, List,
+                 ProgressiveBitList, ProgressiveContainer, ProgressiveList, Uint8, Vector)
 
 def _from_hex(s: str) -> bytes:
     if not isinstance(s, str) or not s.startswith("0x"):
@@ -21,7 +22,7 @@ def _from_hex(s: str) -> bytes:
 
 def json_to_ssz(j: Any, typ) -> Any:
     # 1) Container
-    if issubclass(typ, Container):
+    if issubclass(typ, (Container, ProgressiveContainer)):
         if not isinstance(j, dict):
             raise TypeError(f"Container expects dict, got {type(j)}")
         kwargs = {}
@@ -37,14 +38,16 @@ def json_to_ssz(j: Any, typ) -> Any:
             raise TypeError(f"{typ.__name__} expects 0x-hex string")
         return typ(data=_from_hex(j)) if issubclass(typ, ByteList) else typ(_from_hex(j))
 
-    # 3) Lists/Vectors
-    if issubclass(typ, (List, Vector)):
+    # 3) Lists/Vectors; a progressive list of bytes is a byte array
+    if issubclass(typ, ProgressiveList) and typ.ELEMENT_TYPE is Uint8:
+        return typ(data=list(_from_hex(j)))
+    if issubclass(typ, (List, Vector, ProgressiveList)):
         if not isinstance(j, list):
             raise TypeError(f"{typ.__name__} expects list JSON")
         return typ(data=[json_to_ssz(e, typ.ELEMENT_TYPE) for e in j])
 
     # 4) Bitfields
-    if issubclass(typ, (BitVector, BitList)):
+    if issubclass(typ, (BitVector, BitList, ProgressiveBitList)):
         if not isinstance(j, list) or not all(isinstance(x, bool) for x in j):
             raise TypeError(f"{typ.__name__} expects a JSON list of booleans, e.g. [true, false, ...]")
         return typ(data=j)

@@ -79,51 +79,57 @@ end = struct
 end
 
 (* Functor for creating value module with custom vid provider *)
+(* Structural hash, computed on first use and memoized in the note.
+   Values are immutable, so the memo stays valid. A value that no cache key
+   reaches is never hashed, for example a list tail made in a recursion step. *)
+let unhashed = min_int
+
+let rec hash (v : t) : int =
+  if v.note.vhash <> unhashed then v.note.vhash
+  else
+    let h = hash_of v.it in
+    v.note.vhash <- h;
+    h
+
+and hash_of (v : value') : int =
+  let ( +! ) h1 h2 = (h1 * 65599) + h2 in
+  let hash_atom (atom : Xl.Atom.t) : int = Hashtbl.hash atom in
+
+  let hash_num (num : Xl.Num.t) : int =
+    match num with
+    | `Nat n -> 0 +! Bigint.hash n
+    | `Int i -> 1 +! Bigint.hash i
+  in
+
+  match v with
+  | BoolV b -> 0 +! Hashtbl.hash b
+  | NumV n -> 1 +! hash_num n
+  | TextV s -> 2 +! Hashtbl.hash s
+  | StructV fields ->
+      List.fold_left
+        (fun h (atom, v) -> h +! (hash_atom atom.Common.Source.it +! hash v))
+        3 fields
+  | CaseV vc ->
+      List.fold_left
+        (fun h p ->
+          match p with
+          | Mixfix.Arg v -> h +! hash v
+          | Mixfix.Atom atom -> h +! 1 +! hash_atom atom.Common.Source.it)
+        4 vc
+  | TupleV values -> List.fold_left (fun h v -> h +! hash v) 5 values
+  | OptV None -> 6
+  | OptV (Some v) -> 7 +! hash v
+  | ListV values -> List.fold_left (fun h v -> h +! hash v) 8 values
+  | FuncV id -> 9 +! Hashtbl.hash id.Common.Source.it
+  | BytesV { num; len } -> 10 +! Bigint.hash num +! Hashtbl.hash len
+
 module MakeWithVid (VidProvider : VidProvider) = struct
-  (* Incremental hashing: compute hash from value' using child vhash values 
-     -> O(width) not O(tree-size) *)
-  let hash_of (v : value') : int =
-    let ( +! ) h1 h2 = (h1 * 65599) + h2 in
-    let hash_atom (atom : Xl.Atom.t) : int = Hashtbl.hash atom in
-
-    let hash_num (num : Xl.Num.t) : int =
-      match num with
-      | `Nat n -> 0 +! Bigint.hash n
-      | `Int i -> 1 +! Bigint.hash i
-    in
-
-    match v with
-    | BoolV b -> 0 +! Hashtbl.hash b
-    | NumV n -> 1 +! hash_num n
-    | TextV s -> 2 +! Hashtbl.hash s
-    | StructV fields ->
-        List.fold_left
-          (fun hash (atom, v) ->
-            hash +! (hash_atom atom.Common.Source.it +! v.note.vhash))
-          3 fields
-    | CaseV vc ->
-        List.fold_left
-          (fun h p ->
-            match p with
-            | Mixfix.Arg v -> h +! v.note.vhash
-            | Mixfix.Atom atom -> h +! 1 +! hash_atom atom.Common.Source.it)
-          4 vc
-    | TupleV values ->
-        List.fold_left (fun hash v -> hash +! v.note.vhash) 5 values
-    | OptV None -> 6
-    | OptV (Some v) -> 7 +! v.note.vhash
-    | ListV values ->
-        List.fold_left (fun hash v -> hash +! v.note.vhash) 8 values
-    | FuncV id -> 9 +! Hashtbl.hash id.Common.Source.it
-    | BytesV { num; len } -> 10 +! Bigint.hash num +! Hashtbl.hash len
-
   let with_fresh_vid (typ : typ') (vhash : int) : vnote =
     let vid = VidProvider.fresh () in
     { vid; vhash; typ }
 
   let make_val (typ : typ') (v : value') : t =
-    let vhash = hash_of v in
-    v $$$ with_fresh_vid typ vhash
+    v $$$ with_fresh_vid typ unhashed
 
   module Make = struct
     let value (t' : typ') (v : value') : t = make_val t' v

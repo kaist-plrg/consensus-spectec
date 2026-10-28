@@ -1,0 +1,103 @@
+;;
+;; Epoch processing 
+;;
+
+relation ProcessEpoch:
+  beaconState ~> beaconState
+  hint(input %0)
+
+;; [Modified in Fulu:EIP7917] process_proposer_lookahead
+;; [Modified in Gloas:EIP7732] process_builder_pending_payments and process_ptc_window
+rule ProcessEpoch:
+  state ~> state_16
+  ;; Phase0 -> Altair
+  -- ProcessJustificationAndFinalization:  state             ~> state_0
+  ;; Altair
+  -- ProcessInactivityUpdates:              state_0           ~> state_1
+  ;; Phase0 -> Altair
+  -- ProcessRewardsAndPenalties:            state_1           ~> state_2
+  ;; Phase0 -> Electra
+  -- ProcessRegistryUpdates:                state_2           ~> state_3
+  ;; Phase0 -> Altair -> Bellatrix -> Electra
+  -- ProcessSlashings:                      state_3           ~> state_4
+  ;; Phase0
+  -- ProcessEth1DataReset:                  state_4           ~> state_5
+  ;; Electra -> Gloas
+  -- ProcessPendingDeposits:                state_5           ~> state_6
+  ;; Electra
+  -- ProcessPendingConsolidations:          state_6           ~> state_7
+  ;; Gloas
+  -- ProcessBuilderPendingPayments:         state_7           ~> state_8
+  ;; Phase0 -> Electra
+  -- ProcessEffectiveBalanceUpdates:        state_8           ~> state_9
+  ;; Phase0
+  -- ProcessSlashingsReset:                 state_9           ~> state_10
+  ;; Phase0
+  -- ProcessRandaoMixesReset:               state_10          ~> state_11
+  ;; Capella
+  -- ProcessHistoricalSummariesUpdate:      state_11          ~> state_12
+  ;; Altair
+  -- ProcessParticipationFlagUpdates:       state_12          ~> state_13
+  ;; Altair
+  -- ProcessSyncCommitteeUpdates:           state_13          ~> state_14
+  ;; Fulu
+  -- ProcessProposerLookahead:              state_14          ~> state_15
+  ;; Gloas
+  -- ProcessPtcWindow:                      state_15          ~> state_16
+
+;; [Modified in Electra:EIP7251] pending deposits and pending consolidations
+;;
+;; process_slots
+;;
+relation ProcessSlots_loop:
+  beaconState slot ~> beaconState
+  hint(input %0 %1)
+
+;; break loop: state.SLOT >= slot_target
+rule ProcessSlots_loop/base:
+  state slot_target ~> state
+  -- if $( state.SLOT >= slot_target )
+
+;; step (non-boundary)
+rule ProcessSlots_loop/step-no-epoch:
+  state slot_target ~> state_out
+  ;; assert: terminates loop if state_in.SLOT >= slot_target
+  -- if $( state.SLOT < slot_target )
+  -- ProcessSlot: state ~> state_after_slot
+  -- if slot_cur = state_after_slot.SLOT
+  -- if $( slot_cur + 1 ) = slot_next
+  ----
+  ;; branch
+  -- if $( slot_next \ $SLOTS_PER_EPOCH =/= 0)
+  -- if state_next = state_after_slot[.SLOT = slot_next]
+  ----
+  ;; converge
+  -- ProcessSlots_loop: state_next slot_target ~> state_out
+
+;; step (epoch boundary)
+rule ProcessSlots_loop/step-epoch:
+  state slot_target ~> state_out
+  ;; assert: terminates loop if state_in.SLOT >= slot_target
+  -- if $( state.SLOT < slot_target )
+  -- ProcessSlot: state ~> state_after_slot
+  -- if slot_cur = state_after_slot.SLOT
+  -- if $( slot_cur + 1 ) = slot_next
+  ----
+  ;; branch
+  -- if $( slot_next \ $SLOTS_PER_EPOCH ) = 0
+  -- ProcessEpoch: state_after_slot ~> state_after_epoch
+  -- if state_next = state_after_epoch[.SLOT = slot_next]
+  ----
+  ;; converge
+  -- ProcessSlots_loop: state_next slot_target ~> state_out
+
+
+relation ProcessSlots:
+  beaconState slot ~> beaconState
+  hint(input %0 %1)
+
+rule ProcessSlots:
+  state slot_target ~> state_out
+  ;; assert: redundant check
+  -- if $( state.SLOT < slot_target )
+  -- ProcessSlots_loop: state slot_target ~> state_out

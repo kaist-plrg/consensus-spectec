@@ -1,0 +1,2549 @@
+{
+ "types": {
+  "AggregateAndProof": {
+   "container": [
+    [
+     "aggregator_index",
+     "uint64"
+    ],
+    [
+     "aggregate",
+     "Attestation"
+    ],
+    [
+     "selection_proof",
+     {
+      "vector": [
+       "uint8",
+       96
+      ]
+     }
+    ]
+   ]
+  },
+  "Attestation": {
+   "progressive_container": {
+    "active_fields": [
+     1,
+     1,
+     1,
+     1
+    ],
+    "fields": [
+     [
+      "aggregation_bits",
+      "progressive_bitlist"
+     ],
+     [
+      "data",
+      "AttestationData"
+     ],
+     [
+      "signature",
+      {
+       "vector": [
+        "uint8",
+        96
+       ]
+      }
+     ],
+     [
+      "committee_bits",
+      {
+       "bitvector": 4
+      }
+     ]
+    ]
+   }
+  },
+  "AttestationData": {
+   "container": [
+    [
+     "slot",
+     "uint64"
+    ],
+    [
+     "index",
+     "uint64"
+    ],
+    [
+     "beacon_block_root",
+     {
+      "vector": [
+       "uint8",
+       32
+      ]
+     }
+    ],
+    [
+     "source",
+     "Checkpoint"
+    ],
+    [
+     "target",
+     "Checkpoint"
+    ]
+   ]
+  },
+  "AttesterSlashing": {
+   "container": [
+    [
+     "attestation_1",
+     "IndexedAttestation"
+    ],
+    [
+     "attestation_2",
+     "IndexedAttestation"
+    ]
+   ]
+  },
+  "BLSToExecutionChange": {
+   "container": [
+    [
+     "validator_index",
+     "uint64"
+    ],
+    [
+     "from_bls_pubkey",
+     {
+      "vector": [
+       "uint8",
+       48
+      ]
+     }
+    ],
+    [
+     "to_execution_address",
+     {
+      "vector": [
+       "uint8",
+       20
+      ]
+     }
+    ]
+   ]
+  },
+  "BeaconBlock": {
+   "container": [
+    [
+     "slot",
+     "uint64"
+    ],
+    [
+     "proposer_index",
+     "uint64"
+    ],
+    [
+     "parent_root",
+     {
+      "vector": [
+       "uint8",
+       32
+      ]
+     }
+    ],
+    [
+     "state_root",
+     {
+      "vector": [
+       "uint8",
+       32
+      ]
+     }
+    ],
+    [
+     "body",
+     "BeaconBlockBody"
+    ]
+   ]
+  },
+  "BeaconBlockBody": {
+   "progressive_container": {
+    "active_fields": [
+     1,
+     1,
+     1,
+     1,
+     1,
+     1,
+     1,
+     1,
+     1,
+     1,
+     1,
+     1,
+     1
+    ],
+    "fields": [
+     [
+      "randao_reveal",
+      {
+       "vector": [
+        "uint8",
+        96
+       ]
+      }
+     ],
+     [
+      "eth1_data",
+      "Eth1Data"
+     ],
+     [
+      "graffiti",
+      {
+       "vector": [
+        "uint8",
+        32
+       ]
+      }
+     ],
+     [
+      "proposer_slashings",
+      {
+       "progressive_list": "ProposerSlashing"
+      }
+     ],
+     [
+      "attester_slashings",
+      {
+       "progressive_list": "AttesterSlashing"
+      }
+     ],
+     [
+      "attestations",
+      {
+       "progressive_list": "Attestation"
+      }
+     ],
+     [
+      "deposits",
+      {
+       "progressive_list": "Deposit"
+      }
+     ],
+     [
+      "voluntary_exits",
+      {
+       "progressive_list": "SignedVoluntaryExit"
+      }
+     ],
+     [
+      "sync_aggregate",
+      "SyncAggregate"
+     ],
+     [
+      "bls_to_execution_changes",
+      {
+       "progressive_list": "SignedBLSToExecutionChange"
+      }
+     ],
+     [
+      "signed_execution_payload_bid",
+      "SignedExecutionPayloadBid"
+     ],
+     [
+      "payload_attestations",
+      {
+       "progressive_list": "PayloadAttestation"
+      }
+     ],
+     [
+      "parent_execution_requests",
+      "ExecutionRequests"
+     ]
+    ]
+   }
+  },
+  "BeaconBlockHeader": {
+   "container": [
+    [
+     "slot",
+     "uint64"
+    ],
+    [
+     "proposer_index",
+     "uint64"
+    ],
+    [
+     "parent_root",
+     {
+      "vector": [
+       "uint8",
+       32
+      ]
+     }
+    ],
+    [
+     "state_root",
+     {
+      "vector": [
+       "uint8",
+       32
+      ]
+     }
+    ],
+    [
+     "body_root",
+     {
+      "vector": [
+       "uint8",
+       32
+      ]
+     }
+    ]
+   ]
+  },
+  "BeaconState": {
+   "progressive_container": {
+    "active_fields": [
+     1,
+     1,
+     1,
+     1,
+     1,
+     1,
+     1,
+     1,
+     1,
+     1,
+     1,
+     1,
+     1,
+     1,
+     1,
+     1,
+     1,
+     1,
+     1,
+     1,
+     1,
+     1,
+     1,
+     1,
+     1,
+     1,
+     1,
+     1,
+     1,
+     1,
+     1,
+     1,
+     1,
+     1,
+     1,
+     1,
+     1,
+     1,
+     1,
+     1,
+     1,
+     1,
+     1,
+     1,
+     1,
+     1
+    ],
+    "fields": [
+     [
+      "genesis_time",
+      "uint64"
+     ],
+     [
+      "genesis_validators_root",
+      {
+       "vector": [
+        "uint8",
+        32
+       ]
+      }
+     ],
+     [
+      "slot",
+      "uint64"
+     ],
+     [
+      "fork",
+      "Fork"
+     ],
+     [
+      "latest_block_header",
+      "BeaconBlockHeader"
+     ],
+     [
+      "block_roots",
+      {
+       "vector": [
+        {
+         "vector": [
+          "uint8",
+          32
+         ]
+        },
+        64
+       ]
+      }
+     ],
+     [
+      "state_roots",
+      {
+       "vector": [
+        {
+         "vector": [
+          "uint8",
+          32
+         ]
+        },
+        64
+       ]
+      }
+     ],
+     [
+      "historical_roots",
+      {
+       "list": [
+        {
+         "vector": [
+          "uint8",
+          32
+         ]
+        },
+        16777216
+       ]
+      }
+     ],
+     [
+      "eth1_data",
+      "Eth1Data"
+     ],
+     [
+      "eth1_data_votes",
+      {
+       "list": [
+        "Eth1Data",
+        32
+       ]
+      }
+     ],
+     [
+      "eth1_deposit_index",
+      "uint64"
+     ],
+     [
+      "validators",
+      {
+       "progressive_list": "Validator"
+      }
+     ],
+     [
+      "balances",
+      {
+       "progressive_list": "uint64"
+      }
+     ],
+     [
+      "randao_mixes",
+      {
+       "vector": [
+        {
+         "vector": [
+          "uint8",
+          32
+         ]
+        },
+        64
+       ]
+      }
+     ],
+     [
+      "slashings",
+      {
+       "vector": [
+        "uint64",
+        64
+       ]
+      }
+     ],
+     [
+      "previous_epoch_participation",
+      {
+       "progressive_list": "uint8"
+      }
+     ],
+     [
+      "current_epoch_participation",
+      {
+       "progressive_list": "uint8"
+      }
+     ],
+     [
+      "justification_bits",
+      {
+       "bitvector": 4
+      }
+     ],
+     [
+      "previous_justified_checkpoint",
+      "Checkpoint"
+     ],
+     [
+      "current_justified_checkpoint",
+      "Checkpoint"
+     ],
+     [
+      "finalized_checkpoint",
+      "Checkpoint"
+     ],
+     [
+      "inactivity_scores",
+      {
+       "progressive_list": "uint64"
+      }
+     ],
+     [
+      "current_sync_committee",
+      "SyncCommittee"
+     ],
+     [
+      "next_sync_committee",
+      "SyncCommittee"
+     ],
+     [
+      "latest_block_hash",
+      {
+       "vector": [
+        "uint8",
+        32
+       ]
+      }
+     ],
+     [
+      "next_withdrawal_index",
+      "uint64"
+     ],
+     [
+      "next_withdrawal_validator_index",
+      "uint64"
+     ],
+     [
+      "historical_summaries",
+      {
+       "list": [
+        "HistoricalSummary",
+        16777216
+       ]
+      }
+     ],
+     [
+      "deposit_requests_start_index",
+      "uint64"
+     ],
+     [
+      "deposit_balance_to_consume",
+      "uint64"
+     ],
+     [
+      "exit_balance_to_consume",
+      "uint64"
+     ],
+     [
+      "earliest_exit_epoch",
+      "uint64"
+     ],
+     [
+      "consolidation_balance_to_consume",
+      "uint64"
+     ],
+     [
+      "earliest_consolidation_epoch",
+      "uint64"
+     ],
+     [
+      "pending_deposits",
+      {
+       "progressive_list": "PendingDeposit"
+      }
+     ],
+     [
+      "pending_partial_withdrawals",
+      {
+       "progressive_list": "PendingPartialWithdrawal"
+      }
+     ],
+     [
+      "pending_consolidations",
+      {
+       "progressive_list": "PendingConsolidation"
+      }
+     ],
+     [
+      "proposer_lookahead",
+      {
+       "vector": [
+        "uint64",
+        16
+       ]
+      }
+     ],
+     [
+      "builders",
+      {
+       "progressive_list": "Builder"
+      }
+     ],
+     [
+      "next_withdrawal_builder_index",
+      "uint64"
+     ],
+     [
+      "execution_payload_availability",
+      {
+       "bitvector": 64
+      }
+     ],
+     [
+      "builder_pending_payments",
+      {
+       "vector": [
+        "BuilderPendingPayment",
+        16
+       ]
+      }
+     ],
+     [
+      "builder_pending_withdrawals",
+      {
+       "progressive_list": "BuilderPendingWithdrawal"
+      }
+     ],
+     [
+      "latest_execution_payload_bid",
+      "ExecutionPayloadBid"
+     ],
+     [
+      "payload_expected_withdrawals",
+      {
+       "progressive_list": "Withdrawal"
+      }
+     ],
+     [
+      "ptc_window",
+      {
+       "vector": [
+        {
+         "vector": [
+          "uint64",
+          16
+         ]
+        },
+        24
+       ]
+      }
+     ]
+    ]
+   }
+  },
+  "Builder": {
+   "container": [
+    [
+     "pubkey",
+     {
+      "vector": [
+       "uint8",
+       48
+      ]
+     }
+    ],
+    [
+     "version",
+     "uint8"
+    ],
+    [
+     "execution_address",
+     {
+      "vector": [
+       "uint8",
+       20
+      ]
+     }
+    ],
+    [
+     "balance",
+     "uint64"
+    ],
+    [
+     "deposit_epoch",
+     "uint64"
+    ],
+    [
+     "withdrawable_epoch",
+     "uint64"
+    ]
+   ]
+  },
+  "BuilderDepositRequest": {
+   "container": [
+    [
+     "pubkey",
+     {
+      "vector": [
+       "uint8",
+       48
+      ]
+     }
+    ],
+    [
+     "withdrawal_credentials",
+     {
+      "vector": [
+       "uint8",
+       32
+      ]
+     }
+    ],
+    [
+     "amount",
+     "uint64"
+    ],
+    [
+     "signature",
+     {
+      "vector": [
+       "uint8",
+       96
+      ]
+     }
+    ]
+   ]
+  },
+  "BuilderExitRequest": {
+   "container": [
+    [
+     "source_address",
+     {
+      "vector": [
+       "uint8",
+       20
+      ]
+     }
+    ],
+    [
+     "pubkey",
+     {
+      "vector": [
+       "uint8",
+       48
+      ]
+     }
+    ]
+   ]
+  },
+  "BuilderPendingPayment": {
+   "container": [
+    [
+     "weight",
+     "uint64"
+    ],
+    [
+     "withdrawal",
+     "BuilderPendingWithdrawal"
+    ],
+    [
+     "proposer_index",
+     "uint64"
+    ]
+   ]
+  },
+  "BuilderPendingWithdrawal": {
+   "container": [
+    [
+     "fee_recipient",
+     {
+      "vector": [
+       "uint8",
+       20
+      ]
+     }
+    ],
+    [
+     "amount",
+     "uint64"
+    ],
+    [
+     "builder_index",
+     "uint64"
+    ]
+   ]
+  },
+  "Checkpoint": {
+   "container": [
+    [
+     "epoch",
+     "uint64"
+    ],
+    [
+     "root",
+     {
+      "vector": [
+       "uint8",
+       32
+      ]
+     }
+    ]
+   ]
+  },
+  "ConsolidationRequest": {
+   "container": [
+    [
+     "source_address",
+     {
+      "vector": [
+       "uint8",
+       20
+      ]
+     }
+    ],
+    [
+     "source_pubkey",
+     {
+      "vector": [
+       "uint8",
+       48
+      ]
+     }
+    ],
+    [
+     "target_pubkey",
+     {
+      "vector": [
+       "uint8",
+       48
+      ]
+     }
+    ]
+   ]
+  },
+  "ContributionAndProof": {
+   "container": [
+    [
+     "aggregator_index",
+     "uint64"
+    ],
+    [
+     "contribution",
+     "SyncCommitteeContribution"
+    ],
+    [
+     "selection_proof",
+     {
+      "vector": [
+       "uint8",
+       96
+      ]
+     }
+    ]
+   ]
+  },
+  "DataColumnSidecar": {
+   "container": [
+    [
+     "index",
+     "uint64"
+    ],
+    [
+     "column",
+     {
+      "progressive_list": {
+       "vector": [
+        "uint8",
+        2048
+       ]
+      }
+     }
+    ],
+    [
+     "kzg_proofs",
+     {
+      "progressive_list": {
+       "vector": [
+        "uint8",
+        48
+       ]
+      }
+     }
+    ],
+    [
+     "slot",
+     "uint64"
+    ],
+    [
+     "beacon_block_root",
+     {
+      "vector": [
+       "uint8",
+       32
+      ]
+     }
+    ]
+   ]
+  },
+  "DataColumnsByRootIdentifier": {
+   "container": [
+    [
+     "block_root",
+     {
+      "vector": [
+       "uint8",
+       32
+      ]
+     }
+    ],
+    [
+     "columns",
+     {
+      "list": [
+       "uint64",
+       128
+      ]
+     }
+    ]
+   ]
+  },
+  "Deposit": {
+   "container": [
+    [
+     "proof",
+     {
+      "vector": [
+       {
+        "vector": [
+         "uint8",
+         32
+        ]
+       },
+       33
+      ]
+     }
+    ],
+    [
+     "data",
+     "DepositData"
+    ]
+   ]
+  },
+  "DepositData": {
+   "container": [
+    [
+     "pubkey",
+     {
+      "vector": [
+       "uint8",
+       48
+      ]
+     }
+    ],
+    [
+     "withdrawal_credentials",
+     {
+      "vector": [
+       "uint8",
+       32
+      ]
+     }
+    ],
+    [
+     "amount",
+     "uint64"
+    ],
+    [
+     "signature",
+     {
+      "vector": [
+       "uint8",
+       96
+      ]
+     }
+    ]
+   ]
+  },
+  "DepositMessage": {
+   "container": [
+    [
+     "pubkey",
+     {
+      "vector": [
+       "uint8",
+       48
+      ]
+     }
+    ],
+    [
+     "withdrawal_credentials",
+     {
+      "vector": [
+       "uint8",
+       32
+      ]
+     }
+    ],
+    [
+     "amount",
+     "uint64"
+    ]
+   ]
+  },
+  "DepositRequest": {
+   "container": [
+    [
+     "pubkey",
+     {
+      "vector": [
+       "uint8",
+       48
+      ]
+     }
+    ],
+    [
+     "withdrawal_credentials",
+     {
+      "vector": [
+       "uint8",
+       32
+      ]
+     }
+    ],
+    [
+     "amount",
+     "uint64"
+    ],
+    [
+     "signature",
+     {
+      "vector": [
+       "uint8",
+       96
+      ]
+     }
+    ],
+    [
+     "index",
+     "uint64"
+    ]
+   ]
+  },
+  "Eth1Block": {
+   "container": [
+    [
+     "timestamp",
+     "uint64"
+    ],
+    [
+     "deposit_root",
+     {
+      "vector": [
+       "uint8",
+       32
+      ]
+     }
+    ],
+    [
+     "deposit_count",
+     "uint64"
+    ]
+   ]
+  },
+  "Eth1Data": {
+   "container": [
+    [
+     "deposit_root",
+     {
+      "vector": [
+       "uint8",
+       32
+      ]
+     }
+    ],
+    [
+     "deposit_count",
+     "uint64"
+    ],
+    [
+     "block_hash",
+     {
+      "vector": [
+       "uint8",
+       32
+      ]
+     }
+    ]
+   ]
+  },
+  "ExecutionPayload": {
+   "progressive_container": {
+    "active_fields": [
+     1,
+     1,
+     1,
+     1,
+     1,
+     1,
+     1,
+     1,
+     1,
+     1,
+     1,
+     1,
+     1,
+     1,
+     1,
+     1,
+     1,
+     1,
+     1
+    ],
+    "fields": [
+     [
+      "parent_hash",
+      {
+       "vector": [
+        "uint8",
+        32
+       ]
+      }
+     ],
+     [
+      "fee_recipient",
+      {
+       "vector": [
+        "uint8",
+        20
+       ]
+      }
+     ],
+     [
+      "state_root",
+      {
+       "vector": [
+        "uint8",
+        32
+       ]
+      }
+     ],
+     [
+      "receipts_root",
+      {
+       "vector": [
+        "uint8",
+        32
+       ]
+      }
+     ],
+     [
+      "logs_bloom",
+      {
+       "vector": [
+        "uint8",
+        256
+       ]
+      }
+     ],
+     [
+      "prev_randao",
+      {
+       "vector": [
+        "uint8",
+        32
+       ]
+      }
+     ],
+     [
+      "block_number",
+      "uint64"
+     ],
+     [
+      "gas_limit",
+      "uint64"
+     ],
+     [
+      "gas_used",
+      "uint64"
+     ],
+     [
+      "timestamp",
+      "uint64"
+     ],
+     [
+      "extra_data",
+      {
+       "list": [
+        "uint8",
+        32
+       ]
+      }
+     ],
+     [
+      "base_fee_per_gas",
+      "uint256"
+     ],
+     [
+      "block_hash",
+      {
+       "vector": [
+        "uint8",
+        32
+       ]
+      }
+     ],
+     [
+      "transactions",
+      {
+       "progressive_list": {
+        "progressive_list": "uint8"
+       }
+      }
+     ],
+     [
+      "withdrawals",
+      {
+       "progressive_list": "Withdrawal"
+      }
+     ],
+     [
+      "blob_gas_used",
+      "uint64"
+     ],
+     [
+      "excess_blob_gas",
+      "uint64"
+     ],
+     [
+      "block_access_list",
+      {
+       "progressive_list": "uint8"
+      }
+     ],
+     [
+      "slot_number",
+      "uint64"
+     ]
+    ]
+   }
+  },
+  "ExecutionPayloadBid": {
+   "progressive_container": {
+    "active_fields": [
+     1,
+     1,
+     1,
+     1,
+     1,
+     1,
+     1,
+     1,
+     1,
+     1,
+     1,
+     1
+    ],
+    "fields": [
+     [
+      "parent_block_hash",
+      {
+       "vector": [
+        "uint8",
+        32
+       ]
+      }
+     ],
+     [
+      "parent_block_root",
+      {
+       "vector": [
+        "uint8",
+        32
+       ]
+      }
+     ],
+     [
+      "block_hash",
+      {
+       "vector": [
+        "uint8",
+        32
+       ]
+      }
+     ],
+     [
+      "prev_randao",
+      {
+       "vector": [
+        "uint8",
+        32
+       ]
+      }
+     ],
+     [
+      "fee_recipient",
+      {
+       "vector": [
+        "uint8",
+        20
+       ]
+      }
+     ],
+     [
+      "gas_limit",
+      "uint64"
+     ],
+     [
+      "builder_index",
+      "uint64"
+     ],
+     [
+      "slot",
+      "uint64"
+     ],
+     [
+      "value",
+      "uint64"
+     ],
+     [
+      "execution_payment",
+      "uint64"
+     ],
+     [
+      "blob_kzg_commitments",
+      {
+       "progressive_list": {
+        "vector": [
+         "uint8",
+         48
+        ]
+       }
+      }
+     ],
+     [
+      "execution_requests_root",
+      {
+       "vector": [
+        "uint8",
+        32
+       ]
+      }
+     ]
+    ]
+   }
+  },
+  "ExecutionPayloadEnvelope": {
+   "progressive_container": {
+    "active_fields": [
+     1,
+     1,
+     1,
+     1,
+     1
+    ],
+    "fields": [
+     [
+      "payload",
+      "ExecutionPayload"
+     ],
+     [
+      "execution_requests",
+      "ExecutionRequests"
+     ],
+     [
+      "builder_index",
+      "uint64"
+     ],
+     [
+      "beacon_block_root",
+      {
+       "vector": [
+        "uint8",
+        32
+       ]
+      }
+     ],
+     [
+      "parent_beacon_block_root",
+      {
+       "vector": [
+        "uint8",
+        32
+       ]
+      }
+     ]
+    ]
+   }
+  },
+  "ExecutionRequests": {
+   "progressive_container": {
+    "active_fields": [
+     1,
+     1,
+     1,
+     1,
+     1
+    ],
+    "fields": [
+     [
+      "deposits",
+      {
+       "progressive_list": "DepositRequest"
+      }
+     ],
+     [
+      "withdrawals",
+      {
+       "progressive_list": "WithdrawalRequest"
+      }
+     ],
+     [
+      "consolidations",
+      {
+       "progressive_list": "ConsolidationRequest"
+      }
+     ],
+     [
+      "builder_deposits",
+      {
+       "progressive_list": "BuilderDepositRequest"
+      }
+     ],
+     [
+      "builder_exits",
+      {
+       "progressive_list": "BuilderExitRequest"
+      }
+     ]
+    ]
+   }
+  },
+  "Fork": {
+   "container": [
+    [
+     "previous_version",
+     {
+      "vector": [
+       "uint8",
+       4
+      ]
+     }
+    ],
+    [
+     "current_version",
+     {
+      "vector": [
+       "uint8",
+       4
+      ]
+     }
+    ],
+    [
+     "epoch",
+     "uint64"
+    ]
+   ]
+  },
+  "ForkData": {
+   "container": [
+    [
+     "current_version",
+     {
+      "vector": [
+       "uint8",
+       4
+      ]
+     }
+    ],
+    [
+     "genesis_validators_root",
+     {
+      "vector": [
+       "uint8",
+       32
+      ]
+     }
+    ]
+   ]
+  },
+  "HistoricalSummary": {
+   "container": [
+    [
+     "block_summary_root",
+     {
+      "vector": [
+       "uint8",
+       32
+      ]
+     }
+    ],
+    [
+     "state_summary_root",
+     {
+      "vector": [
+       "uint8",
+       32
+      ]
+     }
+    ]
+   ]
+  },
+  "IndexedAttestation": {
+   "progressive_container": {
+    "active_fields": [
+     1,
+     1,
+     1
+    ],
+    "fields": [
+     [
+      "attesting_indices",
+      {
+       "progressive_list": "uint64"
+      }
+     ],
+     [
+      "data",
+      "AttestationData"
+     ],
+     [
+      "signature",
+      {
+       "vector": [
+        "uint8",
+        96
+       ]
+      }
+     ]
+    ]
+   }
+  },
+  "IndexedPayloadAttestation": {
+   "progressive_container": {
+    "active_fields": [
+     1,
+     1,
+     1
+    ],
+    "fields": [
+     [
+      "attesting_indices",
+      {
+       "list": [
+        "uint64",
+        16
+       ]
+      }
+     ],
+     [
+      "data",
+      "PayloadAttestationData"
+     ],
+     [
+      "signature",
+      {
+       "vector": [
+        "uint8",
+        96
+       ]
+      }
+     ]
+    ]
+   }
+  },
+  "LightClientBootstrap": {
+   "container": [
+    [
+     "header",
+     "LightClientHeader"
+    ],
+    [
+     "current_sync_committee",
+     "SyncCommittee"
+    ],
+    [
+     "current_sync_committee_branch",
+     {
+      "vector": [
+       {
+        "vector": [
+         "uint8",
+         32
+        ]
+       },
+       11
+      ]
+     }
+    ]
+   ]
+  },
+  "LightClientFinalityUpdate": {
+   "container": [
+    [
+     "attested_header",
+     "LightClientHeader"
+    ],
+    [
+     "finalized_header",
+     "LightClientHeader"
+    ],
+    [
+     "finality_branch",
+     {
+      "vector": [
+       {
+        "vector": [
+         "uint8",
+         32
+        ]
+       },
+       9
+      ]
+     }
+    ],
+    [
+     "sync_aggregate",
+     "SyncAggregate"
+    ],
+    [
+     "signature_slot",
+     "uint64"
+    ]
+   ]
+  },
+  "LightClientHeader": {
+   "container": [
+    [
+     "beacon",
+     "BeaconBlockHeader"
+    ],
+    [
+     "execution_block_hash",
+     {
+      "vector": [
+       "uint8",
+       32
+      ]
+     }
+    ],
+    [
+     "execution_branch",
+     {
+      "vector": [
+       {
+        "vector": [
+         "uint8",
+         32
+        ]
+       },
+       11
+      ]
+     }
+    ]
+   ]
+  },
+  "LightClientOptimisticUpdate": {
+   "container": [
+    [
+     "attested_header",
+     "LightClientHeader"
+    ],
+    [
+     "sync_aggregate",
+     "SyncAggregate"
+    ],
+    [
+     "signature_slot",
+     "uint64"
+    ]
+   ]
+  },
+  "LightClientUpdate": {
+   "container": [
+    [
+     "attested_header",
+     "LightClientHeader"
+    ],
+    [
+     "next_sync_committee",
+     "SyncCommittee"
+    ],
+    [
+     "next_sync_committee_branch",
+     {
+      "vector": [
+       {
+        "vector": [
+         "uint8",
+         32
+        ]
+       },
+       11
+      ]
+     }
+    ],
+    [
+     "finalized_header",
+     "LightClientHeader"
+    ],
+    [
+     "finality_branch",
+     {
+      "vector": [
+       {
+        "vector": [
+         "uint8",
+         32
+        ]
+       },
+       9
+      ]
+     }
+    ],
+    [
+     "sync_aggregate",
+     "SyncAggregate"
+    ],
+    [
+     "signature_slot",
+     "uint64"
+    ]
+   ]
+  },
+  "MatrixEntry": {
+   "container": [
+    [
+     "cell",
+     {
+      "vector": [
+       "uint8",
+       2048
+      ]
+     }
+    ],
+    [
+     "kzg_proof",
+     {
+      "vector": [
+       "uint8",
+       48
+      ]
+     }
+    ],
+    [
+     "column_index",
+     "uint64"
+    ],
+    [
+     "row_index",
+     "uint64"
+    ]
+   ]
+  },
+  "NewPayloadRequest": {
+   "progressive_container": {
+    "active_fields": [
+     1,
+     1,
+     1,
+     1
+    ],
+    "fields": [
+     [
+      "execution_payload",
+      "ExecutionPayload"
+     ],
+     [
+      "versioned_hashes",
+      {
+       "list": [
+        {
+         "vector": [
+          "uint8",
+          32
+         ]
+        },
+        4096
+       ]
+      }
+     ],
+     [
+      "parent_beacon_block_root",
+      {
+       "vector": [
+        "uint8",
+        32
+       ]
+      }
+     ],
+     [
+      "execution_requests",
+      "ExecutionRequests"
+     ]
+    ]
+   }
+  },
+  "PartialDataColumnGroupID": {
+   "container": [
+    [
+     "beacon_block_root",
+     {
+      "vector": [
+       "uint8",
+       32
+      ]
+     }
+    ],
+    [
+     "slot",
+     "uint64"
+    ]
+   ]
+  },
+  "PartialDataColumnPartsMetadata": {
+   "container": [
+    [
+     "available",
+     "progressive_bitlist"
+    ],
+    [
+     "requests",
+     "progressive_bitlist"
+    ]
+   ]
+  },
+  "PartialDataColumnSidecar": {
+   "container": [
+    [
+     "cells_present_bitmap",
+     "progressive_bitlist"
+    ],
+    [
+     "partial_column",
+     {
+      "progressive_list": {
+       "vector": [
+        "uint8",
+        2048
+       ]
+      }
+     }
+    ],
+    [
+     "kzg_proofs",
+     {
+      "progressive_list": {
+       "vector": [
+        "uint8",
+        48
+       ]
+      }
+     }
+    ]
+   ]
+  },
+  "PayloadAttestation": {
+   "progressive_container": {
+    "active_fields": [
+     1,
+     1,
+     1
+    ],
+    "fields": [
+     [
+      "aggregation_bits",
+      {
+       "bitvector": 16
+      }
+     ],
+     [
+      "data",
+      "PayloadAttestationData"
+     ],
+     [
+      "signature",
+      {
+       "vector": [
+        "uint8",
+        96
+       ]
+      }
+     ]
+    ]
+   }
+  },
+  "PayloadAttestationData": {
+   "container": [
+    [
+     "beacon_block_root",
+     {
+      "vector": [
+       "uint8",
+       32
+      ]
+     }
+    ],
+    [
+     "slot",
+     "uint64"
+    ],
+    [
+     "payload_present",
+     "boolean"
+    ],
+    [
+     "blob_data_available",
+     "boolean"
+    ]
+   ]
+  },
+  "PayloadAttestationMessage": {
+   "container": [
+    [
+     "validator_index",
+     "uint64"
+    ],
+    [
+     "data",
+     "PayloadAttestationData"
+    ],
+    [
+     "signature",
+     {
+      "vector": [
+       "uint8",
+       96
+      ]
+     }
+    ]
+   ]
+  },
+  "PendingConsolidation": {
+   "container": [
+    [
+     "source_index",
+     "uint64"
+    ],
+    [
+     "target_index",
+     "uint64"
+    ]
+   ]
+  },
+  "PendingDeposit": {
+   "container": [
+    [
+     "pubkey",
+     {
+      "vector": [
+       "uint8",
+       48
+      ]
+     }
+    ],
+    [
+     "withdrawal_credentials",
+     {
+      "vector": [
+       "uint8",
+       32
+      ]
+     }
+    ],
+    [
+     "amount",
+     "uint64"
+    ],
+    [
+     "signature",
+     {
+      "vector": [
+       "uint8",
+       96
+      ]
+     }
+    ],
+    [
+     "slot",
+     "uint64"
+    ]
+   ]
+  },
+  "PendingPartialWithdrawal": {
+   "container": [
+    [
+     "validator_index",
+     "uint64"
+    ],
+    [
+     "amount",
+     "uint64"
+    ],
+    [
+     "withdrawable_epoch",
+     "uint64"
+    ]
+   ]
+  },
+  "PowBlock": {
+   "container": [
+    [
+     "block_hash",
+     {
+      "vector": [
+       "uint8",
+       32
+      ]
+     }
+    ],
+    [
+     "parent_hash",
+     {
+      "vector": [
+       "uint8",
+       32
+      ]
+     }
+    ],
+    [
+     "total_difficulty",
+     "uint256"
+    ]
+   ]
+  },
+  "ProposerPreferences": {
+   "container": [
+    [
+     "dependent_root",
+     {
+      "vector": [
+       "uint8",
+       32
+      ]
+     }
+    ],
+    [
+     "proposal_slot",
+     "uint64"
+    ],
+    [
+     "validator_index",
+     "uint64"
+    ],
+    [
+     "fee_recipient",
+     {
+      "vector": [
+       "uint8",
+       20
+      ]
+     }
+    ],
+    [
+     "target_gas_limit",
+     "uint64"
+    ]
+   ]
+  },
+  "ProposerSlashing": {
+   "container": [
+    [
+     "signed_header_1",
+     "SignedBeaconBlockHeader"
+    ],
+    [
+     "signed_header_2",
+     "SignedBeaconBlockHeader"
+    ]
+   ]
+  },
+  "SignedAggregateAndProof": {
+   "container": [
+    [
+     "message",
+     "AggregateAndProof"
+    ],
+    [
+     "signature",
+     {
+      "vector": [
+       "uint8",
+       96
+      ]
+     }
+    ]
+   ]
+  },
+  "SignedBLSToExecutionChange": {
+   "container": [
+    [
+     "message",
+     "BLSToExecutionChange"
+    ],
+    [
+     "signature",
+     {
+      "vector": [
+       "uint8",
+       96
+      ]
+     }
+    ]
+   ]
+  },
+  "SignedBeaconBlock": {
+   "container": [
+    [
+     "message",
+     "BeaconBlock"
+    ],
+    [
+     "signature",
+     {
+      "vector": [
+       "uint8",
+       96
+      ]
+     }
+    ]
+   ]
+  },
+  "SignedBeaconBlockHeader": {
+   "container": [
+    [
+     "message",
+     "BeaconBlockHeader"
+    ],
+    [
+     "signature",
+     {
+      "vector": [
+       "uint8",
+       96
+      ]
+     }
+    ]
+   ]
+  },
+  "SignedContributionAndProof": {
+   "container": [
+    [
+     "message",
+     "ContributionAndProof"
+    ],
+    [
+     "signature",
+     {
+      "vector": [
+       "uint8",
+       96
+      ]
+     }
+    ]
+   ]
+  },
+  "SignedExecutionPayloadBid": {
+   "container": [
+    [
+     "message",
+     "ExecutionPayloadBid"
+    ],
+    [
+     "signature",
+     {
+      "vector": [
+       "uint8",
+       96
+      ]
+     }
+    ]
+   ]
+  },
+  "SignedExecutionPayloadEnvelope": {
+   "container": [
+    [
+     "message",
+     "ExecutionPayloadEnvelope"
+    ],
+    [
+     "signature",
+     {
+      "vector": [
+       "uint8",
+       96
+      ]
+     }
+    ]
+   ]
+  },
+  "SignedProposerPreferences": {
+   "container": [
+    [
+     "message",
+     "ProposerPreferences"
+    ],
+    [
+     "signature",
+     {
+      "vector": [
+       "uint8",
+       96
+      ]
+     }
+    ]
+   ]
+  },
+  "SignedVoluntaryExit": {
+   "container": [
+    [
+     "message",
+     "VoluntaryExit"
+    ],
+    [
+     "signature",
+     {
+      "vector": [
+       "uint8",
+       96
+      ]
+     }
+    ]
+   ]
+  },
+  "SigningData": {
+   "container": [
+    [
+     "object_root",
+     {
+      "vector": [
+       "uint8",
+       32
+      ]
+     }
+    ],
+    [
+     "domain",
+     {
+      "vector": [
+       "uint8",
+       32
+      ]
+     }
+    ]
+   ]
+  },
+  "SingleAttestation": {
+   "container": [
+    [
+     "committee_index",
+     "uint64"
+    ],
+    [
+     "attester_index",
+     "uint64"
+    ],
+    [
+     "data",
+     "AttestationData"
+    ],
+    [
+     "signature",
+     {
+      "vector": [
+       "uint8",
+       96
+      ]
+     }
+    ]
+   ]
+  },
+  "SyncAggregate": {
+   "container": [
+    [
+     "sync_committee_bits",
+     {
+      "bitvector": 32
+     }
+    ],
+    [
+     "sync_committee_signature",
+     {
+      "vector": [
+       "uint8",
+       96
+      ]
+     }
+    ]
+   ]
+  },
+  "SyncAggregatorSelectionData": {
+   "container": [
+    [
+     "slot",
+     "uint64"
+    ],
+    [
+     "subcommittee_index",
+     "uint64"
+    ]
+   ]
+  },
+  "SyncCommittee": {
+   "container": [
+    [
+     "pubkeys",
+     {
+      "vector": [
+       {
+        "vector": [
+         "uint8",
+         48
+        ]
+       },
+       32
+      ]
+     }
+    ],
+    [
+     "aggregate_pubkey",
+     {
+      "vector": [
+       "uint8",
+       48
+      ]
+     }
+    ]
+   ]
+  },
+  "SyncCommitteeContribution": {
+   "container": [
+    [
+     "slot",
+     "uint64"
+    ],
+    [
+     "beacon_block_root",
+     {
+      "vector": [
+       "uint8",
+       32
+      ]
+     }
+    ],
+    [
+     "subcommittee_index",
+     "uint64"
+    ],
+    [
+     "aggregation_bits",
+     {
+      "bitvector": 8
+     }
+    ],
+    [
+     "signature",
+     {
+      "vector": [
+       "uint8",
+       96
+      ]
+     }
+    ]
+   ]
+  },
+  "SyncCommitteeMessage": {
+   "container": [
+    [
+     "slot",
+     "uint64"
+    ],
+    [
+     "beacon_block_root",
+     {
+      "vector": [
+       "uint8",
+       32
+      ]
+     }
+    ],
+    [
+     "validator_index",
+     "uint64"
+    ],
+    [
+     "signature",
+     {
+      "vector": [
+       "uint8",
+       96
+      ]
+     }
+    ]
+   ]
+  },
+  "Validator": {
+   "container": [
+    [
+     "pubkey",
+     {
+      "vector": [
+       "uint8",
+       48
+      ]
+     }
+    ],
+    [
+     "withdrawal_credentials",
+     {
+      "vector": [
+       "uint8",
+       32
+      ]
+     }
+    ],
+    [
+     "effective_balance",
+     "uint64"
+    ],
+    [
+     "slashed",
+     "boolean"
+    ],
+    [
+     "activation_eligibility_epoch",
+     "uint64"
+    ],
+    [
+     "activation_epoch",
+     "uint64"
+    ],
+    [
+     "exit_epoch",
+     "uint64"
+    ],
+    [
+     "withdrawable_epoch",
+     "uint64"
+    ]
+   ]
+  },
+  "VoluntaryExit": {
+   "container": [
+    [
+     "epoch",
+     "uint64"
+    ],
+    [
+     "validator_index",
+     "uint64"
+    ]
+   ]
+  },
+  "Withdrawal": {
+   "container": [
+    [
+     "index",
+     "uint64"
+    ],
+    [
+     "validator_index",
+     "uint64"
+    ],
+    [
+     "address",
+     {
+      "vector": [
+       "uint8",
+       20
+      ]
+     }
+    ],
+    [
+     "amount",
+     "uint64"
+    ]
+   ]
+  },
+  "WithdrawalRequest": {
+   "container": [
+    [
+     "source_address",
+     {
+      "vector": [
+       "uint8",
+       20
+      ]
+     }
+    ],
+    [
+     "validator_pubkey",
+     {
+      "vector": [
+       "uint8",
+       48
+      ]
+     }
+    ],
+    [
+     "amount",
+     "uint64"
+    ]
+   ]
+  }
+ },
+ "x-spectec": {
+  "fork": "gloas",
+  "preset": "minimal",
+  "types": {
+   "attestation": "Attestation",
+   "attestationData": "AttestationData",
+   "attesterSlashing": "AttesterSlashing",
+   "beaconBlock": "BeaconBlock",
+   "beaconBlockBody": "BeaconBlockBody",
+   "beaconBlockHeader": "BeaconBlockHeader",
+   "beaconState": "BeaconState",
+   "blsToExecutionChange": "BLSToExecutionChange",
+   "builder": "Builder",
+   "builderDepositRequest": "BuilderDepositRequest",
+   "builderExitRequest": "BuilderExitRequest",
+   "builderPendingPayment": "BuilderPendingPayment",
+   "builderPendingWithdrawal": "BuilderPendingWithdrawal",
+   "checkpoint": "Checkpoint",
+   "consolidationRequest": "ConsolidationRequest",
+   "deposit": "Deposit",
+   "depositData": "DepositData",
+   "depositMessage": "DepositMessage",
+   "depositRequest": "DepositRequest",
+   "eth1Data": "Eth1Data",
+   "executionPayload": "ExecutionPayload",
+   "executionPayloadBid": "ExecutionPayloadBid",
+   "executionPayloadEnvelope": "ExecutionPayloadEnvelope",
+   "executionRequests": "ExecutionRequests",
+   "fork": "Fork",
+   "forkdata": "ForkData",
+   "historicalSummary": "HistoricalSummary",
+   "indexedAttestation": "IndexedAttestation",
+   "indexedPayloadAttestation": "IndexedPayloadAttestation",
+   "payloadAttestation": "PayloadAttestation",
+   "payloadAttestationData": "PayloadAttestationData",
+   "pendingConsolidation": "PendingConsolidation",
+   "pendingDeposit": "PendingDeposit",
+   "pendingPartialWithdrawal": "PendingPartialWithdrawal",
+   "proposerSlashing": "ProposerSlashing",
+   "signedBeaconBlock": "SignedBeaconBlock",
+   "signedBeaconBlockHeader": "SignedBeaconBlockHeader",
+   "signedBlsToExecutionChange": "SignedBLSToExecutionChange",
+   "signedExecutionPayloadBid": "SignedExecutionPayloadBid",
+   "signedExecutionPayloadEnvelope": "SignedExecutionPayloadEnvelope",
+   "signedVoluntaryExit": "SignedVoluntaryExit",
+   "singleAttestation": "SingleAttestation",
+   "syncAggregate": "SyncAggregate",
+   "syncCommittee": "SyncCommittee",
+   "validator": "Validator",
+   "voluntaryExit": "VoluntaryExit",
+   "withdrawal": "Withdrawal",
+   "withdrawalRequest": "WithdrawalRequest"
+  }
+ }
+}

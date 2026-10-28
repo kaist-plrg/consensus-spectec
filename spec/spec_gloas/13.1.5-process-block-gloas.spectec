@@ -1,0 +1,315 @@
+;; =========================
+;; [Gloas:EIP7732] block processing: execution payload bid, parent execution payload,
+;; payload attestations and builder requests
+;; =========================
+
+;; --- Execution payload bid ---
+
+;; [Gloas] verify_execution_payload_bid_signature(BeaconState, SignedExecutionPayloadBid) -> bool
+dec $verify_execution_payload_bid_signature(beaconState, signedExecutionPayloadBid) : bool
+def $verify_execution_payload_bid_signature(state, signedExecutionPayloadBid)
+  = $bls_verify(state.BUILDERS[builderIndex].PUBKEY, root_signing, signedExecutionPayloadBid.SIGNATURE)
+  -- if signedExecutionPayloadBid.MESSAGE.BUILDER_INDEX = builderIndex
+  ;; inserted guard (python raises IndexError)
+  -- if $(builderIndex < |state.BUILDERS|)
+  -- if $get_domain(state, $DOMAIN_BEACON_BUILDER, eps) = domain
+  -- if $compute_signing_root_executionPayloadBid(signedExecutionPayloadBid.MESSAGE, domain) = root_signing
+
+;; [Custom | branch : process_execution_payload_bid] the checks on the bid source
+dec $is_valid_bid_source(beaconState, signedExecutionPayloadBid) : bool
+;; self-build: the amount is zero and the signature is the point at infinity
+def $is_valid_bid_source(state, signedExecutionPayloadBid) = true
+  -- if signedExecutionPayloadBid.MESSAGE.BUILDER_INDEX = $BUILDER_INDEX_SELF_BUILD
+  -- if signedExecutionPayloadBid.MESSAGE.VALUE = 0
+  -- if signedExecutionPayloadBid.SIGNATURE = $G2_POINT_AT_INFINITY
+;; builder: active, a payload builder, can cover the bid, valid signature
+def $is_valid_bid_source(state, signedExecutionPayloadBid) = true
+  -- if signedExecutionPayloadBid.MESSAGE.BUILDER_INDEX = builderIndex
+  -- if builderIndex =/= $BUILDER_INDEX_SELF_BUILD
+  -- if $is_active_builder(state, builderIndex) = true
+  -- if state.BUILDERS[builderIndex].VERSION = $PAYLOAD_BUILDER_VERSION
+  -- if $can_builder_cover_bid(state, builderIndex, signedExecutionPayloadBid.MESSAGE.VALUE) = true
+  -- if $verify_execution_payload_bid_signature(state, signedExecutionPayloadBid) = true
+def $is_valid_bid_source(state, signedExecutionPayloadBid) = false
+  -- otherwise
+
+;; [Custom | assert : process_execution_payload_bid] the checks on the bid content
+dec $is_valid_bid(beaconState, signedExecutionPayloadBid) : bool
+def $is_valid_bid(state, signedExecutionPayloadBid) = true
+  -- if signedExecutionPayloadBid.MESSAGE = executionPayloadBid
+  -- if $is_valid_bid_source(state, signedExecutionPayloadBid) = true
+  ;; Verify commitments are under limit
+  -- if $(|executionPayloadBid.BLOB_KZG_COMMITMENTS|
+          <= $get_blob_parameters($get_current_epoch(state)).MAX_BLOBS_PER_BLOCK)
+  ;; Verify that the bid is for the current slot
+  -- if executionPayloadBid.SLOT = state.SLOT
+  -- if $(state.SLOT > $GENESIS_SLOT)
+  ;; Verify that the bid is for the right parent block
+  -- if executionPayloadBid.PARENT_BLOCK_HASH = state.LATEST_BLOCK_HASH
+  ;; Verify that the bid's block hash differs from its parent block hash
+  -- if executionPayloadBid.BLOCK_HASH =/= executionPayloadBid.PARENT_BLOCK_HASH
+  -- if executionPayloadBid.PARENT_BLOCK_ROOT = $get_block_root_at_slot(state, $(state.SLOT - 1))
+  -- if executionPayloadBid.PREV_RANDAO = $get_randao_mix(state, $get_current_epoch(state))
+def $is_valid_bid(state, signedExecutionPayloadBid) = false
+  -- otherwise
+
+;; [Gloas] process_execution_payload_bid(state, signed_bid)
+;;  mutates: .BUILDER_PENDING_PAYMENTS, .LATEST_EXECUTION_PAYLOAD_BID
+relation ProcessExecutionPayloadBid:
+  beaconState signedExecutionPayloadBid ~> beaconState
+  hint(input %0 %1)
+
+;; a positive amount: record the pending payment
+rule ProcessExecutionPayloadBid/payment:
+  state signedExecutionPayloadBid
+  ~> state[.BUILDER_PENDING_PAYMENTS[uint64_i] = builderPendingPayment]
+          [.LATEST_EXECUTION_PAYLOAD_BID = executionPayloadBid]
+  -- if signedExecutionPayloadBid.MESSAGE = executionPayloadBid
+  ;; assert
+  -- if $is_valid_bid(state, signedExecutionPayloadBid) = true
+  -- if $(executionPayloadBid.VALUE > 0)
+  -- if builderPendingPayment =
+       { WEIGHT 0,
+         WITHDRAWAL { FEE_RECIPIENT executionPayloadBid.FEE_RECIPIENT,
+                      AMOUNT executionPayloadBid.VALUE,
+                      BUILDER_INDEX executionPayloadBid.BUILDER_INDEX },
+         PROPOSER_INDEX $get_beacon_proposer_index(state) }
+  -- if $(executionPayloadBid.SLOT \ $SLOTS_PER_EPOCH) = uint64_s
+  -- if $($SLOTS_PER_EPOCH + uint64_s) = uint64_i
+  ;; inserted guard (python raises IndexError)
+  -- if $(uint64_i < |state.BUILDER_PENDING_PAYMENTS|)
+
+;; a zero amount: cache the bid only
+rule ProcessExecutionPayloadBid/no_payment:
+  state signedExecutionPayloadBid ~> state[.LATEST_EXECUTION_PAYLOAD_BID = executionPayloadBid]
+  -- if signedExecutionPayloadBid.MESSAGE = executionPayloadBid
+  ;; assert
+  -- if $is_valid_bid(state, signedExecutionPayloadBid) = true
+  -- if executionPayloadBid.VALUE = 0
+
+;; --- Payload attestations ---
+
+;; [Gloas] process_payload_attestation(state, payload_attestation)
+relation ProcessPayloadAttestation:
+  beaconState payloadAttestation ~> beaconState
+  hint(input %0 %1)
+
+rule ProcessPayloadAttestation:
+  state payloadAttestation ~> state
+  ;; Check that the attestation is for the parent beacon block
+  -- if payloadAttestation.DATA.BEACON_BLOCK_ROOT = state.LATEST_BLOCK_HEADER.PARENT_ROOT
+  ;; Check that the attestation is for the previous slot
+  -- if $(payloadAttestation.DATA.SLOT + 1 = state.SLOT)
+  ;; Verify signature
+  -- if $is_valid_indexed_payload_attestation(state, $get_indexed_payload_attestation(state, payloadAttestation)) = true
+
+relation ProcessPayloadAttestations:
+  beaconState payloadAttestation* ~> beaconState
+  hint(input %0 %1)
+
+rule ProcessPayloadAttestations/fold:
+  state payloadAttestation* ~> state_out
+  -- (ProcessPayloadAttestation: state_cur payloadAttestation ~> state_next)*{
+       state -> state_cur ... state_next -> state_out
+     }
+
+;; --- Builder deposit requests ---
+
+;; [Gloas:EIP8282] process_builder_deposit_request(state, request)
+;;  mutates: .BUILDERS
+relation ProcessBuilderDepositRequest:
+  beaconState builderDepositRequest ~> beaconState
+  hint(input %0 %1)
+
+;; Ignore deposits with unexpected withdrawal credential prefixes
+rule ProcessBuilderDepositRequest/ignored:
+  state builderDepositRequest ~> state
+  -- if $is_builder_withdrawal_credential(builderDepositRequest.WITHDRAWAL_CREDENTIALS) = false
+
+;; new pubkey with a valid signature: add the builder
+rule ProcessBuilderDepositRequest/new_valid_sig:
+  state builderDepositRequest ~> state_out
+  -- if $is_builder_withdrawal_credential(builderDepositRequest.WITHDRAWAL_CREDENTIALS) = true
+  -- if ~( builderDepositRequest.PUBKEY <- $builder_pubkeys(state) )
+  -- if $is_valid_builder_deposit_signature(builderDepositRequest) = true
+  -- AddBuilderToRegistry:
+       state '.' BUILDERS '++' `{ builderDepositRequest.PUBKEY $PAYLOAD_BUILDER_VERSION
+                                 $extract_execution_address(builderDepositRequest.WITHDRAWAL_CREDENTIALS)
+                                 builderDepositRequest.AMOUNT state.SLOT `}
+       ~> state_out
+
+;; new pubkey with an invalid signature: no change
+rule ProcessBuilderDepositRequest/new_invalid_sig:
+  state builderDepositRequest ~> state
+  -- if $is_builder_withdrawal_credential(builderDepositRequest.WITHDRAWAL_CREDENTIALS) = true
+  -- if ~( builderDepositRequest.PUBKEY <- $builder_pubkeys(state) )
+  -- if $is_valid_builder_deposit_signature(builderDepositRequest) = false
+
+;; existing builder, exited and swept: reset the withdrawable epoch, then top up
+rule ProcessBuilderDepositRequest/existing_swept:
+  state builderDepositRequest
+  ~> state[.BUILDERS[builderIndex] = builder[.WITHDRAWABLE_EPOCH = $($get_current_epoch(state) + $MIN_BUILDER_WITHDRAWABILITY_DELAY)]
+                                            [.BALANCE = $(builder.BALANCE + builderDepositRequest.AMOUNT)]]
+  -- if $is_builder_withdrawal_credential(builderDepositRequest.WITHDRAWAL_CREDENTIALS) = true
+  -- if $builder_pubkeys(state) = blsPubkey*
+  -- if ( builderDepositRequest.PUBKEY <- blsPubkey* )
+  -- if $index_of_<blsPubkey>(blsPubkey*, builderDepositRequest.PUBKEY) = builderIndex
+  -- if state.BUILDERS[builderIndex] = builder
+  -- if builder.WITHDRAWABLE_EPOCH =/= $FAR_FUTURE_EPOCH
+  -- if builder.BALANCE = 0
+
+;; existing builder otherwise: top up
+rule ProcessBuilderDepositRequest/existing:
+  state builderDepositRequest
+  ~> state[.BUILDERS[builderIndex].BALANCE = $(builder.BALANCE + builderDepositRequest.AMOUNT)]
+  -- if $is_builder_withdrawal_credential(builderDepositRequest.WITHDRAWAL_CREDENTIALS) = true
+  -- if $builder_pubkeys(state) = blsPubkey*
+  -- if ( builderDepositRequest.PUBKEY <- blsPubkey* )
+  -- if $index_of_<blsPubkey>(blsPubkey*, builderDepositRequest.PUBKEY) = builderIndex
+  -- if state.BUILDERS[builderIndex] = builder
+  -- if ~( (builder.WITHDRAWABLE_EPOCH =/= $FAR_FUTURE_EPOCH) /\ (builder.BALANCE = 0) )
+
+relation ProcessBuilderDepositRequests:
+  beaconState builderDepositRequest* ~> beaconState
+  hint(input %0 %1)
+
+rule ProcessBuilderDepositRequests/fold:
+  state builderDepositRequest* ~> state_out
+  -- (ProcessBuilderDepositRequest: state_cur builderDepositRequest ~> state_next)*{
+       state -> state_cur ... state_next -> state_out
+     }
+
+;; --- Builder exit requests ---
+
+;; [Custom | branch : process_builder_exit_request] the request exits a builder
+dec $is_valid_builder_exit_request(beaconState, builderExitRequest) : bool
+def $is_valid_builder_exit_request(state, builderExitRequest) = true
+  -- if $builder_pubkeys(state) = blsPubkey*
+  -- if ( builderExitRequest.PUBKEY <- blsPubkey* )
+  -- if $index_of_<blsPubkey>(blsPubkey*, builderExitRequest.PUBKEY) = builderIndex
+  -- if $is_active_builder(state, builderIndex) = true
+  -- if state.BUILDERS[builderIndex].EXECUTION_ADDRESS = builderExitRequest.SOURCE_ADDRESS
+  -- if $get_pending_balance_to_withdraw_for_builder(state, builderIndex) = 0
+def $is_valid_builder_exit_request(state, builderExitRequest) = false
+  -- otherwise
+
+;; [Gloas:EIP8282] process_builder_exit_request(state, request)
+relation ProcessBuilderExitRequest:
+  beaconState builderExitRequest ~> beaconState
+  hint(input %0 %1)
+
+rule ProcessBuilderExitRequest/exit:
+  state builderExitRequest ~> state_out
+  -- if $is_valid_builder_exit_request(state, builderExitRequest) = true
+  -- if $index_of_<blsPubkey>($builder_pubkeys(state), builderExitRequest.PUBKEY) = builderIndex
+  -- InitiateBuilderExit: state '.' BUILDERS `[ builderIndex `] ~> state_out
+
+rule ProcessBuilderExitRequest/ignored:
+  state builderExitRequest ~> state
+  -- if $is_valid_builder_exit_request(state, builderExitRequest) = false
+
+relation ProcessBuilderExitRequests:
+  beaconState builderExitRequest* ~> beaconState
+  hint(input %0 %1)
+
+rule ProcessBuilderExitRequests/fold:
+  state builderExitRequest* ~> state_out
+  -- (ProcessBuilderExitRequest: state_cur builderExitRequest ~> state_next)*{
+       state -> state_cur ... state_next -> state_out
+     }
+
+;; --- Parent execution payload ---
+
+;; [Custom] ExecutionRequests.empty()
+dec $empty_execution_requests : executionRequests
+def $empty_execution_requests
+  = { DEPOSITS eps, WITHDRAWALS eps, CONSOLIDATIONS eps, BUILDER_DEPOSITS eps, BUILDER_EXITS eps }
+
+;; [Custom | branch : apply_parent_execution_payload] settle the builder payment of the parent slot
+relation SettleParentBuilderPayment:
+  beaconState SETTLE_PARENT executionPayloadBid slot ~> beaconState
+  hint(input %0 %1 %2)
+
+;; parent in the current epoch
+rule SettleParentBuilderPayment/current:
+  state SETTLE_PARENT executionPayloadBid slot_parent ~> state_out
+  -- if $compute_epoch_at_slot(slot_parent) = $get_current_epoch(state)
+  -- if $(slot_parent \ $SLOTS_PER_EPOCH) = uint64_s
+  -- SettleBuilderPayment: state SETTLE $($SLOTS_PER_EPOCH + uint64_s) ~> state_out
+
+;; parent in the previous epoch
+rule SettleParentBuilderPayment/previous:
+  state SETTLE_PARENT executionPayloadBid slot_parent ~> state_out
+  -- if $compute_epoch_at_slot(slot_parent) =/= $get_current_epoch(state)
+  -- if $compute_epoch_at_slot(slot_parent) = $get_previous_epoch(state)
+  -- SettleBuilderPayment: state SETTLE $(slot_parent \ $SLOTS_PER_EPOCH) ~> state_out
+
+;; parent older than the previous epoch: its payment entry is gone, append the withdrawal
+rule SettleParentBuilderPayment/older:
+  state SETTLE_PARENT executionPayloadBid slot_parent
+  ~> state[.BUILDER_PENDING_WITHDRAWALS = state.BUILDER_PENDING_WITHDRAWALS ++ [builderPendingWithdrawal]]
+  -- if $compute_epoch_at_slot(slot_parent) =/= $get_current_epoch(state)
+  -- if $compute_epoch_at_slot(slot_parent) =/= $get_previous_epoch(state)
+  -- if $(executionPayloadBid.VALUE > 0)
+  -- if builderPendingWithdrawal =
+       { FEE_RECIPIENT executionPayloadBid.FEE_RECIPIENT,
+         AMOUNT executionPayloadBid.VALUE,
+         BUILDER_INDEX executionPayloadBid.BUILDER_INDEX }
+
+rule SettleParentBuilderPayment/older_zero:
+  state SETTLE_PARENT executionPayloadBid slot_parent ~> state
+  -- if $compute_epoch_at_slot(slot_parent) =/= $get_current_epoch(state)
+  -- if $compute_epoch_at_slot(slot_parent) =/= $get_previous_epoch(state)
+  -- if executionPayloadBid.VALUE = 0
+
+;; [Gloas] apply_parent_execution_payload(state, requests)
+;;  The execution requests are processed at the child's slot.
+relation ApplyParentExecutionPayload:
+  beaconState executionRequests ~> beaconState
+  hint(input %0 %1)
+
+rule ApplyParentExecutionPayload:
+  state executionRequests
+  ~> state_5[.EXECUTION_PAYLOAD_AVAILABILITY[uint64_i] = true]
+            [.LATEST_BLOCK_HASH = executionPayloadBid_parent.BLOCK_HASH]
+  -- if state.LATEST_EXECUTION_PAYLOAD_BID = executionPayloadBid_parent
+  -- if state.LATEST_BLOCK_HEADER.SLOT = slot_parent
+  ;; assert
+  -- if $(|executionRequests.WITHDRAWALS| <= $MAX_WITHDRAWAL_REQUESTS_PER_PAYLOAD)
+  -- if $(|executionRequests.CONSOLIDATIONS| <= $MAX_CONSOLIDATION_REQUESTS_PER_PAYLOAD)
+  -- if $(|executionRequests.BUILDER_DEPOSITS| <= $MAX_BUILDER_DEPOSIT_REQUESTS_PER_PAYLOAD)
+  -- if $(|executionRequests.BUILDER_EXITS| <= $MAX_BUILDER_EXIT_REQUESTS_PER_PAYLOAD)
+  ;; Settle the builder payment before the requests,
+  ;; so that a builder exit request is rejected while the payment is pending
+  -- SettleParentBuilderPayment: state SETTLE_PARENT executionPayloadBid_parent slot_parent ~> state_0
+  ;; Process the execution requests of the parent's payload
+  -- ProcessDepositRequests:        state_0 executionRequests.DEPOSITS          ~> state_1
+  -- ProcessWithdrawalRequests:     state_1 executionRequests.WITHDRAWALS       ~> state_2
+  -- ProcessConsolidationRequests:  state_2 executionRequests.CONSOLIDATIONS    ~> state_3
+  -- ProcessBuilderDepositRequests: state_3 executionRequests.BUILDER_DEPOSITS  ~> state_4
+  -- ProcessBuilderExitRequests:    state_4 executionRequests.BUILDER_EXITS     ~> state_5
+  ;; Update parent payload availability and latest block hash
+  -- if $(slot_parent \ $SLOTS_PER_HISTORICAL_ROOT) = uint64_i
+  ;; inserted guard (python raises IndexError)
+  -- if $(uint64_i < |state_5.EXECUTION_PAYLOAD_AVAILABILITY|)
+
+;; [Gloas] process_parent_execution_payload(state, block)
+relation ProcessParentExecutionPayload:
+  beaconState beaconBlock ~> beaconState
+  hint(input %0 %1)
+
+;; Parent was EMPTY: no execution requests expected
+rule ProcessParentExecutionPayload/empty:
+  state block ~> state
+  -- if block.BODY.SIGNED_EXECUTION_PAYLOAD_BID.MESSAGE.PARENT_BLOCK_HASH =/= state.LATEST_EXECUTION_PAYLOAD_BID.BLOCK_HASH
+  ;; assert
+  -- if block.BODY.PARENT_EXECUTION_REQUESTS = $empty_execution_requests
+
+;; Parent was FULL: verify the bid commitment and apply the payload
+rule ProcessParentExecutionPayload/full:
+  state block ~> state_out
+  -- if block.BODY.SIGNED_EXECUTION_PAYLOAD_BID.MESSAGE.PARENT_BLOCK_HASH = state.LATEST_EXECUTION_PAYLOAD_BID.BLOCK_HASH
+  ;; assert
+  -- if $hash_tree_root_executionRequests(block.BODY.PARENT_EXECUTION_REQUESTS)
+       = state.LATEST_EXECUTION_PAYLOAD_BID.EXECUTION_REQUESTS_ROOT
+  -- ApplyParentExecutionPayload: state block.BODY.PARENT_EXECUTION_REQUESTS ~> state_out

@@ -1,0 +1,216 @@
+;;
+;; [Phase0]
+;; process_block_header
+;;  mutates: LATEST_BLOCK_HEADER
+;;
+
+relation ProcessBlockHeader:
+  beaconState beaconBlock ~> beaconState
+  hint(input %0 %1)
+
+rule ProcessBlockHeader:
+  state block ~> state[.LATEST_BLOCK_HEADER = beaconBlockHeader_new]
+  ;; assert 1: slots match
+  -- if block.SLOT = state.SLOT
+  ;; assert 2: block is newer than latest block header
+  -- if $(state.LATEST_BLOCK_HEADER.SLOT < block.SLOT)
+  ;; assert 3: block proposer is correct
+  -- if $get_beacon_proposer_index(state) = block.PROPOSER_INDEX
+  ;; assert 4: parent matches
+  -- if block.PARENT_ROOT = $hash_tree_root_beaconBlockHeader(state.LATEST_BLOCK_HEADER)
+  -- if beaconBlockHeader_new =
+       { SLOT block.SLOT,
+         PROPOSER_INDEX block.PROPOSER_INDEX,
+         PARENT_ROOT block.PARENT_ROOT,
+         STATE_ROOT $ZERO_ROOT,
+         BODY_ROOT $hash_tree_root_beaconBlockBody(block.BODY) }
+  ;; inserted: bound check
+  -- if $(block.PROPOSER_INDEX < |state.VALIDATORS|)
+  ;; assert 5: proposer is not slashed
+  -- if ~state.VALIDATORS[block.PROPOSER_INDEX].SLASHED
+
+
+;; [Capella -> Electra -> Gloas]
+;; process_withdrawals(state)
+;;  mutates: .BALANCES, .BUILDERS, .NEXT_WITHDRAWAL_INDEX, .PAYLOAD_EXPECTED_WITHDRAWALS,
+;;    .BUILDER_PENDING_WITHDRAWALS, .PENDING_PARTIAL_WITHDRAWALS,
+;;    .NEXT_WITHDRAWAL_BUILDER_INDEX, .NEXT_WITHDRAWAL_VALIDATOR_INDEX
+
+;; [Capella] update_next_withdrawal_index: the index after the latest withdrawal, if any
+dec $next_withdrawal_index_after(beaconState, withdrawal*) : withdrawalIndex
+def $next_withdrawal_index_after(state, eps) = state.NEXT_WITHDRAWAL_INDEX
+def $next_withdrawal_index_after(state, withdrawal*) = $(withdrawal_latest.INDEX + 1)
+  -- if $(|withdrawal*| > 0)
+  -- if withdrawal*[|withdrawal*| - 1] = withdrawal_latest
+
+;; [Gloas:EIP7732] update_next_withdrawal_builder_index
+dec $next_withdrawal_builder_index_after(beaconState, uint64) : builderIndex
+def $next_withdrawal_builder_index_after(state, uint64_processed) = state.NEXT_WITHDRAWAL_BUILDER_INDEX
+  -- if |state.BUILDERS| = 0
+def $next_withdrawal_builder_index_after(state, uint64_processed)
+  = $((state.NEXT_WITHDRAWAL_BUILDER_INDEX + uint64_processed) \ |state.BUILDERS|)
+  -- if $(|state.BUILDERS| > 0)
+
+;; [Capella] update_next_withdrawal_validator_index
+dec $next_withdrawal_validator_index_after(beaconState, withdrawal*) : validatorIndex
+;; a full set: the sweep starts after the latest withdrawal's validator index
+def $next_withdrawal_validator_index_after(state, withdrawal*)
+  = $((withdrawal_latest.VALIDATOR_INDEX + 1) \ |state.VALIDATORS|)
+  -- if |withdrawal*| = $MAX_WITHDRAWALS_PER_PAYLOAD
+  -- if withdrawal*[|withdrawal*| - 1] = withdrawal_latest
+;; otherwise: advance by the max length of the sweep
+def $next_withdrawal_validator_index_after(state, withdrawal*)
+  = $((state.NEXT_WITHDRAWAL_VALIDATOR_INDEX + $MAX_VALIDATORS_PER_WITHDRAWALS_SWEEP) \ |state.VALIDATORS|)
+  -- if |withdrawal*| =/= $MAX_WITHDRAWALS_PER_PAYLOAD
+
+relation ProcessWithdrawals:
+  beaconState ~> beaconState
+  hint(input %0)
+
+;; [New in Gloas:EIP7732] the parent block is empty: no withdrawals
+rule ProcessWithdrawals/parent_empty:
+  state ~> state
+  -- if state.LATEST_BLOCK_HASH =/= state.LATEST_EXECUTION_PAYLOAD_BID.BLOCK_HASH
+
+rule ProcessWithdrawals/main:
+  state ~>
+    state_after_debits
+      [.NEXT_WITHDRAWAL_INDEX = $next_withdrawal_index_after(state_after_debits, withdrawal_expected*)]
+      [.PAYLOAD_EXPECTED_WITHDRAWALS = withdrawal_expected*]
+      [.BUILDER_PENDING_WITHDRAWALS = $drop_prefix_<builderPendingWithdrawal>(
+          state_after_debits.BUILDER_PENDING_WITHDRAWALS, expectedWithdrawals.PROCESSED_BUILDER_WITHDRAWALS_COUNT)]
+      [.PENDING_PARTIAL_WITHDRAWALS = $drop_prefix_<pendingPartialWithdrawal>(
+          state_after_debits.PENDING_PARTIAL_WITHDRAWALS, expectedWithdrawals.PROCESSED_PARTIAL_WITHDRAWALS_COUNT)]
+      [.NEXT_WITHDRAWAL_BUILDER_INDEX = $next_withdrawal_builder_index_after(
+          state_after_debits, expectedWithdrawals.PROCESSED_BUILDERS_SWEEP_COUNT)]
+      [.NEXT_WITHDRAWAL_VALIDATOR_INDEX = $next_withdrawal_validator_index_after(state_after_debits, withdrawal_expected*)]
+  -- if state.LATEST_BLOCK_HASH = state.LATEST_EXECUTION_PAYLOAD_BID.BLOCK_HASH
+  -- if $get_expected_withdrawals(state) = expectedWithdrawals
+  -- if expectedWithdrawals.WITHDRAWALS = withdrawal_expected*
+  -- ApplyWithdrawals: state '.' BALANCES `{ withdrawal_expected* `} ~>* state_after_debits
+
+;; [Removed in Gloas:EIP7732] process_execution_payload
+;;  verify_execution_payload_envelope (fork choice) checks the payload.
+;;  process_parent_execution_payload applies its requests in the next block.
+
+;; [Phase0]
+;; process_randao
+;;  mutates: RANDAO_MIXES[epoch \ EPOCHS_PER_HISTORICAL_VECTOR]
+
+relation ProcessRandao:
+  beaconState beaconBlockBody ~> beaconState
+  hint(input %0 %1)
+
+rule ProcessRandao:
+  state body ~> state[.RANDAO_MIXES[uint64_n] = bytes32_mix_new]
+  -- if $get_current_epoch(state) = epoch
+  -- if $get_beacon_proposer_index(state) = vid_proposer
+  ;; inserted: bound check
+  -- if $(vid_proposer < |state.VALIDATORS|)
+  -- if state.VALIDATORS[vid_proposer] = validator_proposer
+  -- if $get_domain(state, $DOMAIN_RANDAO, eps) = domain_randao
+  -- if $compute_signing_root_epoch(epoch, domain_randao) = root_signing
+  ;; assert 1: verify RANDAO_REVEAL
+  -- if $bls_verify(validator_proposer.PUBKEY, root_signing, body.RANDAO_REVEAL)
+  -- if $get_randao_mix(state, epoch) = bytes32_mix_old
+  -- if $hash_<blsSignature>(body.RANDAO_REVEAL) = bytes32_hash_reveal
+  -- if $xor(bytes32_mix_old, bytes32_hash_reveal) = bytes32_mix_new
+  -- if $(epoch \ $EPOCHS_PER_HISTORICAL_VECTOR) = uint64_n
+
+;; [Phase0]
+;; process_eth1_data
+;;  mutates: ETH1_DATA, ETH1_DATA_VOTES (append)
+
+relation ProcessEth1Data:
+  beaconState beaconBlockBody ~> beaconState
+  hint(input %0 %1)
+
+rule ProcessEth1Data/majority:
+  state body ~> (state[.ETH1_DATA_VOTES = eth1Data_update*][.ETH1_DATA = body.ETH1_DATA])
+  -- if state.ETH1_DATA_VOTES ++ [ body.ETH1_DATA ] = eth1Data_update*
+  -- if $count_occurrences_<eth1Data>(eth1Data_update*, body.ETH1_DATA) = n_occ
+  ;; branch-complete
+  -- if $(n_occ * 2 > $EPOCHS_PER_ETH1_VOTING_PERIOD * $SLOTS_PER_EPOCH)
+
+rule ProcessEth1Data/accumulate:
+  state body ~> state[.ETH1_DATA_VOTES = eth1Data_update*]
+  -- if state.ETH1_DATA_VOTES ++ [ body.ETH1_DATA ] = eth1Data_update*
+  -- if $count_occurrences_<eth1Data>(eth1Data_update*, body.ETH1_DATA) = n_occ
+  ;; branch-complete
+  -- if $(n_occ * 2 <= $EPOCHS_PER_ETH1_VOTING_PERIOD * $SLOTS_PER_EPOCH)
+
+
+;; [Phase0 -> Altair -> Capella -> Electra -> Fulu -> Gloas]
+;; process_operations(state, body, parent_slot)
+relation ProcessOperations:
+  beaconState beaconBlockBody slot ~> beaconState
+  hint(input %0 %1 %2)
+
+;; [Modified in Fulu] no Eth1 bridge deposits
+;; [Modified in Gloas:EIP7732] no execution requests (process_parent_execution_payload has them),
+;;  attestations get parent_slot, payload attestations are new
+rule ProcessOperations:
+  state body slot_parent ~> state_out
+  ;; assert
+  -- if |body.DEPOSITS| = 0
+  ;; [New in Gloas:EIP7688] list limits
+  -- if $(|body.PROPOSER_SLASHINGS| <= $MAX_PROPOSER_SLASHINGS)
+  -- if $(|body.ATTESTER_SLASHINGS| <= $MAX_ATTESTER_SLASHINGS_ELECTRA)
+  -- if $(|body.ATTESTATIONS| <= $MAX_ATTESTATIONS_ELECTRA)
+  -- if $(|body.VOLUNTARY_EXITS| <= $MAX_VOLUNTARY_EXITS)
+  -- if $(|body.BLS_TO_EXECUTION_CHANGES| <= $MAX_BLS_TO_EXECUTION_CHANGES)
+  -- if $(|body.PAYLOAD_ATTESTATIONS| <= $MAX_PAYLOAD_ATTESTATIONS)
+  ;; proposer_slashings -> attester_slashings -> attestations -> voluntary_exits -> bls_to_execution_changes -> payload_attestations
+  -- ProcessProposerSlashings:      state     body.PROPOSER_SLASHINGS              ~> state_ps
+  -- ProcessAttesterSlashings:      state_ps  body.ATTESTER_SLASHINGS              ~> state_as
+  -- ProcessAttestations:           state_as  body.ATTESTATIONS slot_parent        ~> state_att
+  -- ProcessVoluntaryExits:         state_att body.VOLUNTARY_EXITS                 ~> state_ve
+  -- ProcessBlsToExecutionChanges:  state_ve  body.BLS_TO_EXECUTION_CHANGES        ~> state_bls
+  -- ProcessPayloadAttestations:    state_bls body.PAYLOAD_ATTESTATIONS            ~> state_out
+
+;; [Altair]
+;; process_sync_aggregate
+
+relation ProcessSyncAggregate:
+  beaconState syncAggregate ~> beaconState
+  hint(input %0 %1)
+
+rule ProcessSyncAggregate:
+  state syncAggregate ~> state_updated
+  ;; get participants (committee /\ bits == true)
+  ;; use simplified logic instead of the optimized version in the spec
+  -- if blsPubkey_committee* = state.CURRENT_SYNC_COMMITTEE.PUBKEYS
+  -- if $enumerate_<blsPubkey>(blsPubkey_committee*) = (i_committee, blsPubkey_committee)*
+  -- if $filter_list_2_<(nat, blsPubkey), boolean*>(
+        (i_committee, blsPubkey_committee)*,
+        syncAggregate.SYNC_COMMITTEE_BITS,
+        def $bit_is_one_en_blsPubkey
+      ) = (_, blsPubkey_participants)*
+  ;; helper instead of branching
+  -- if $get_prev_slot(state.SLOT) = slot_prev
+  -- if $get_domain(state, $DOMAIN_SYNC_COMMITTEE, $compute_epoch_at_slot(slot_prev)) = domain
+  -- if $compute_signing_root_block_root($get_block_root_at_slot(state, slot_prev), domain) = root_sign
+  ;; assert 1: fast aggregate verify allows empty participants
+  -- if $eth_fast_aggregate_verify(
+         blsPubkey_participants*,
+         root_sign,
+         syncAggregate.SYNC_COMMITTEE_SIGNATURE
+       )
+  ;; Compute participant and proposer rewards
+  -- if $( $get_total_active_balance(state) / $EFFECTIVE_BALANCE_INCREMENT ) = uint64_total_incs
+  -- if $( $get_base_reward_per_increment(state) * uint64_total_incs ) = reward_total_base
+  -- if $( reward_total_base * $SYNC_REWARD_WEIGHT / $WEIGHT_DENOMINATOR / $SLOTS_PER_EPOCH ) = reward_max_participant
+  -- if $( reward_max_participant / $SYNC_COMMITTEE_SIZE ) = reward_participant
+  -- if $( reward_participant * $PROPOSER_WEIGHT / ( $WEIGHT_DENOMINATOR - $PROPOSER_WEIGHT )) = reward_proposer
+  ;; Apply participant and proposer rewards
+  -- if $enumerate_<validator>(state.VALIDATORS) = (vid, validator)*
+  -- if (validator.PUBKEY = blsPubkey_existing)*
+  -- if state.CURRENT_SYNC_COMMITTEE.PUBKEYS = blsPubkey_committee*
+  -- if ($index_of_pubkey((vid, blsPubkey_existing)*, blsPubkey_committee) = vid_committee)*
+  -- if syncAggregate.SYNC_COMMITTEE_BITS = boolean_participation*
+  -- if $get_beacon_proposer_index(state) = vid_proposer
+  -- ApplyReward_over_participants:
+      state
+        PARTICIPANT boolean_participation* `[vid_committee*`] '+' reward_participant
+        PROPOSER `[ vid_proposer `] '+' reward_proposer
+          ~> state_updated

@@ -1,0 +1,4 @@
+(library
+ (name ssz)
+ (public_name ssz)
+ (libraries digestif))

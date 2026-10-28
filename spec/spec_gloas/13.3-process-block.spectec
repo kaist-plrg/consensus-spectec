@@ -1,0 +1,27 @@
+;; process_block
+
+;; [Modified in Gloas:EIP7732] the parent payload comes first, the bid replaces the payload,
+;;  and process_operations gets the parent slot
+relation ProcessBlock:
+  beaconState beaconBlock ~>* beaconState
+  hint(input %0 %1)
+
+rule ProcessBlock:
+  state block ~>* state_7
+  ;; [New in Gloas:EIP7732]
+  -- if state.LATEST_BLOCK_HEADER.SLOT = slot_parent
+  -- ProcessParentExecutionPayload: state     block                                       ~>  state_0
+  ;; Phase0
+  -- ProcessBlockHeader:           state_0   block                                       ~>  state_1
+  ;; Capella -> Electra -> Gloas
+  -- ProcessWithdrawals:           state_1                                               ~>  state_2
+  ;; [New in Gloas:EIP7732]
+  -- ProcessExecutionPayloadBid:   state_2   block.BODY.SIGNED_EXECUTION_PAYLOAD_BID     ~>  state_3
+  ;; Phase0
+  -- ProcessRandao:                state_3   block.BODY                                  ~>  state_4
+  ;; Phase0
+  -- ProcessEth1Data:              state_4   block.BODY                                  ~>  state_5
+  ;; Phase0 -> Altair -> Capella -> Electra -> Fulu -> Gloas
+  -- ProcessOperations:            state_5   block.BODY slot_parent                      ~>  state_6
+  ;; Altair
+  -- ProcessSyncAggregate:         state_6   block.BODY.SYNC_AGGREGATE                   ~>  state_7

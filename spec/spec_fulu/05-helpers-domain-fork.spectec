@@ -1,0 +1,92 @@
+;; =========================
+;; fork-data / domain helpers
+;; =========================
+
+;; [Phase0] compute_fork_data_root(version, genesis_root) : root
+dec $compute_fork_data_root(version, root) : root
+def $compute_fork_data_root(version, root) =
+  $hash_tree_root_forkdata({ CURRENT_VERSION version, GENESIS_VALIDATORS_ROOT root })
+
+;; [Phase0] compute_domain(domainType, version?, genesis_root?) : domain
+dec $compute_domain(domainType, version?, root?) : domain
+
+def $compute_domain(domainType, version, root) =
+  $concat_domain(domainType, $first_28_bytes($compute_fork_data_root(version, root)))
+
+def $compute_domain(domainType, eps, eps) =
+  $concat_domain(domainType, $first_28_bytes($compute_fork_data_root($GENESIS_FORK_VERSION, $ZERO_ROOT)))
+
+def $compute_domain(domainType, version, eps) =
+  $concat_domain(domainType, $first_28_bytes($compute_fork_data_root(version, $ZERO_ROOT)))
+
+def $compute_domain(domainType, eps, root) =
+  $concat_domain(domainType, $first_28_bytes($compute_fork_data_root($GENESIS_FORK_VERSION, root)))
+
+;; [Phase0] get_domain(BeaconState, DomainType, Epoch?) -> Domain
+dec $get_domain(beaconState, domainType, epoch?) : domain
+
+def $get_domain(state, domainType, eps) =
+  $compute_domain(domainType, state.FORK.PREVIOUS_VERSION, state.GENESIS_VALIDATORS_ROOT)
+  -- if $get_current_epoch(state) = epoch_cur
+  -- if $(epoch_cur < state.FORK.EPOCH)
+
+def $get_domain(state, domainType, eps) =
+  $compute_domain(domainType, state.FORK.CURRENT_VERSION, state.GENESIS_VALIDATORS_ROOT)
+  -- if $get_current_epoch(state) = epoch_cur
+  -- otherwise
+
+def $get_domain(state, domainType, epoch) =
+  $compute_domain(domainType, state.FORK.PREVIOUS_VERSION, state.GENESIS_VALIDATORS_ROOT)
+  -- if $(epoch < state.FORK.EPOCH)
+
+def $get_domain(state, domainType, epoch) =
+  $compute_domain(domainType, state.FORK.CURRENT_VERSION, state.GENESIS_VALIDATORS_ROOT)
+  -- otherwise
+
+;; [Phase0] verify_block_signature(BeaconState, SignedBeaconBlock) -> bool
+dec $verify_block_signature(beaconState, signedBeaconBlock) : boolean
+
+def $verify_block_signature(state, signedBeaconBlock) = true
+  ;; inserted bound check guard
+  -- if $(signedBeaconBlock.MESSAGE.PROPOSER_INDEX < |state.VALIDATORS|)
+  -- if validator_proposer = state.VALIDATORS[signedBeaconBlock.MESSAGE.PROPOSER_INDEX]
+  -- if $compute_signing_root_beaconBlock(signedBeaconBlock.MESSAGE, $get_domain(state, $DOMAIN_BEACON_PROPOSER, eps)) = root_signing
+  -- if $bls_verify(validator_proposer.PUBKEY, root_signing, signedBeaconBlock.SIGNATURE)
+
+def $verify_block_signature(state, signedBeaconBlock) = false
+  -- otherwise
+
+;; =========================
+;; [Fulu:EIP7892] blob schedule
+;; =========================
+
+;; config BLOB_SCHEDULE: entries { EPOCH, MAX_BLOBS_PER_BLOCK }
+dec $BLOB_SCHEDULE : blobParameters*
+def $BLOB_SCHEDULE =
+  [ { EPOCH 412672, MAX_BLOBS_PER_BLOCK 15 },
+    { EPOCH 419072, MAX_BLOBS_PER_BLOCK 21 } ]
+
+;; [Custom | loop : get_blob_parameters]
+;;  python takes the first entry of the schedule sorted by EPOCH (descending) with epoch >= EPOCH.
+;;  Epochs are unique, so that is the entry with the largest EPOCH <= epoch.
+;;  The loop carries the best entry so far.
+dec $blob_parameters_loop(blobParameters*, epoch, blobParameters) : blobParameters
+def $blob_parameters_loop(eps, epoch, blobParameters_best) = blobParameters_best
+def $blob_parameters_loop(blobParameters_h :: blobParameters_t*, epoch, blobParameters_best)
+  = $blob_parameters_loop(blobParameters_t*, epoch, blobParameters_h)
+  -- if $(blobParameters_h.EPOCH <= epoch)
+  -- if $(blobParameters_h.EPOCH >= blobParameters_best.EPOCH)
+def $blob_parameters_loop(blobParameters_h :: blobParameters_t*, epoch, blobParameters_best)
+  = $blob_parameters_loop(blobParameters_t*, epoch, blobParameters_best)
+  -- otherwise
+
+;; [Fulu] get_blob_parameters(Epoch) -> BlobParameters
+;;  the default entry is the Electra limit
+dec $get_blob_parameters(epoch) : blobParameters
+def $get_blob_parameters(epoch)
+  = $blob_parameters_loop(
+      $BLOB_SCHEDULE,
+      epoch,
+      { EPOCH $ELECTRA_FORK_EPOCH, MAX_BLOBS_PER_BLOCK $MAX_BLOBS_PER_BLOCK_ELECTRA }
+    )
+

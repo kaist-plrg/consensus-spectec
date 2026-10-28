@@ -1,0 +1,92 @@
+;; =======================================
+;; helpers for shuffle/committee/proposer/seed
+;; =======================================
+
+;; [Custom | branch : apply_shuffle_round]
+dec $choose_index(uint64, uint64, nat) : uint64
+def $choose_index(i, uint64_flip, nat_bit) = uint64_flip
+  -- if nat_bit = 1
+def $choose_index(i, uint64_flip, nat_bit) = i
+  -- otherwise
+
+;; [Custom | loop : compute_shuffled_index]
+;;  instead of shifting, we use division and mod operations
+;;  bit = (byte // (2^k)) % 2
+dec $apply_shuffle_round(uint64, (bytes32, uint64, uint64)) : uint64
+
+def $apply_shuffle_round(i, (seed, i_count, uint64_round)) = i_out
+  ;; 1 round_hash = hash(seed || uint8(round))
+  -- if $bytes32_to_bytes(seed) = bytes_seed
+  -- if $uint8_to_bytes_le($(uint64_round \ 256)) = bytes_round8              ;; 1B, LE
+  -- if $hash_<bytes>($concat_bytes(bytes_seed, bytes_round8)) = bytes32_round_hash
+  ;; pivot
+  -- if $bytes32_prefix8(bytes32_round_hash) = bytes8_prefix        ;; Extract first 8B
+  -- if $bytes8_to_uint64_le(bytes8_prefix) = uint64_pivot_raw      ;; Decode as LE
+  -- if $(uint64_pivot_raw \ i_count) = uint64_pivot
+  ;; flip, position
+  -- if $((uint64_pivot + i_count - i) \ i_count) = uint64_flip
+  -- if $max_uint64(i, uint64_flip) = uint64_position
+  ;; 4 source = hash(seed || uint8(round) || uint32(bucket))
+  -- if $uint32_to_bytes_le($(uint64_position / 256)) = bytes_bucket           ;; 4B, LE
+  -- if $hash_<bytes>($concat_bytes($concat_bytes(bytes_seed, bytes_round8), bytes_bucket)) = bytes32_source
+  ;; byte, bit
+  -- if $bytes1_to_uint64($bytes32_to_bytes1_list(bytes32_source)[(uint64_position \ 256) / 8]) 
+      = uint64_byte
+  -- if $($and_uint64($shr_uint64(uint64_byte, $(uint64_position \ 8)), 1) \ 2) 
+      = nat_bit ;;0 or 1
+  ;; index = flip if bit else index
+  -- if $choose_index(i, uint64_flip, nat_bit) = i_out 
+
+
+;; [Phase0] compute_shuffled_index(uint64, uint64, Bytes32) -> uint64
+;;  - loop over rounds = [0 .. SHUFFLE_ROUND_COUNT-1]
+dec $compute_shuffled_index(uint64, uint64, bytes32) : uint64
+
+;; NEEDS USER DECISION: the rounds run in the builtin $compute_shuffled_index_rounds.
+;;  The interpreted rounds cost about 1.3 ms per call; the proposer lookahead makes about 2,000 calls per epoch.
+def $compute_shuffled_index(i, i_count, seed)
+  = $compute_shuffled_index_rounds(i, i_count, seed, $SHUFFLE_ROUND_COUNT)
+
+
+;; [Custom | Electra : compute_proposer_index, get_next_sync_committee_indices]
+;;  random_bytes = sha256(seed + uint_to_bytes(i // 16))
+;;  offset = i % 16 * 2
+;;  random_value = bytes_to_uint64(random_bytes[offset : offset + 2])   ;; 2 bytes, LE
+dec $compute_random_value(bytes32, uint64) : uint64
+
+def $compute_random_value(seed, i) = $(uint64_lo + uint64_hi * 256)
+  -- if $hash_<bytes>($concat_bytes($bytes32_to_bytes(seed), $uint64_to_bytes_le($(i / 16)))) = bytes32_h
+  -- if $bytes32_to_bytes1_list(bytes32_h) = bytes1_h*
+  -- if $((i \ 16) * 2) = n_offset
+  -- if $bytes1_to_uint64(bytes1_h*[n_offset]) = uint64_lo
+  -- if $bytes1_to_uint64(bytes1_h*[n_offset + 1]) = uint64_hi
+
+;; [Removed in Gloas] compute_proposer_index
+;;  compute_balance_weighted_selection (09.1-helpers-gloas.spectec) replaces its loop.
+
+;; [Phase0] get_seed(BeaconState, Epoch, DomainType) -> Bytes32
+
+;; seed = hash( domain_type(4B) ++ uint_to_bytes(epoch)(8B LE) ++ mix(32B) )
+dec $get_seed(beaconState, epoch, domainType) : bytes32
+
+def $get_seed(state, epoch, domainType) 
+  = $hash_<bytes>(
+      $concat_bytes(
+        $concat_bytes(
+          $bytes4_to_bytes(domainType),
+          $uint64_to_bytes_le(epoch)),
+        $bytes32_to_bytes(bytes32_mix)
+      )
+    )
+  -- if $get_randao_mix(
+          state, $(epoch + $EPOCHS_PER_HISTORICAL_VECTOR - $MIN_SEED_LOOKAHEAD - 1)
+        ) = bytes32_mix
+
+;; [Phase0 -> Fulu] get_beacon_proposer_index(BeaconState) -> ValidatorIndex
+dec $get_beacon_proposer_index(beaconState) : validatorIndex
+
+;; [Modified in Fulu:EIP7917] read the precomputed proposer_lookahead
+def $get_beacon_proposer_index(state)
+  = state.PROPOSER_LOOKAHEAD[state.SLOT \ $SLOTS_PER_EPOCH]
+  ;; inserted guard (python raises IndexError)
+  -- if $(state.SLOT \ $SLOTS_PER_EPOCH < |state.PROPOSER_LOOKAHEAD|)
