@@ -111,11 +111,7 @@ let range ~at (count : Num.t) : Value.t result =
       Ok (Value.list' Typ.int range_list)
   with _ -> Error (runtime at "range: count is too large to be an integer")
 
-(* (* dec $enumerate_<X>(X*) : enumerated_<X>* *)
-
 let enumerate_ ~at (typ : targ) (vs : Value.t list) : Value.t result =
-  at |> ignore;
-  (* Create (index, value) pairs *)
   let enumerated_list =
     List.mapi
       (fun i v ->
@@ -123,7 +119,9 @@ let enumerate_ ~at (typ : targ) (vs : Value.t list) : Value.t result =
         Value.tuple [ index; v ])
       vs
   in
-  Ok (Value.list typ enumerated_list)
+  let ( $ ) = Common.Source.( $ ) in
+  let pair_type = Typ.tuple [ Typ.nat $ at; typ ] $ at in
+  Ok (Value.list pair_type enumerated_list)
 
 (* dec $set_or_append_list_<X>(X*, nat, X) : X* *)
 

@@ -1,0 +1,49 @@
+dec $choose(uint64, uint64?) : uint64
+
+dec $quotient(int, int) : int
+
+dec $scaled(uint64, boolean) : uint64
+
+def $choose(uint64_value, uint64_fallback) = uint64_fallback
+  -- if uint64_value = 0
+
+def $choose(uint64_value, eps)
+  = $scaled($(uint64_value + uint64_translated0), true)
+  -- if $(uint64_value < $UINT64_MAX)
+  -- if $(0 <= 1)
+  -- if $(1 <= 18446744073709551615)
+  -- if 1 = uint64_translated0
+  -- if $(uint64_translated0 <= 18446744073709551615)
+  -- if $(uint64_value <= (18446744073709551615 - uint64_translated0))
+
+def $choose(uint64_value, uint64_fallback)
+  = $scaled($(uint64_value + uint64_translated1), true)
+  -- if uint64_value =/= 0
+  -- if $(uint64_value < $UINT64_MAX)
+  -- if $(0 <= 1)
+  -- if $(1 <= 18446744073709551615)
+  -- if 1 = uint64_translated1
+  -- if $(uint64_translated1 <= 18446744073709551615)
+  -- if $(uint64_value <= (18446744073709551615 - uint64_translated1))
+
+def $quotient(int_value, int_divisor) = $(int_value / int_divisor)
+  -- if $(int_value >= 0)
+  -- if $(int_divisor > 0)
+  -- if int_divisor =/= 0
+
+def $quotient(int_value, int_divisor) = 0
+  -- if $(int_value < 0)
+
+def $quotient(int_value, int_divisor) = 0
+  -- if $(int_value >= 0)
+  -- if $(int_divisor <= 0)
+
+def $scaled(uint64_value, boolean_double) = $(uint64_value * uint64_translated0)
+  -- if boolean_double
+  -- if $(0 <= 2)
+  -- if $(2 <= 18446744073709551615)
+  -- if 2 = uint64_translated0
+  -- if $((uint64_value * uint64_translated0) <= 18446744073709551615)
+
+def $scaled(uint64_value, boolean_double) = uint64_value
+  -- if ~(boolean_double)

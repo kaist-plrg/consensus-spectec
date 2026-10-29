@@ -1,0 +1,17 @@
+syntax small = nat
+syntax wide = nat
+
+builtin dec $type_name<X>(X): text
+
+dec $forward<X>(X): text
+def $forward<X>(X) = $type_name<X>(X)
+
+dec $nested<X>(X): text
+def $nested<X>(X) = $forward<X>(X)
+
+dec $wrapped<X>(X): text
+def $wrapped<X>(X) = $type_name<X*>([X])
+
+relation Probe: nat |- text text text
+  hint(input %0)
+rule Probe: nat |- $nested<small>(nat) $nested<wide>(nat) $wrapped<small>(nat)

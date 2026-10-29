@@ -1,5 +1,8 @@
 type compiled_spec
 type mode = Il | Sl | Pl
+
+module Pure_target : Interp.Target.S
+
 type expectation
 
 (** [compile_file filename] compiles [filename] into the IL, SL, and PL forms
@@ -10,6 +13,9 @@ val compile_file : string -> compiled_spec
 (** [returns expected] requires evaluation to return values equal to those
     constructed by [expected]. *)
 val returns : (unit -> Lang.Il.Value.t list) -> expectation
+
+(** [satisfies check] runs [check] on the returned values after evaluation. *)
+val satisfies : (Lang.Il.Value.t list -> unit) -> expectation
 
 (** [fails] accepts any evaluation error. *)
 val fails : expectation
@@ -25,6 +31,7 @@ val fails_with : string -> expectation
 val check :
   compiled_spec ->
   ?modes:mode list ->
+  ?target:(module Interp.Target.S) ->
   name:string ->
   relation:string ->
   args:(unit -> Lang.Il.Value.t list) ->

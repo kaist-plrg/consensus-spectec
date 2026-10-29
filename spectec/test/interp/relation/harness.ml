@@ -13,6 +13,7 @@ type mode = Il | Sl | Pl
 
 type expectation =
   | Returns of (unit -> Value.t list)
+  | Satisfies of (Value.t list -> unit)
   | Fails
   | Fails_with of string
 
@@ -62,6 +63,7 @@ let compile_file filename =
   compile_source ~filename (In_channel.read_all filename)
 
 let returns expected = Returns expected
+let satisfies check = Satisfies check
 let fails = Fails
 let fails_with message = Fails_with message
 let string_of_mode = function Il -> "IL" | Sl -> "SL" | Pl -> "PL"
@@ -99,7 +101,8 @@ let check_result ~name ~mode expectation result =
           (sprintf "expected %s but returned %s"
              (string_of_values expected)
              (string_of_values actual))
-  | Returns _, Error error ->
+  | Satisfies check, Ok actual -> check actual
+  | (Returns _ | Satisfies _), Error error ->
       fail_check ~name ~mode ("evaluation failed:\n" ^ render_error error)
   | Fails, Error _ -> ()
   | Fails_with expected, Error error ->
@@ -116,11 +119,11 @@ let check_result ~name ~mode expectation result =
         (sprintf "expected an error containing %S but returned %s" expected
            (string_of_values actual))
 
-let check spec ?(modes = [ Il; Sl; Pl ]) ~name ~relation ~args expectation =
+let check spec ?(modes = [ Il; Sl; Pl ])
+    ?(target = (module Pure_target : Interp.Target.S)) ~name ~relation ~args
+    expectation =
   List.iter modes ~f:(fun mode ->
-      Interp.with_target_state
-        (module Pure_target)
-        (fun target_state ->
+      Interp.with_target_state target (fun target_state ->
           let args = args () in
           eval target_state spec mode relation args
           |> check_result ~name ~mode expectation))

@@ -3,6 +3,7 @@ module Engine = Engine
 let builtins =
   [
     BlsImpl.builtins;
+    BlsPointImpl.builtins;
     Bytes.builtins;
     Debug.builtins;
     Engine.builtins;

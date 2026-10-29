@@ -67,19 +67,27 @@ let bls_verify ~at (bls_pubkey : Num.t) (root : Num.t) (bls_signature : Num.t) :
           Ok (Value.bool ok)
           (* valid signature *))
 
+let decode_pubkey ~at n =
+  let* () = ensure_fits_bytes ~at n ~len:48 in
+  let bytes = be_of_bigint_fixed n ~len:48 in
+  match Bls12_381.G1.of_compressed_bytes_opt bytes with
+  | Some point when not (Bls12_381.G1.is_zero point) -> Ok point
+  | _ -> Error (runtime at "invalid BLS public key")
+
+let bls_key_validate ~at pubkey =
+  Ok (Value.bool (Result.is_ok (decode_pubkey ~at (Num.to_int pubkey))))
+
 (* dec $eth_aggregate_pubkeys(blsPubkey* ) : blsPubkey *)
 
 let eth_aggregate_pubkeys ~at (pubkeys_num : Num.t list) : Value.t result =
+  let* () =
+    if pubkeys_num = [] then
+      Error (runtime at "eth_aggregate_pubkeys: empty public key list")
+    else Ok ()
+  in
   let pubkeys_int = List.map Num.to_int pubkeys_num in
   (* 1) int -> bytes48 -> G1 (validation) *)
-  let conv_one n =
-    let* () = ensure_fits_bytes ~at n ~len:48 in
-    let b = be_of_bigint_fixed n ~len:48 in
-    match Bls12_381.G1.of_compressed_bytes_opt b with
-    | None ->
-        Error (runtime at "eth_aggregate_pubkeys: invalid G1 pubkey (bytes48)")
-    | Some p -> Ok p
-  in
+  let conv_one = decode_pubkey ~at in
   let rec mapM f = function
     | [] -> Ok []
     | x :: xs ->
@@ -129,8 +137,8 @@ let bls_fast_aggregate_verify ~at (pubkeys_num : Num.t list) (root : Num.t)
       let* () = ensure_fits_bytes ~at n ~len:48 in
       let b = be_of_bigint_fixed n ~len:48 in
       match Bls12_381.G1.of_compressed_bytes_opt b with
-      | None -> Ok None
-      | Some p -> Ok (Some p)
+      | Some p when not (Bls12_381.G1.is_zero p) -> Ok (Some p)
+      | _ -> Ok None
     in
     let* points_opt = mapM conv_pk pubkeys_int in
     if List.exists (fun o -> o = None) points_opt then Ok (Value.bool false)
@@ -156,7 +164,12 @@ let bls_fast_aggregate_verify ~at (pubkeys_num : Num.t list) (root : Num.t)
 
 let builtins : (string * Define.t) list =
   [
+    ("bls_key_validate", Define.T0.a1 Arg.num bls_key_validate);
     ("bls_verify", Define.T0.a3 Arg.num Arg.num Arg.num bls_verify);
+    (* Rules translated from pyspec call bls.AggregatePKs by this name, because
+       the translated $eth_aggregate_pubkeys replaces the builtin of that name. *)
+    ( "bls_aggregate_pubkeys",
+      Define.T0.a1 (Arg.list_of Arg.num) eth_aggregate_pubkeys );
     ( "eth_aggregate_pubkeys",
       Define.T0.a1 (Arg.list_of Arg.num) eth_aggregate_pubkeys );
     ( "bls_fast_aggregate_verify",
