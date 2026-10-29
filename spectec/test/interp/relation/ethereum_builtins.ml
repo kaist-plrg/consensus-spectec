@@ -171,7 +171,27 @@ let ssz_roots () =
     ~args:(fun () -> [ nat 0 ])
     (H.fails_with "Unsupported SSZ hash type: other")
 
+let enumeration () =
+  List.iter
+    [ []; [ 4; 9 ] ]
+    ~f:(fun values ->
+      check ~name:"enumeration retains pair element types" ~relation:"Enumerate"
+        ~args:(fun () -> [ V.list (Typ.nat $ at) (List.map values ~f:nat) ])
+        (H.satisfies (function
+          | [ value ] ->
+              let pair_type = Typ.tuple [ Typ.nat $ at; Typ.nat $ at ] $ at in
+              let expected =
+                V.list pair_type
+                  (List.mapi values ~f:(fun index item ->
+                       V.tuple [ nat index; nat item ]))
+              in
+              assert (V.eq value expected);
+              assert (
+                Lang.Il.Eq.eq_typ (value.note.typ $ at) (expected.note.typ $ at))
+          | _ -> assert false)))
+
 let run () =
+  enumeration ();
   aggregation ();
   fast_verification ();
   withdrawal_limit ();

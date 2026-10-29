@@ -133,3 +133,9 @@ relation Hash_other:
 
 rule Hash_other:
   x |- $ssz_hash_tree_root<other>(x)
+
+builtin dec $enumerate_<X>(X*): (nat, X)*
+
+relation Enumerate: nat* |- (nat, nat)*
+  hint(input %0)
+rule Enumerate: k* |- $enumerate_<nat>(k*)
