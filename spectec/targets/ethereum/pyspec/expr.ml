@@ -161,67 +161,6 @@ let bind_tuple_targets ~ctx ~at ~arity_error ~branch ~targets item =
     (fun branch name value -> replace_local ~name ~value branch)
     branch targets values
 
-let call_arguments ~at ~(signature : S.signature) args ~keywords =
-  (* Python evaluates keyword argument expressions where they are
-     written, then binds them to parameters by name. The written
-     order drives evaluation and the parameter order drives the
-     generated call. *)
-  let written = args @ List.map snd keywords in
-  if List.length args > List.length signature.parameters then
-    Error.reject ~at "Call arity";
-  let order =
-    List.mapi
-      (fun index (parameter, _) ->
-        if index < List.length args then Some index
-        else
-          match
-            List.find_index (fun (keyword, _) -> keyword = parameter) keywords
-          with
-          | Some offset -> Some (List.length args + offset)
-          | None when List.mem parameter signature.optional -> None
-          | None when List.mem_assoc parameter signature.defaults -> None
-          | None ->
-              Error.reject ~at ("Missing argument for parameter " ^ parameter))
-      signature.parameters
-  in
-  if
-    List.sort Int.compare (List.filter_map Fun.id order)
-    <> List.init (List.length written) Fun.id
-  then Error.reject ~at "Keyword arguments must bind each parameter once";
-  (* A parameter with a literal default that this call omits is evaluated after
-     every written argument, which is where Python binds it and where it cannot
-     reorder the written evaluations. *)
-  let written, order =
-    List.fold_left2
-      (fun (written, order) slot (parameter, _) ->
-        match (slot, List.assoc_opt parameter signature.defaults) with
-        | None, Some value ->
-            ( written @ [ Syntax.Bool value $ at ],
-              order @ [ Some (List.length written) ] )
-        | _ -> (written, order @ [ slot ]))
-      (written, []) order signature.parameters
-  in
-  (* An omitted argument and a written None both bind the None
-     default, and neither evaluates to a value. *)
-  let supplied, positions, _ =
-    List.fold_left
-      (fun (supplied, positions, next) (node : Syntax.expr) ->
-        if node.it = Syntax.NoneValue then (supplied, None :: positions, next)
-        else (node :: supplied, Some next :: positions, next + 1))
-      ([], [], 0) written
-  in
-  let positions = List.rev positions in
-  let order =
-    List.map2
-      (fun slot (parameter, _) ->
-        let slot = Option.bind slot (List.nth positions) in
-        if slot = None && not (List.mem parameter signature.optional) then
-          Error.reject ~at ("Parameter " ^ parameter ^ " cannot be None");
-        slot)
-      order signature.parameters
-  in
-  (List.rev supplied, order)
-
 let read_name ~ctx ~at ~branch name =
   match List.assoc_opt name (Store.bindings branch.storage) with
   | Some { kind = Optional _; _ } ->
@@ -561,11 +500,11 @@ let rec translate ~ctx (node : Syntax.expr) ~branch =
                              value)
                 | _ -> eager_call ctx at (B.NumericCast name) args [] branch)
             | None ->
-                let signature = call_signature ~ctx ~at name in
+                let signature = Call_ops.signature ~ctx ~at name in
                 if signature.effect = S.MutatesState then
                   Error.reject ~at ("Call effects are not reviewed for " ^ name);
                 let written, order =
-                  call_arguments ~at ~signature args ~keywords
+                  Call_ops.bind_arguments ~at ~signature args ~keywords
                 in
                 let returns = Named (Option.get signature.returns) in
                 if
@@ -784,13 +723,6 @@ and sorted ctx at args keywords branch =
              ~element:decorate ~branch input
          in
          Sequence_ops.sort ~ctx ~at ~element ~branch decorated)
-
-and call_signature ~ctx ~at name : S.signature =
-  match
-    List.find_opt (fun (s : S.signature) -> s.name = name) ctx.source.calls
-  with
-  | Some s -> s
-  | None -> Error.reject ~at ("Call effects are not reviewed for " ^ name)
 
 and arguments ~ctx nodes ~branch =
   collect_values (fun branch node -> translate ~ctx node ~branch) branch nodes

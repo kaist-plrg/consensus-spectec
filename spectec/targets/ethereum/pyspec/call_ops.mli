@@ -1,6 +1,16 @@
 open Common.Source
 open Lang.El
 
+(** Orders written arguments for evaluation and maps them to parameter
+    positions. An absent position takes the parameter's [None] default. *)
+val bind_arguments :
+  at:region ->
+  signature:Source.signature ->
+  Syntax.expr list ->
+  keywords:(string * Syntax.expr) list ->
+  Syntax.expr list * int option list
+
+val signature : ctx:Ctx.t -> at:region -> string -> Source.signature
 val type_parameters : ctx:Ctx.t -> at:region -> Source.signature -> string list
 
 val type_arguments :

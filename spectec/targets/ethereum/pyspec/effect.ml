@@ -443,7 +443,7 @@ let local_helper_call ctx at (helper : Syntax.local_helper) args branch =
   in
   if List.mem mutator ctx.source.locals then
     Error.reject ~at ("A local helper mutator cannot be shadowed: " ^ mutator);
-  let signature = Expr.call_signature ~ctx ~at mutator in
+  let signature = Call_ops.signature ~ctx ~at mutator in
   let operation =
     match (signature.S.effect, signature.S.returns, signature.S.parameters) with
     | S.MutatesState, None, [ ("state", state_type); (_, operation) ]
@@ -515,11 +515,11 @@ let call ~ctx (node : Syntax.expr) ~branch =
                 Error.reject ~at "Sequence helpers require positional arguments";
               sequence_helper_call ctx at helper args branch
           | None ->
-              let signature = Expr.call_signature ~ctx ~at name in
+              let signature = Call_ops.signature ~ctx ~at name in
               if signature.effect = S.Pure then
                 Error.reject ~at ("State effects are not reviewed for " ^ name);
               let written, order =
-                Expr.call_arguments ~at ~signature args ~keywords
+                Call_ops.bind_arguments ~at ~signature args ~keywords
               in
               (match List.hd order with
               | Some index

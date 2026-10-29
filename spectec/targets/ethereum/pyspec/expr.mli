@@ -33,17 +33,6 @@ val bind_tuple_targets :
 (** Recognizes a [range] call whose elements cannot be negative. *)
 val is_nonnegative_range : ctx:Ctx.t -> Syntax.expr -> bool
 
-(** Orders written arguments for evaluation and maps them to parameter
-    positions. An absent position takes the parameter's [None] default. *)
-val call_arguments :
-  at:region ->
-  signature:Source.signature ->
-  Syntax.expr list ->
-  keywords:(string * Syntax.expr) list ->
-  Syntax.expr list * int option list
-
-val call_signature : ctx:Ctx.t -> at:region -> string -> Source.signature
-
 val slice_bounds :
   ctx:Ctx.t ->
   at:region ->
