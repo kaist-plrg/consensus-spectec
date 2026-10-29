@@ -2,6 +2,7 @@ import ast
 import builtins
 import hashlib
 import inspect
+from collections import Counter
 from collections.abc import Sequence
 from pathlib import Path
 from textwrap import dedent
@@ -573,14 +574,8 @@ def markdown_definition(markdown, original):
     raise Unsupported("Generic helper does not match original Markdown")
 
 
-def sequence_helpers(module, node, markdown):
-    names = {
-        item.func.id
-        for item in ast.walk(node)
-        if isinstance(item, ast.Call)
-        and isinstance(item.func, ast.Name)
-        and item.func.id == "set_or_append_list"
-    }
+def sequence_helpers(module, uses, markdown):
+    names = uses.call_names & {"set_or_append_list"}
     helpers = []
     for name in sorted(names):
         from remerkleable.complex import List
@@ -668,17 +663,20 @@ def reviewed_call_names(module, name):
 
 
 def reaches_external_engine_global(module, name):
-    return any("EXECUTION_ENGINE" in names for names in reviewed_call_names(module, name))
+    return any(
+        "EXECUTION_ENGINE" in names for names in reviewed_call_names(module, name)
+    )
 
 
-def local_helper_contract(module, node):
+def local_helper_contract(module, uses):
     """How a nested mutator helper and the mutators it receives may be used.
 
     The helper exists only to be called, and a mutator named at a call site may
     not also be read as a value, so neither can escape into a position the
     target has no function value for.
     """
-    helpers = [item for item in ast.walk(node) if isinstance(item, ast.FunctionDef)][1:]
+    node = uses.node
+    helpers = [item for item in uses.nodes if isinstance(item, ast.FunctionDef)][1:]
     if not helpers:
         return
     import typing
@@ -698,14 +696,14 @@ def local_helper_contract(module, node):
         {argument.arg for argument in node.args.args}
         | {
             item.id
-            for item in ast.walk(node)
+            for item in uses.nodes
             if isinstance(item, ast.Name)
             and isinstance(item.ctx, ast.Store)
             and id(item) not in inside
         }
         | {
             item.name
-            for item in ast.walk(node)
+            for item in uses.nodes
             if isinstance(item, (ast.FunctionDef, ast.ClassDef)) and item is not node
         }
     )
@@ -729,19 +727,8 @@ def local_helper_contract(module, node):
         raise Unsupported("A local helper cannot define another helper")
     mutators = set()
     for name in names:
-        reads = [
-            item
-            for item in ast.walk(node)
-            if isinstance(item, ast.Name) and item.id == name
-        ]
-        calls = [
-            item
-            for item in ast.walk(node)
-            if isinstance(item, ast.Call)
-            and isinstance(item.func, ast.Name)
-            and item.func.id == name
-        ]
-        if len(reads) != len(calls):
+        calls = uses.named_calls.get(name, [])
+        if uses.name_uses.get(name, 0) != len(calls):
             raise Unsupported(f"A local helper is only callable: {name}")
         for call in calls:
             if (
@@ -756,20 +743,11 @@ def local_helper_contract(module, node):
             if REVIEWED_EFFECTS.get(mutator) != "state":
                 raise Unsupported(f"Unreviewed local helper mutator: {mutator}")
             mutators.add(mutator)
+    arguments = Counter(
+        call.args[1].id for name in names for call in uses.named_calls.get(name, [])
+    )
     for mutator in sorted(mutators):
-        positions = [
-            item
-            for item in ast.walk(node)
-            if isinstance(item, ast.Name) and item.id == mutator
-        ]
-        arguments = [
-            call.args[1]
-            for call in ast.walk(node)
-            if isinstance(call, ast.Call)
-            and isinstance(call.func, ast.Name)
-            and call.func.id in names
-        ]
-        if len(positions) != len([item for item in arguments if item.id == mutator]):
+        if uses.name_uses.get(mutator, 0) != arguments[mutator]:
             raise Unsupported(
                 f"A mutator passed to a local helper cannot escape: {mutator}"
             )
@@ -785,7 +763,9 @@ def checked_state_reads(module):
     fields = set(module.BeaconState.fields())
     result = {}
     for name, declared in REVIEWED_STATE_READS.items():
-        reads = set().union(*(names & fields for names in reviewed_call_names(module, name)))
+        reads = set().union(
+            *(names & fields for names in reviewed_call_names(module, name))
+        )
         if not reads <= set(declared):
             raise Unsupported(
                 f"Reviewed state reads for {name} miss {sorted(reads - set(declared))}"
@@ -838,24 +818,19 @@ def check_signature(node, signature):
         raise Unsupported("Source export: unsupported parameter default")
 
 
-def bls_primitives(module, node, signature, source_calls):
+def bls_primitives(module, uses, signature):
     from eth2spec.utils import bls
 
     primitive_calls = [
         item
-        for item in source_calls
+        for item in uses.calls
         if isinstance(item.func, ast.Attribute)
         and isinstance(item.func.value, ast.Name)
         and item.func.value.id == "bls"
     ]
     if primitive_calls and (
         getattr(module, "bls", None) is not bls
-        or any(
-            isinstance(item, ast.Name)
-            and item.id == "bls"
-            and isinstance(item.ctx, ast.Store)
-            for item in ast.walk(node)
-        )
+        or "bls" in uses.stores
         or "bls" in signature.parameters
     ):
         raise Unsupported("Unreviewed BLS namespace binding")
@@ -871,7 +846,7 @@ def bls_primitives(module, node, signature, source_calls):
     # Both G1 conversions call the target's bls_g1_canonicalize builtin.
     if {"bls_g1_decode", "bls_g1_encode"} & set(primitives):
         primitives.append("bls_g1_canonicalize")
-    for item in source_calls:
+    for item in uses.calls:
         if isinstance(item.func, ast.Name) and item.func.id in primitives:
             raise Unsupported(
                 f"Source call name collides with synthetic BLS primitive {item.func.id}"
@@ -879,15 +854,13 @@ def bls_primitives(module, node, signature, source_calls):
     return primitives
 
 
-def execution_primitives(
-    module, node, signature, source_calls, call_names, bound_names
-):
+def execution_primitives(module, uses, signature):
     primitives = []
-    if "NewPayloadRequest" in call_names:
+    if "NewPayloadRequest" in uses.call_names:
         from dataclasses import fields, is_dataclass
 
         request = getattr(module, "NewPayloadRequest", None)
-        if "NewPayloadRequest" in bound_names:
+        if "NewPayloadRequest" in uses.bound_names:
             raise Unsupported("Shadowed execution-payload request constructor")
         if not is_dataclass(request) or [
             (field.name, field.type) for field in fields(request)
@@ -901,18 +874,15 @@ def execution_primitives(
         any(
             isinstance(item.func, ast.Attribute)
             and item.func.attr == "verify_and_notify_new_payload"
-            for item in source_calls
+            for item in uses.calls
         )
-        and "ee_verify_and_notify_new_payload" in call_names
+        and "ee_verify_and_notify_new_payload" in uses.call_names
     ):
         raise Unsupported(
             "Source call name collides with the synthetic ee_verify_and_notify_new_payload builtin"
         )
-    if any(
-        isinstance(item, ast.Name) and item.id == "EXECUTION_ENGINE"
-        for item in ast.walk(node)
-    ):
-        if "EXECUTION_ENGINE" in bound_names:
+    if "EXECUTION_ENGINE" in uses.names:
+        if "EXECUTION_ENGINE" in uses.bound_names:
             raise Unsupported("Shadowed external execution-engine global")
         check_noop_engine(module)
         primitives.append("EXECUTION_ENGINE")
@@ -921,7 +891,7 @@ def execution_primitives(
         for name, parameter in signature.parameters.items()
         if parameter.annotation is module.ExecutionEngine
     ]
-    if engine_parameters and reaches_external_engine_global(module, node.name):
+    if engine_parameters and reaches_external_engine_global(module, uses.node.name):
         # One unit-typed handle stands for one external service per request, so
         # a supplied engine and the global cannot both be consulted.
         raise Unsupported(
@@ -930,15 +900,15 @@ def execution_primitives(
     return primitives
 
 
-def byte_primitives(module, source_calls, call_names, bound_names):
+def byte_primitives(module, uses):
     primitives = []
-    if "hash_tree_root" in call_names:
+    if "hash_tree_root" in uses.call_names:
         from eth2spec.utils.ssz.ssz_impl import hash_tree_root
 
         if getattr(module, "hash_tree_root", None) is not hash_tree_root:
             raise Unsupported("Unreviewed SSZ hash binding")
         primitives.append("hash_tree_root")
-    if "Bytes32" in call_names:
+    if "Bytes32" in uses.call_names:
         from eth2spec.utils.ssz.ssz_typing import Bytes32
 
         if getattr(module, "Bytes32", None) is not Bytes32:
@@ -953,7 +923,7 @@ def byte_primitives(module, source_calls, call_names, bound_names):
         "ExecutionAddress": 20,
         "BLSPubkey": 48,
     }.items():
-        if constructor not in call_names:
+        if constructor not in uses.call_names:
             continue
         from remerkleable.byte_arrays import ByteVector
 
@@ -975,7 +945,7 @@ def byte_primitives(module, source_calls, call_names, bound_names):
         ("hash", source_hash_function),
         ("uint_to_bytes", uint_to_bytes),
     ]:
-        if name in call_names:
+        if name in uses.call_names:
             if getattr(module, name, None) is not primitive:
                 raise Unsupported(f"Unreviewed byte primitive binding: {name}")
             primitives.append(name)
@@ -984,15 +954,15 @@ def byte_primitives(module, source_calls, call_names, bound_names):
         and isinstance(item.func.value, ast.Name)
         and item.func.value.id == "int"
         and item.func.attr == "from_bytes"
-        for item in source_calls
+        for item in uses.calls
     ):
         if (
             getattr(module, "int", builtins.int) is not builtins.int
             or getattr(module, "ENDIANNESS", None) != "little"
-            or {"int", "ENDIANNESS"} & bound_names
+            or {"int", "ENDIANNESS"} & uses.bound_names
         ):
             raise Unsupported("Unreviewed little-endian byte decoding")
-        if "int_from_bytes" in call_names:
+        if "int_from_bytes" in uses.call_names:
             raise Unsupported(
                 "Source call name collides with the synthetic int_from_bytes builtin"
             )
@@ -1000,16 +970,16 @@ def byte_primitives(module, source_calls, call_names, bound_names):
     return primitives
 
 
-def configuration_accesses(module, node, bound_names):
+def configuration_accesses(module, uses):
     config_accesses = {
         item.attr
-        for item in ast.walk(node)
+        for item in uses.nodes
         if isinstance(item, ast.Attribute)
         and isinstance(item.value, ast.Name)
         and item.value.id == "config"
     }
     if config_accesses:
-        if "config" in bound_names or not config_accesses <= configuration_fields(
+        if "config" in uses.bound_names or not config_accesses <= configuration_fields(
             module
         ):
             raise Unsupported("Unreviewed configuration namespace binding")
@@ -1138,6 +1108,32 @@ def python_builtins(module):
     ]
 
 
+class BodyUses:
+    """Syntactic uses across a function and all nested scopes."""
+
+    def __init__(self, node):
+        self.node = node
+        self.nodes = tuple(ast.walk(node))
+        self.calls = [item for item in self.nodes if isinstance(item, ast.Call)]
+        self.name_uses = Counter(
+            item.id for item in self.nodes if isinstance(item, ast.Name)
+        )
+        self.names = set(self.name_uses)
+        self.named_calls = {}
+        for call in self.calls:
+            if isinstance(call.func, ast.Name):
+                self.named_calls.setdefault(call.func.id, []).append(call)
+        self.call_names = set(self.named_calls)
+        self.stores = {
+            item.id
+            for item in self.nodes
+            if isinstance(item, ast.Name) and isinstance(item.ctx, ast.Store)
+        }
+        self.bound_names = self.stores | {
+            item.arg for item in self.nodes if isinstance(item, ast.arg)
+        }
+
+
 def export_function(
     module,
     node,
@@ -1153,33 +1149,19 @@ def export_function(
     signature = inspect.signature(source_function(module, node.name))
     check_signature(node, signature)
     presentation = interfaces(module)
-    source_calls = [item for item in ast.walk(node) if isinstance(item, ast.Call)]
-    call_names = {
-        item.func.id for item in source_calls if isinstance(item.func, ast.Name)
-    }
-    primitives = bls_primitives(module, node, signature, source_calls)
-    local_helper_contract(module, node)
-    bound_names = {
-        item.id
-        for item in ast.walk(node)
-        if isinstance(item, ast.Name) and isinstance(item.ctx, ast.Store)
-    } | {item.arg for item in ast.walk(node) if isinstance(item, ast.arg)}
-    primitives += execution_primitives(
-        module, node, signature, source_calls, call_names, bound_names
-    )
-    primitives += byte_primitives(module, source_calls, call_names, bound_names)
-    config_accesses = configuration_accesses(module, node, bound_names)
+    uses = BodyUses(node)
+    primitives = bls_primitives(module, uses, signature)
+    local_helper_contract(module, uses)
+    primitives += execution_primitives(module, uses, signature)
+    primitives += byte_primitives(module, uses)
+    config_accesses = configuration_accesses(module, uses)
     metadata = Metadata()
     calls = [
         call_metadata(module, metadata, presentation, name)
         for name in REVIEWED_EFFECTS
     ]
     selected = next(item for item in calls if item["name"] == node.name)
-    names = (
-        {x.id for x in ast.walk(node) if isinstance(x, ast.Name)}
-        | {"UINT64_MAX"}
-        | config_accesses
-    )
+    names = uses.names | {"UINT64_MAX"} | config_accesses
     constants, casts = constant_metadata(module, metadata, names)
     metadata.type(int)
     metadata.type(bool)
@@ -1189,14 +1171,7 @@ def export_function(
     metadata.type(module.SigningData)
     metadata.type(module.DepositMessage)
     metadata.type(module.ExecutionEngine)
-    constructors = sorted(
-        {
-            x.func.id
-            for x in ast.walk(node)
-            if isinstance(x, ast.Call) and isinstance(x.func, ast.Name)
-        }
-        & set(REVIEWED_RECORD_CONSTRUCTORS)
-    )
+    constructors = sorted(uses.call_names & set(REVIEWED_RECORD_CONSTRUCTORS))
     for name in constructors:
         metadata.type(getattr(module, name))
     return {
@@ -1216,13 +1191,13 @@ def export_function(
         "calls": calls,
         "builtins": python_builtins(module) + primitives,
         "constructors": constructors,
-        "sequence_helpers": sequence_helpers(module, node, markdown),
+        "sequence_helpers": sequence_helpers(module, uses, markdown),
         "function": {
             **selected,
             "body": statements(
                 node.body, local_annotation(module, metadata), enclosing_body=True
             ),
-            "locals": sorted(bound_names | set(signature.parameters)),
+            "locals": sorted(uses.bound_names | set(signature.parameters)),
             "span": span(node),
         },
     }
