@@ -145,23 +145,6 @@ let byte_slice ctx at branch base lower upper step =
         kind = ByteString count;
       }
 
-let complement = function
-  | `EqOp -> `NeOp
-  | `NeOp -> `EqOp
-  | `LtOp -> `GeOp
-  | `LeOp -> `GtOp
-  | `GtOp -> `LeOp
-  | `GeOp -> `LtOp
-
-let target_cmpop = function
-  | Syntax.Eq -> `EqOp
-  | Syntax.NotEq -> `NeOp
-  | Syntax.Lt -> `LtOp
-  | Syntax.LtE -> `LeOp
-  | Syntax.Gt -> `GtOp
-  | Syntax.GtE -> `GeOp
-  | _ -> assert false
-
 let bind_tuple_targets ~ctx ~at ~arity_error ~branch ~targets item =
   let elements = Kind.product ~types:ctx.source.types ~at item.kind in
   if List.length elements <> List.length targets then
@@ -1016,51 +999,15 @@ and condition ~ctx (node : Syntax.expr) ~holds ~branch =
             |> List.concat_map (fun (branch, left) ->
                    translate ~ctx right ~branch
                    |> List.map (fun (branch, right) ->
-                          let branch, left, right =
-                            match
-                              ( Kind.is_byte_valued ~types:ctx.source.types ~at
-                                  left.kind,
-                                Kind.is_byte_valued ~types:ctx.source.types ~at
-                                  right.kind )
-                            with
-                            | false, false -> (branch, left, right)
-                            | true, true when List.mem op Syntax.[ Eq; NotEq ]
-                              ->
-                                let branch, left =
-                                  Byte_ops.to_bytes ~ctx ~at ~branch left
-                                in
-                                let branch, right =
-                                  Byte_ops.to_bytes ~ctx ~at ~branch right
-                                in
-                                (branch, left, right)
-                            | _ ->
-                                Error.reject ~at
-                                  "Byte comparisons require equality between \
-                                   byte values"
+                          let branch, test, right =
+                            Operators.comparison ~ctx ~at ~op ~branch left right
                           in
-                          if
-                            Kind.set_element ~types:ctx.source.types ~at
-                              left.kind
-                            <> None
-                            || Kind.set_element ~types:ctx.source.types ~at
-                                 right.kind
-                               <> None
-                          then
-                            Error.reject ~at
-                              "Set comparisons require a membership contract";
-                          (branch, left, right)))
+                          (branch, test, right)))
           in
           fun truth ->
             List.map
-              (fun (branch, left, right) ->
-                let op = target_cmpop op in
-                ( guard ~at
-                    ~exp:
-                      (comparison ~at
-                         ~op:(if truth then op else complement op)
-                         left.exp right.exp)
-                    branch,
-                  right ))
+              (fun (branch, test, right) ->
+                (guard ~at ~exp:(test truth) branch, right))
               combinations)
         (translate ~ctx left ~branch)
         comparisons

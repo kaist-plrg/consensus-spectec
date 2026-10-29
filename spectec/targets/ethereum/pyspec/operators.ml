@@ -36,3 +36,46 @@ let binary ~ctx ~at ~op ~branch left right =
   else if List.mem op Syntax.[ BitAnd; BitOr; BitXor ] then
     Numeric_ops.bitwise ~ctx ~at ~op ~branch left right
   else Numeric_ops.binary ~ctx ~at ~op ~branch left right
+
+let complement = function
+  | `EqOp -> `NeOp
+  | `NeOp -> `EqOp
+  | `LtOp -> `GeOp
+  | `LeOp -> `GtOp
+  | `GtOp -> `LeOp
+  | `GeOp -> `LtOp
+
+let target_cmpop = function
+  | Syntax.Eq -> `EqOp
+  | Syntax.NotEq -> `NeOp
+  | Syntax.Lt -> `LtOp
+  | Syntax.LtE -> `LeOp
+  | Syntax.Gt -> `GtOp
+  | Syntax.GtE -> `GeOp
+  | _ -> assert false
+
+let comparison ~ctx ~at ~op ~branch left right =
+  let branch, left, right =
+    match
+      ( Kind.is_byte_valued ~types:(Ctx.types ctx) ~at left.kind,
+        Kind.is_byte_valued ~types:(Ctx.types ctx) ~at right.kind )
+    with
+    | false, false -> (branch, left, right)
+    | true, true when List.mem op Syntax.[ Eq; NotEq ] ->
+        let branch, left = Byte_ops.to_bytes ~ctx ~at ~branch left in
+        let branch, right = Byte_ops.to_bytes ~ctx ~at ~branch right in
+        (branch, left, right)
+    | _ ->
+        Error.reject ~at "Byte comparisons require equality between byte values"
+  in
+  if
+    Kind.set_element ~types:(Ctx.types ctx) ~at left.kind <> None
+    || Kind.set_element ~types:(Ctx.types ctx) ~at right.kind <> None
+  then Error.reject ~at "Set comparisons require a membership contract";
+  let op = target_cmpop op in
+  ( branch,
+    (fun holds ->
+      Operand.comparison ~at
+        ~op:(if holds then op else complement op)
+        left.exp right.exp),
+    right )
