@@ -653,13 +653,9 @@ def referenced_global_names(function):
     return names
 
 
-def reaches_external_engine_global(module, name):
-    """Whether the reviewed call closure of ``name`` can read EXECUTION_ENGINE.
-
-    Compiled code objects are used rather than source text so that the answer
-    is available for every reviewed function, including fixtures with no file.
-    Attribute names widen the reviewed call graph, which can only reject more.
-    """
+def reviewed_call_names(module, name):
+    # Bytecode includes attribute names, which conservatively widen the
+    # reviewed call graph even for source functions without a backing file.
     pending, seen = [name], set()
     while pending:
         current = pending.pop()
@@ -667,10 +663,12 @@ def reaches_external_engine_global(module, name):
             continue
         seen.add(current)
         names = referenced_global_names(source_function(module, current))
-        if "EXECUTION_ENGINE" in names:
-            return True
+        yield names
         pending += sorted(names & (REVIEWED_EFFECTS.keys() - seen))
-    return False
+
+
+def reaches_external_engine_global(module, name):
+    return any("EXECUTION_ENGINE" in names for names in reviewed_call_names(module, name))
 
 
 def local_helper_contract(module, node):
@@ -787,15 +785,7 @@ def checked_state_reads(module):
     fields = set(module.BeaconState.fields())
     result = {}
     for name, declared in REVIEWED_STATE_READS.items():
-        pending, seen, reads = [name], set(), set()
-        while pending:
-            current = pending.pop()
-            if current in seen:
-                continue
-            seen.add(current)
-            names = referenced_global_names(source_function(module, current))
-            reads |= names & fields
-            pending += sorted(names & (REVIEWED_EFFECTS.keys() - seen))
+        reads = set().union(*(names & fields for names in reviewed_call_names(module, name)))
         if not reads <= set(declared):
             raise Unsupported(
                 f"Reviewed state reads for {name} miss {sorted(reads - set(declared))}"
