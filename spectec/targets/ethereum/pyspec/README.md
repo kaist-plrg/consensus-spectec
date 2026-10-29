@@ -52,9 +52,9 @@ Translation preserves results and the complete post-state on success, and reject
 | `Byte_ops` (private) | Byte-string representation, concatenation, indexing, iteration, decoding and hashing. |
 | `Sequence_ops` (private) | Sequence indexing, slicing, shape guards, concatenation, list literals and set construction. |
 | `Ssz_ops` (private) | SSZ input validity, hashing, unsigned serialization and record construction. |
-| `Call_ops` (private) | Reviewed call invocation with SSZ type arguments, primitive contracts and the execution engine. |
-| `Operators` (private) | Python binary operators, dispatched by operand kind to the operation modules. |
-| `Expr` (private) | Expression and condition translation: source evaluation order, short-circuiting, call argument binding and comprehensions. |
+| `Call_ops` (private) | Reviewed signatures, argument binding, call invocation with SSZ type arguments, primitive contracts and the execution engine. |
+| `Operators` (private) | Python binary operators and comparisons, including operand admission, coercion and comparison negation. |
+| `Expr` (private) | Expression and condition translation: source evaluation order, short-circuiting, argument evaluation and comprehensions. |
 | `Write` (private) | Assignment destinations, state and reference writes, and their propagation through aliases. |
 | `Effect` (private) | State-mutating calls, appends, local mutator helpers and the generic sequence helper. |
 | `Loop` (private) | How a statement sequence finishes on each branch, and the recursive helpers built from loop bodies. |
@@ -67,7 +67,7 @@ Translation preserves results and the complete post-state on success, and reject
 
 ## Python source and type extraction
 
-The Python package in [export](export) writes the source documents that `Source_json` decodes, so the two change together. `export.load` builds the pinned pyspec module from its Markdown sources. `export.provenance` selects source bodies and verifies Markdown, configuration and optimized-BLS provenance for both single-function export and batch consumers. `export.document` exports a function's syntax, runtime SSZ metadata, constants and state reads. `export.interface` derives presentation declarations from source signatures. `export.metadata.capella` holds the reviewed per-fork facts: the pinned revision, type names, effects, state reads, record constructors, fresh results and cache keys. `python -m export SOURCE OUTPUT --function NAME` exports one function, with `spectec/targets/ethereum/pyspec` on `PYTHONPATH`.
+The Python package in [export](export) writes the source documents that `Source_json` decodes, so the two change together. `export.load` builds the pinned pyspec module from its Markdown sources. `export.provenance` selects source bodies and verifies Markdown, configuration and optimized-BLS provenance for both single-function export and batch consumers. `export.document` indexes each body's calls, name occurrences and bindings once for admission and metadata extraction. It exports syntax, runtime SSZ metadata, constants and state reads, with one reviewed-call traversal shared by state-read and execution-engine checks. `export.interface` derives presentation declarations from source signatures. `export.metadata.capella` holds the reviewed per-fork facts: the pinned revision, type names, effects, state reads, record constructors, fresh results and cache keys. `python -m export SOURCE OUTPUT --function NAME` exports one function, with `spectec/targets/ethereum/pyspec` on `PYTHONPATH`.
 
 Python fixtures and pinned translation outputs live in `spectec/test/pyspec`. Neither the library nor source extraction depends on that directory.
 
