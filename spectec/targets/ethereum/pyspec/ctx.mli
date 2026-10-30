@@ -3,7 +3,7 @@ type t = private {
   list_results : string list;
   mutable next : int;
   mutable reserved : string list;
-  registry : Registry.t;
+  registry : Assembly.Registry.t;
   declarations : (string * Lang.El.def) list;
 }
 

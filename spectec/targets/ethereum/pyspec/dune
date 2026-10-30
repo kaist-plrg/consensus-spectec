@@ -4,7 +4,6 @@
  (private_modules
   assembly
   translate
-  registry
   python_builtins
   store
   kind

@@ -5,7 +5,10 @@ open Operand
 module S = Source
 
 let declare ~ctx ~at name =
-  if not (Registry.declared_function ~builtin:true ~name ctx.Ctx.registry) then
+  if
+    not
+      (Assembly.Registry.declared_function ~builtin:true ~name ctx.Ctx.registry)
+  then
     let signature =
       match name with
       | "hash_" -> "<X>(X): bytes32"
@@ -44,7 +47,7 @@ let declare ~ctx ~at name =
       Spectec.parse_spec_source { filename = "<crypto-contract>"; contents }
     with
     | Ok [ declaration ] ->
-        Registry.emit ~registry:ctx.Ctx.registry ~ownership:Shared
+        Assembly.Registry.emit ~registry:ctx.Ctx.registry ~ownership:Shared
           [ declaration ]
     | _ -> Error.reject ~at "Invalid crypto contract declaration"
 
@@ -177,5 +180,6 @@ let declare_execution_engine ~ctx ~at =
       }
   with
   | Ok [ definition ] ->
-      Registry.emit ~registry:ctx.Ctx.registry ~ownership:Shared [ definition ]
+      Assembly.Registry.emit ~registry:ctx.Ctx.registry ~ownership:Shared
+        [ definition ]
   | _ -> Error.reject ~at "Invalid external engine declaration"

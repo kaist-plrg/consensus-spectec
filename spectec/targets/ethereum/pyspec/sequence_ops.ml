@@ -450,11 +450,11 @@ let range_name = "translated_range"
 
 let declare_range ~ctx ~at =
   let name = range_name in
-  if not (Registry.declared_function ~name ctx.Ctx.registry) then
+  if not (Assembly.Registry.declared_function ~name ctx.Ctx.registry) then
     let first = var ~at "int_range_start" and stop = var ~at "int_range_stop" in
     let typ = NumT `IntT $ at in
     let def value test = ([ first; stop ], value, [ IfPr test $ at ]) in
-    Registry.emit ~registry:ctx.Ctx.registry ~ownership:Shared
+    Assembly.Registry.emit ~registry:ctx.Ctx.registry ~ownership:Shared
       (Operand.function_definitions ~at name ~parameters:[ typ; typ ]
          ~result:(IterT (typ, List) $ at)
          ~equations:

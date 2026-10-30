@@ -7,7 +7,7 @@ type t = {
   list_results : string list;
   mutable next : int;
   mutable reserved : string list;
-  registry : Registry.t;
+  registry : Assembly.Registry.t;
   declarations : (string * def) list;
 }
 
@@ -17,7 +17,7 @@ let make source ~list_results ~reserved ~declarations =
     list_results;
     next = 0;
     reserved;
-    registry = Registry.make ();
+    registry = Assembly.Registry.make ();
     declarations;
   }
 
@@ -60,7 +60,8 @@ let fresh_helper_name ctx ~operation =
   "translated_" ^ ctx.source.signature.name ^ "_" ^ operation ^ string_of_int n
 
 let share_helper ctx ~name ~definitions =
-  Registry.register ctx.registry ~ownership:Shared ~name ~generate:definitions
+  Assembly.Registry.register ctx.registry ~ownership:Shared ~name
+    ~generate:definitions
 
 let share_helper_text ctx ~at ~name ~operation ~text =
   share_helper ctx ~name ~definitions:(fun () ->
@@ -72,5 +73,5 @@ let share_helper_text ctx ~at ~name ~operation ~text =
       | Error _ -> Error.reject ~at ("Invalid generated helper: " ^ name))
 
 let emit_helper ctx ~definitions =
-  Registry.emit ~registry:ctx.registry
+  Assembly.Registry.emit ~registry:ctx.registry
     ~ownership:(Helper ctx.source.signature.name) definitions

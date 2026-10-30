@@ -89,7 +89,8 @@ let prepare_record ~ctx ~at name ~positional ~keywords =
   let fields = Kind.fields ~types:(Ctx.types ctx) ~at (Named name) in
   (if
      name = Source.Contracts.signing_data
-     && not (Registry.declared_type ~name:"signingData" ctx.Ctx.registry)
+     && not
+          (Assembly.Registry.declared_type ~name:"signingData" ctx.Ctx.registry)
    then
      let contents =
        "syntax signingData = { "
@@ -107,7 +108,7 @@ let prepare_record ~ctx ~at name ~positional ~keywords =
        Spectec.parse_spec_source { filename = "<ssz-record>"; contents }
      with
      | Ok [ declaration ] ->
-         Registry.emit ~registry:ctx.Ctx.registry ~ownership:Shared
+         Assembly.Registry.emit ~registry:ctx.Ctx.registry ~ownership:Shared
            [ declaration ]
      | _ -> Error.reject ~at "Invalid generated SSZ record declaration");
   if

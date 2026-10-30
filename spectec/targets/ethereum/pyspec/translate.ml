@@ -28,7 +28,7 @@ let set_input ctx at branch value =
       let tail = fresh ctx ~at ~kind:(Sequence (element, None)) in
       let member = MemE (head.exp, tail.exp) $ at in
       let cons = ConsE (head.exp, tail.exp) $ at in
-      Registry.emit ~registry:ctx.registry
+      Assembly.Registry.emit ~registry:ctx.registry
         ~ownership:(Helper ctx.source.signature.name)
         (Operand.function_definitions ~at name
            ~parameters:[ Operand.typ ~types:ctx.source.types ~at value.kind ]
@@ -148,9 +148,10 @@ let translate_source list_results source =
             $ at)
       branches
   in
-  Registry.emit ~registry:ctx.registry ~ownership:(Source signature.name)
+  Assembly.Registry.emit ~registry:ctx.registry
+    ~ownership:(Source signature.name)
     (declaration :: definitions);
-  Registry.groups ctx.registry
+  Assembly.Registry.groups ctx.registry
 
 let bundle bundle =
   let list_results = Bundle.list_results bundle in

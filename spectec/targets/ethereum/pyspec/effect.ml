@@ -11,8 +11,8 @@ module B = Python_builtins
 let sequence_helper_name = "translated_set_or_append_list"
 
 let generic_sequence_helper ctx (helper : S.sequence_helper) =
-  Registry.register ctx.registry ~ownership:Shared ~name:sequence_helper_name
-    ~generate:(fun () ->
+  Assembly.Registry.register ctx.registry ~ownership:Shared
+    ~name:sequence_helper_name ~generate:(fun () ->
       let at = helper.at in
       let source =
         {
@@ -363,8 +363,8 @@ let local_helper_definition ctx at (helper : Syntax.local_helper) =
   let name =
     "translated_" ^ ctx.source.signature.name ^ "_" ^ helper.Syntax.helper
   in
-  Registry.register ctx.registry ~ownership:(Helper ctx.source.signature.name)
-    ~name ~generate:(fun () ->
+  Assembly.Registry.register ctx.registry
+    ~ownership:(Helper ctx.source.signature.name) ~name ~generate:(fun () ->
       let state =
         nominal_type_name ctx at (Named Source.Contracts.state_type)
       in
@@ -388,7 +388,8 @@ let local_helper_definition ctx at (helper : Syntax.local_helper) =
    logic of its own. *)
 let local_helper_adapter ctx at (signature : S.signature) operation =
   let name = "translated_apply_" ^ signature.S.name in
-  Registry.register ctx.registry ~ownership:Shared ~name ~generate:(fun () ->
+  Assembly.Registry.register ctx.registry ~ownership:Shared ~name
+    ~generate:(fun () ->
       let state_type =
         Operand.typ ~types:ctx.source.types ~at
           (Named Source.Contracts.state_type)
