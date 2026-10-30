@@ -36,7 +36,7 @@ let generic_sequence_helper ctx (helper : S.sequence_helper) =
       let index =
         {
           exp = var ~at "validatorIndex_index";
-          kind = Named Spec_names.validator_index;
+          kind = Named Source.Contracts.validator_index;
         }
       in
       let value = { exp = var ~at "X_value"; kind = Named "X" } in
@@ -164,7 +164,7 @@ let sequence_helper_call ctx at helper args branch =
                    Error.reject ~at
                      "Generic mutation requires concrete SSZ metadata"
              in
-             if index.kind <> Named Spec_names.validator_index then
+             if index.kind <> Named Source.Contracts.validator_index then
                Error.reject ~at "Generic list index must be ValidatorIndex";
              let valid =
                match
@@ -365,7 +365,9 @@ let local_helper_definition ctx at (helper : Syntax.local_helper) =
   in
   Registry.register ctx.registry ~ownership:(Helper ctx.source.signature.name)
     ~name ~generate:(fun () ->
-      let state = nominal_type_name ctx at (Named Spec_names.state_type) in
+      let state =
+        nominal_type_name ctx at (Named Source.Contracts.state_type)
+      in
       let contents =
         Printf.sprintf
           "dec $%s<X>(%s, X*, def $f(%s, X) : %s) : %s\n\
@@ -388,21 +390,24 @@ let local_helper_adapter ctx at (signature : S.signature) operation =
   let name = "translated_apply_" ^ signature.S.name in
   Registry.register ctx.registry ~ownership:Shared ~name ~generate:(fun () ->
       let state_type =
-        Operand.typ ~types:ctx.source.types ~at (Named Spec_names.state_type)
+        Operand.typ ~types:ctx.source.types ~at
+          (Named Source.Contracts.state_type)
       in
       let operation_type =
         Operand.typ ~types:ctx.source.types ~at (Named operation)
       in
       let state =
         var ~at
-          (nominal_type_name ctx at (Named Spec_names.state_type) ^ "_state")
+          (nominal_type_name ctx at (Named Source.Contracts.state_type)
+          ^ "_state")
       in
       let element =
         var ~at (nominal_type_name ctx at (Named operation) ^ "_operation")
       in
       let result =
         var ~at
-          (nominal_type_name ctx at (Named Spec_names.state_type) ^ "_result")
+          (nominal_type_name ctx at (Named Source.Contracts.state_type)
+          ^ "_result")
       in
       let declaration =
         Error.find_or_reject ~at ~name:signature.S.name ctx.declarations
@@ -447,7 +452,7 @@ let local_helper_call ctx at (helper : Syntax.local_helper) args branch =
   let operation =
     match (signature.S.effect, signature.S.returns, signature.S.parameters) with
     | S.MutatesState, None, [ ("state", state_type); (_, operation) ]
-      when state_type = Spec_names.state_type ->
+      when state_type = Source.Contracts.state_type ->
         operation
     | _ ->
         Error.reject ~at
@@ -469,7 +474,7 @@ let local_helper_call ctx at (helper : Syntax.local_helper) args branch =
              (Store.bindings branch.storage)
          in
          let branch, elements = bind ~ctx ~at branch ~term:elements in
-         let result = fresh ctx ~at ~kind:(Named Spec_names.state_type) in
+         let result = fresh ctx ~at ~kind:(Named Source.Contracts.state_type) in
          let applied =
            CallE
              ( id ~at name,
@@ -566,7 +571,7 @@ let call ~ctx (node : Syntax.expr) ~branch =
               List.map
                 (fun (branch, values) ->
                   let result =
-                    fresh ctx ~at ~kind:(Named Spec_names.state_type)
+                    fresh ctx ~at ~kind:(Named Source.Contracts.state_type)
                   in
                   let declaration =
                     Error.find_or_reject ~at ~name ctx.declarations

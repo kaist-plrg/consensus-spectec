@@ -1,9 +1,4 @@
-(** Builtin calls in source documents: the names a document may declare in
-    scope, their resolution into operations, and the contracts of the BLS and
-    byte-decoding primitives. *)
-
-(** Builtin names a source document may declare in scope. *)
-val admitted : string list
+(** Source builtin resolution and operand contracts. *)
 
 type declarations =
   | NoneRequired

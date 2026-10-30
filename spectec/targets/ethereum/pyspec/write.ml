@@ -306,7 +306,7 @@ let store ?copied ~ctx (node : Syntax.expr) ~value ~branch =
   then Error.reject ~at "Set ordering cannot escape into state";
   match node.it with
   | Syntax.Name name ->
-      if name = "state" || value.kind = Named Spec_names.state_type then
+      if name = "state" || value.kind = Named Source.Contracts.state_type then
         Error.reject ~at "Saving or rebinding the mutable root state";
       let location = origin branch ~value in
       let reference =

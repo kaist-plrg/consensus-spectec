@@ -78,11 +78,11 @@ let translate_source list_results source =
   let supplied_engines =
     List.length
       (List.filter
-         (fun (_, kind) -> kind = Spec_names.execution_engine)
+         (fun (_, kind) -> kind = Source.Contracts.execution_engine)
          signature.parameters)
   in
   let global_engine =
-    List.mem Spec_names.execution_engine_global source.builtins
+    List.mem Source.Contracts.execution_engine_global source.builtins
   in
   if supplied_engines > 1 then
     Error.reject ~at "More than one execution engine in one definition";

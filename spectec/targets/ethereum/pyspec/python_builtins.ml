@@ -1,38 +1,3 @@
-let admitted =
-  [
-    "all";
-    "enumerate";
-    "len";
-    "min";
-    "max";
-    "sum";
-    "set";
-    "filter";
-    "sorted";
-    "zip";
-    "range";
-    "hash_tree_root";
-    "hash";
-    "uint_to_bytes";
-    "int_from_bytes";
-    "Bytes32";
-    Spec_names.root;
-    "Domain";
-    "ExecutionAddress";
-    Spec_names.bls_pubkey;
-    Spec_names.new_payload_request;
-    Spec_names.execution_engine_global;
-    "bls_key_validate";
-    "bls_aggregate_pubkeys";
-    "bls_verify";
-    "bls_fast_aggregate_verify";
-    "bls_g1_decode";
-    "bls_g1_encode";
-    "bls_g1_canonicalize";
-    "bls_g1_add";
-    "bls_g1_neg";
-  ]
-
 type declarations =
   | NoneRequired
   | BeforeArity of string list
@@ -82,7 +47,7 @@ type contract = {
 let key_validate =
   {
     name = Syntax.primitive_name Syntax.BlsKeyValidate;
-    operands = [ Exact (Kind.Named Spec_names.bls_pubkey) ];
+    operands = [ Exact (Kind.Named Source.Contracts.bls_pubkey) ];
     result = Kind.boolean;
     bind_result = false;
     arity_error = "KeyValidate requires one positional value";
@@ -137,9 +102,9 @@ let of_primitive primitive =
   | Syntax.BlsFastAggregateVerify ->
       predicate
         [
-          Sequence (Named Spec_names.bls_pubkey);
+          Sequence (Named Source.Contracts.bls_pubkey);
           Bytes 32;
-          Exact (Named Spec_names.bls_signature);
+          Exact (Named Source.Contracts.bls_signature);
         ]
         "FastAggregateVerify requires three positional values"
         "FastAggregateVerify requires BLSPubkey sequence, 32-byte message, \
@@ -147,9 +112,9 @@ let of_primitive primitive =
   | Syntax.BlsVerify ->
       predicate
         [
-          Exact (Named Spec_names.bls_pubkey);
-          Exact (Named Spec_names.root);
-          Exact (Named Spec_names.bls_signature);
+          Exact (Named Source.Contracts.bls_pubkey);
+          Exact (Named Source.Contracts.root);
+          Exact (Named Source.Contracts.bls_signature);
         ]
         "Verify requires three positional values"
         "Verify requires BLSPubkey, Root, BLSSignature"
@@ -167,7 +132,7 @@ let resolve ~builtins name =
     | "all" -> Some (Eager All)
     | "len" -> Some (Eager Length)
     | "Bytes32" -> Some Bytes32Constructor
-    | name when List.mem name Spec_names.nominal_bytes_constructors ->
+    | name when List.mem name Source.Contracts.nominal_bytes_constructors ->
         Some (NominalBytesConstructor name)
     | "range" -> Some Range
     | "set" -> Some Set

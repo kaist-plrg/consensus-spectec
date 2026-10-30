@@ -669,7 +669,7 @@ let decode json =
   let builtins = strings (field "builtins" root) in
   if
     List.exists
-      (fun name -> not (List.mem name Python_builtins.admitted))
+      (fun name -> not (List.mem name Source.Contracts.admitted))
       builtins
   then invalid "Unreviewed builtin";
   let constructors = strings (field "constructors" root) in

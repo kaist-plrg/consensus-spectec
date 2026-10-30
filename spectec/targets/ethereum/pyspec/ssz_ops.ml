@@ -88,7 +88,7 @@ let type_argument ~ctx ~at = function
 let prepare_record ~ctx ~at name ~positional ~keywords =
   let fields = Kind.fields ~types:(Ctx.types ctx) ~at (Named name) in
   (if
-     name = Spec_names.signing_data
+     name = Source.Contracts.signing_data
      && not (Registry.declared_type ~name:"signingData" ctx.Ctx.registry)
    then
      let contents =
@@ -205,5 +205,5 @@ let hash_tree_root ~ctx ~at ~branch value =
         Target_builtins.hash_tree_root ~at ~root
           ~type_argument:(fun () -> type_argument ~ctx ~at value.kind)
           value.exp;
-      kind = Named Spec_names.root;
+      kind = Named Source.Contracts.root;
     } )

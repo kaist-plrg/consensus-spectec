@@ -172,9 +172,9 @@ let read_name ~ctx ~at ~branch name =
   | None when List.mem name ctx.source.locals ->
       Error.reject ~at ("Read before local assignment: " ^ name)
   | None
-    when name = Spec_names.execution_engine_global
+    when name = Source.Contracts.execution_engine_global
          && List.mem name ctx.source.builtins ->
-      { exp = TupleE [] $ at; kind = Named Spec_names.execution_engine }
+      { exp = TupleE [] $ at; kind = Named Source.Contracts.execution_engine }
   | None -> fst (constant ctx at name)
 
 let rec translate ~ctx (node : Syntax.expr) ~branch =
@@ -259,16 +259,16 @@ let rec translate ~ctx (node : Syntax.expr) ~branch =
         "Tuples require membership and lambdas require immediate set/filter \
          consumption"
   | Syntax.Method (receiver, method_, [ request ])
-    when method_ = Spec_names.new_payload_method ->
-      if not (List.mem Spec_names.new_payload_request ctx.source.builtins) then
-        Error.reject ~at "Unreviewed execution-payload request";
-      if List.mem Spec_names.new_payload_request ctx.source.locals then
+    when method_ = Source.Contracts.new_payload_method ->
+      if not (List.mem Source.Contracts.new_payload_request ctx.source.builtins)
+      then Error.reject ~at "Unreviewed execution-payload request";
+      if List.mem Source.Contracts.new_payload_request ctx.source.locals then
         Error.reject ~at "Calls through locally bound names: NewPayloadRequest";
       let payload =
         match request.it with
         | Syntax.Call (name, [], [ (keyword, payload) ])
-          when name = Spec_names.new_payload_request
-               && keyword = Spec_names.execution_payload_keyword ->
+          when name = Source.Contracts.new_payload_request
+               && keyword = Source.Contracts.execution_payload_keyword ->
             payload
         | _ ->
             Error.reject ~at
@@ -277,7 +277,7 @@ let rec translate ~ctx (node : Syntax.expr) ~branch =
       in
       translate ~ctx receiver ~branch
       |> List.concat_map (fun (branch, receiver) ->
-             if receiver.kind <> Named Spec_names.execution_engine then
+             if receiver.kind <> Named Source.Contracts.execution_engine then
                Error.reject ~at "Expected an external execution engine";
              translate ~ctx payload ~branch
              |> List.map (fun (branch, payload) ->
@@ -374,7 +374,7 @@ let rec translate ~ctx (node : Syntax.expr) ~branch =
                     {
                       exp =
                         Target_builtins.bytes32_to_bytes ~ctx ~at (nat ~at 0);
-                      kind = Named Spec_names.root;
+                      kind = Named Source.Contracts.root;
                     } );
                 ]
             | ( [

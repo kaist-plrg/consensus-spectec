@@ -182,7 +182,7 @@ let invoke_primitive ~ctx ~at (primitive : Python_builtins.primitive_contract)
   else (branch, result)
 
 let notify_new_payload ~ctx ~at ~branch payload =
-  if payload.kind <> Named Spec_names.execution_payload then
+  if payload.kind <> Named Source.Contracts.execution_payload then
     Error.reject ~at "Expected an execution payload";
   Branch.bind ~ctx ~at branch
     ~term:
@@ -193,7 +193,7 @@ let notify_new_payload ~ctx ~at ~branch payload =
 
 let aggregate_pubkeys ~ctx ~at ~branch value =
   let element, _, _ = Kind.sequence ~types:(Ctx.types ctx) ~at value.kind in
-  if element <> Named Spec_names.bls_pubkey then
+  if element <> Named Source.Contracts.bls_pubkey then
     Error.reject ~at "AggregatePKs requires BLSPubkey sequence";
   let branch, value = Branch.bind ~ctx ~at branch ~term:value in
   let branch =
@@ -217,5 +217,5 @@ let aggregate_pubkeys ~ctx ~at ~branch value =
   ( branch,
     {
       exp = Target_builtins.aggregate_pubkeys ~ctx ~at value.exp;
-      kind = Named Spec_names.bls_pubkey;
+      kind = Named Source.Contracts.bls_pubkey;
     } )

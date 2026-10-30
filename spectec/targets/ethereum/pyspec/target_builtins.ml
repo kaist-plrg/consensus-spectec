@@ -95,7 +95,7 @@ let hash_tree_root_builtin ~ctx ~at kind =
   let generic =
     match kind with
     | Named name ->
-        name = Spec_names.signing_data
+        name = Source.Contracts.signing_data
         || Kind.descriptor ~types:(Ctx.types ctx) ~at name = S.SszParameter
     | _ -> false
   in
