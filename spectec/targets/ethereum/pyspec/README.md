@@ -31,37 +31,18 @@ Translation preserves results and the complete post-state on success, and reject
 
 ## Responsibilities
 
-| Module | Contract |
+The OCaml implementation is organized by responsibility. `pyspec.ml` exposes the public API, and `Error` supplies source-located rejection across the areas.
+
+| Area | Modules and responsibility |
 | --- | --- |
-| `Pyspec.Syntax` | Python-subset expressions and statements, and their structural traversals. |
-| `Pyspec.Source` | SSZ descriptors, signatures, effects, presentation metadata and the source function, with no JSON or file-loading dependency. |
-| `Pyspec.Error` | Translation rejection carrying a source region and message. Decoding, translation and assembly all reject through it. |
-| `Pyspec.Source_json` | Export schema validation and JSON decoding. Produces `Source.t` values. |
-| `Pyspec.Bundle` | A validated, nonempty set of source documents with unique functions that agree on shared call signatures and generic helpers, and the functions it infers to return Python lists. |
-| `Kind` (private) | Source value categories, nominal type lookup, widths, sequence contracts and mutability. Its queries accept source type metadata and have no target AST or generation-context dependency. |
-| `Store` (private) | Immutable local bindings, reference identity, read caches, origins and reference lifetime across writes and body entry. |
-| `Loop_plan` (private) | Checks on source loops, ordered carried values and captures, restrictions on promoted accumulators, and independent, snapshot or live iterator access. It consumes generic storage facts and constructs no target syntax. |
-| `List_results` (private) | Source analysis that identifies sequence-valued results across a bundle. |
-| `Operand` (private) | Operands, which pair an EL expression with its source kind, the kind-to-EL type mapping and EL term constructors. |
-| `Ctx` (private) | The context of one function's translation: its source document, fresh-name allocation, definition registry, and target declaration lookup. |
-| `Branch` (private) | One execution branch: storage, premises, optional-parameter decisions, promoted accumulators and reached local helpers. Each finished branch becomes one clause. |
-| `Spec_names` (private) | Consensus-spec names that translation recognizes. |
-| `Python_builtins` (private) | The builtins a source document may call, and their resolution into operations and primitive contracts. |
-| `Target_builtins` (private) | The Ethereum target's builtins that generated definitions call: their declarations, call builders and the SSZ hashing dispatch. |
-| `Numeric_ops` (private) | Integer and unsigned arithmetic, bitwise operations, shifts, casts, extrema and index naturalization over evaluated operands. |
-| `Byte_ops` (private) | Byte-string representation, concatenation, indexing, iteration, decoding and hashing. |
-| `Sequence_ops` (private) | Sequence indexing, slicing, shape guards, concatenation, list literals and set construction. |
-| `Ssz_ops` (private) | SSZ input validity, hashing, unsigned serialization and record construction. |
-| `Call_ops` (private) | Reviewed signatures, argument binding, call invocation with SSZ type arguments, primitive contracts and the execution engine. |
-| `Operators` (private) | Python binary operators and comparisons, including operand admission, coercion and comparison negation. |
-| `Expr` (private) | Expression and condition translation: source evaluation order, short-circuiting, argument evaluation and comprehensions. |
-| `Write` (private) | Assignment destinations, state and reference writes, and their propagation through aliases. |
-| `Effect` (private) | State-mutating calls, appends, local mutator helpers and the generic sequence helper. |
-| `Loop` (private) | How a statement sequence finishes on each branch, and the recursive helpers built from loop bodies. |
-| `Stmt` (private) | Statement translation, including the checks on `for` and `while` loops. |
-| `Pyspec.Translate` | Bundle translation, signature checks and the generated entry definitions. |
-| `Registry` (private) | Definitions grouped by explicit ownership during one translation, registration and declaration lookup. |
-| `Pyspec.Assembly` | Bundle sharing, declaration ordering, target-context insertion of registered groups, and elaboration and structuring of the result. |
+| `source/` | `Syntax` and `Source` describe accepted Python and its metadata. `Source.Contracts` owns recognized consensus names and admitted builtins. `Source_json` decodes documents. `Bundle` validates shared contracts and privately infers Python-list results. |
+| `values/` | `Kind` queries source widths, sequence contracts and mutability without constructing EL. `Operand` pairs a source kind with an evaluated EL expression and supplies target constructors. |
+| `state/` | `Ctx` owns per-function allocation and declaration lookup. `Branch` holds path premises and decisions. `Store` tracks immutable bindings, aliases, origins, caches and reference lifetimes. |
+| `operations/` | `Numeric_ops`, `Byte_ops`, `Sequence_ops` and `Ssz_ops` implement operations on evaluated values. `Call_ops` prepares and invokes reviewed calls. `Operators` dispatches binary operations and checks comparisons. `Python_builtins` resolves source calls to operand contracts, and `Target_builtins` declares generated runtime calls. |
+| `translation/` | `Expr` controls expression evaluation and conditions. `Stmt` sequences statements. `Write` resolves assignments and propagates aliases. `Effect` handles mutation. `Loop_plan` analyzes loops, and `Loop` constructs their recursive helpers. `Translate` checks signatures and builds entry definitions. |
+| `definitions/` | `Assembly.Registry` records emitted groups and declaration indexes. `Assembly` shares definitions, checks collisions and inserts source-owned entries into a target context for compilation. |
+
+Source decoding depends only on the source contract and rejection support. Values and definition assembly are independent of traversal. Translation state supports operand operations, and source traversal combines those operations into execution paths.
 
 `Translate.bundle` translates every function of a bundle. It returns an abstract `Assembly.t` containing target definitions and source replacement symbols. A function's translation does not depend on the other functions in the bundle beyond the shared signatures and list-result inference. `Assembly.definitions` exposes the target definitions. `Bundle.make` validates source uniqueness and shared contracts before inference, so translation receives a validated bundle. `Assembly.replace` inserts generated definitions into a target context, replacing declarations and bodies owned by generated source functions.
 
