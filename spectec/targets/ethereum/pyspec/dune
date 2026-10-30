@@ -6,7 +6,6 @@
   translate
   registry
   python_builtins
-  list_results
   store
   kind
   loop_plan
