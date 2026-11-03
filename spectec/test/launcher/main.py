@@ -46,7 +46,7 @@ with tempfile.TemporaryDirectory(prefix="spectec launcher ") as directory:
 
     (Path(directory) / "spectecx.config").write_text("ethereum.spec_dir = missing-spec\n")
     result = subprocess.run(
-        [str(launcher), "ethereum", "run", "state-transition", "--color", "never"],
+        [str(launcher), "ethereum", "run", "state-transition", "--fork", "capella", "--color", "never"],
         cwd=directory, text=True, capture_output=True, timeout=30,
     )
     assert result.returncode == 1

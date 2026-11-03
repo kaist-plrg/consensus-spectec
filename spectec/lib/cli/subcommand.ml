@@ -10,8 +10,8 @@ let load_spec source =
   let henv = Spectec.henv_with_il_spec henv spec_il in
   Ok (filenames, spec_il, henv)
 
-let make_task (module Tgt : Spectec.Target.S) ~name ~summary
-    (module TC : Task_cli.S) =
+let make_task ?(setup = Core.Command.Param.return ())
+    (module Tgt : Spectec.Target.S) ~name ~summary (module TC : Task_cli.S) =
   let cmd =
     Core.Command.basic ~summary
     @@
@@ -27,6 +27,7 @@ let make_task (module Tgt : Spectec.Target.S) ~name ~summary
       | None -> return None
       | Some _ -> flag "--output" (optional string) ~doc:"FILE save task output"
     and input = TC.flags
+    and () = setup
     and config = Cli_args.Interpreter.config_flags
     and color = Cli_args.Output.color_flag in
     fun () ->
@@ -104,8 +105,9 @@ let make_parse (module Tgt : Spectec.Target.S) ~name ~summary
   in
   (name, cmd)
 
-let make_batch ?on_no_validate ?slot_gap_filter (module Tgt : Spectec.Target.S)
-    ~name (task_clis : (module Task_cli.S) list) =
+let make_batch ?(setup = Core.Command.Param.return ()) ?on_no_validate
+    ?slot_gap_filter (module Tgt : Spectec.Target.S) ~name
+    (task_clis : (module Task_cli.S) list) =
   let packed_tasks =
     List.map
       (fun (module TC : Task_cli.S) -> Spectec.Task.Pack (module TC.Task))
@@ -120,6 +122,7 @@ let make_batch ?on_no_validate ?slot_gap_filter (module Tgt : Spectec.Target.S)
     let%map mode = Cli_args.Interpreter.mode_flag
     and verbose = flag "-v" no_arg ~doc:" verbose: print progress for each test"
     and batch_dir = Cli_args.Batch.dir_flag
+    and () = setup
     and cli_source = Cli_args.Spec.source_flag
     and checkpoint = Cli_args.Checkpoint.flags
     and config = Cli_args.Interpreter.config_flags
