@@ -1,0 +1,4 @@
+(library
+ (name ssz_schema)
+ (public_name ssz.schema)
+ (libraries ssz yojson))

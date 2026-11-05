@@ -413,3 +413,51 @@ module SyncAggregate = struct
   let unparse = unparse
   let save_output = Some save_state
 end
+
+(* Any relation over a pre-state and typed JSON arguments.
+   New operations and epoch steps use it instead of a task each. *)
+module Relation = struct
+  let name = "relation"
+
+  module Target = Target
+
+  type input = {
+    pre_file : string;
+    relation : string;
+    args : (string * string) list; (* (IL type, JSON file) *)
+    execution_data_file : string option;
+    expect : Runner.Task.expectation;
+  }
+
+  let make ?(expect = Runner.Task.Positive) ~pre_file ~relation ~args
+      ?execution_data_file () =
+    { pre_file; relation; args; execution_data_file; expect }
+
+  let collect ?dir:_ () = []
+
+  let parse_input ~spec (input : input) =
+    let ( let* ) = Result.bind in
+    Engine.set_validity
+      (match input.execution_data_file with
+      | None -> true
+      | Some f ->
+          Yojson.Safe.(Util.member "execution_valid" (from_file f))
+          |> Yojson.Safe.Util.to_bool);
+    let* beaconState_il = parse_json ~spec input.pre_file "beaconState" in
+    let* args =
+      List.fold_right
+        (fun (typ, file) acc ->
+          let* acc = acc in
+          let* v = parse_json ~spec file typ in
+          Ok (v :: acc))
+        input.args (Ok [])
+    in
+    Ok (input.relation, beaconState_il :: args)
+
+  let source { pre_file; _ } = pre_file
+  let expectation { expect; _ } = expect
+  let format_output _values = "Relation processed"
+  let parse_string = parse_string
+  let unparse = unparse
+  let save_output = Some save_state
+end

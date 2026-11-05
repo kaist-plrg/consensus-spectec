@@ -179,6 +179,33 @@ module Sync_aggregate_cli : Cli.Task_cli.S = struct
     Task.make ~pre_file:pre ~sync_aggregate_file:aggregate ()
 end
 
+module Relation_cli : Cli.Task_cli.S = struct
+  module Task = Operations.Relation
+
+  let flags =
+    let open Core.Command.Let_syntax in
+    let open Core.Command.Param in
+    let%map pre =
+      flag "--pre" (optional_with_default "" string) ~doc:"FILE pre-state JSON"
+    and relation = flag "--name" (required string) ~doc:"REL relation to run"
+    and args =
+      flag "--arg" (listed string)
+        ~doc:"TYPE=FILE argument after the state: IL type and JSON file"
+    and execution =
+      flag "--execution" (optional string) ~doc:"FILE execution data JSON"
+    in
+    let args =
+      List.map
+        (fun a ->
+          match String.index_opt a '=' with
+          | Some i ->
+              (String.sub a 0 i, String.sub a (i + 1) (String.length a - i - 1))
+          | None -> failwith ("--arg expects TYPE=FILE, got " ^ a))
+        args
+    in
+    Task.make ~pre_file:pre ~relation ~args ?execution_data_file:execution ()
+end
+
 module type Epoch_task = sig
   include Spectec.Task.S
 
@@ -244,7 +271,26 @@ module Json_parse_cli : Cli.Task_cli.S = struct
 end
 
 let target = (module Target : Spectec.Target.S)
-let task ~name ~summary cli = Cli.Subcommand.make_task target ~name ~summary cli
+
+(* The SSZ schema hash_tree_root merkleizes with: one per fork and preset. *)
+let ssz_flags =
+  let open Core.Command.Let_syntax in
+  let open Core.Command.Param in
+  let%map fork =
+    flag "--fork" (required string) ~doc:"FORK consensus fork (capella, deneb, electra, fulu, gloas)"
+  and preset =
+    flag "--preset"
+      (optional_with_default "mainnet" string)
+      ~doc:"PRESET SSZ preset (minimal, mainnet; default: mainnet)"
+  in
+  match Builtin_eth.SszImpl.configure ~fork ~preset with
+  | Ok () -> ()
+  | Error msg ->
+      prerr_endline msg;
+      exit 2
+
+let task ~name ~summary cli =
+  Cli.Subcommand.make_task ~setup:ssz_flags target ~name ~summary cli
 
 let operations =
   Core.Command.group ~summary:"Operation and block processing tasks"
@@ -336,6 +382,8 @@ let run =
       task ~name:"slots" ~summary:"Process slots" (module Slots_cli);
       task ~name:"state-transition" ~summary:"Run Ethereum state transition"
         (module State_transition_cli);
+      task ~name:"relation" ~summary:"Run a relation on a pre-state"
+        (module Relation_cli);
     ]
 
 let name = Target.name
@@ -344,7 +392,7 @@ let command =
   Core.Command.group ~summary:"Ethereum commands"
     [
       ("run", run);
-      Cli.Subcommand.make_batch
+      Cli.Subcommand.make_batch ~setup:ssz_flags
         ~on_no_validate:(fun () -> set_default_validate_result false)
         ~slot_gap_filter:Runner.Testgen.slot_gap_within_limit_for_source target
         ~name:"coverage" task_clis;

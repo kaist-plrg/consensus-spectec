@@ -95,7 +95,7 @@ vsix:
 # Match the consensus-specs gitlink (71c00190, v1.7.0-beta.3); update both pins together.
 SPEC_TESTS_VERSION ?= v1.7.0-beta.3
 SPEC_TESTS_PRESET ?= mainnet
-SPEC_TESTS_FORKS ?= capella deneb
+SPEC_TESTS_FORKS ?= capella deneb electra fulu gloas
 SPEC_TESTS_SUITES ?= sanity random finality
 # SHA-256 digests published with the ethereum/consensus-specs release assets.
 SPEC_TESTS_SHA256_v1.7.0-beta.3_mainnet = a50c3eae743fcf69e17e3510b84e94dcabf96977655788c66bdc43a96590fdf5

@@ -12,7 +12,8 @@ consensus_specs_path = os.path.abspath(os.path.join(script_dir, '../../consensus
 if consensus_specs_path not in sys.path:
     sys.path.insert(0, consensus_specs_path)
 
-from ssz import BaseUint, BitList, BitVector, Boolean, ByteList, ByteVector, Container, List, Vector
+from ssz import (BaseUint, BitList, BitVector, Boolean, ByteList, ByteVector, Container, List,
+                 ProgressiveBitList, ProgressiveContainer, ProgressiveList, Uint8, Vector)
 
 def _to_hex(b: bytes) -> str:
     return "0x" + b.hex()
@@ -23,15 +24,17 @@ def bitfield_to_bool_list(v):
 
 def ssz_to_json(v: Any) -> Any:
     # 1) Container
-    if isinstance(v, Container):
+    if isinstance(v, (Container, ProgressiveContainer)):
         out = {}
         for fname in type(v).model_fields:
             sub = getattr(v, fname)
             out[fname] = ssz_to_json(sub)
         return out
 
-    # 2) Vectors/Lists (of anything)
-    if isinstance(v, (Vector, List)):
+    # 2) Vectors/Lists (of anything); a progressive list of bytes is a byte array
+    if isinstance(v, ProgressiveList) and type(v).ELEMENT_TYPE is Uint8:
+        return _to_hex(bytes(v))
+    if isinstance(v, (Vector, List, ProgressiveList)):
         return [ssz_to_json(e) for e in v]
 
     # 3) Byte arrays → hex
@@ -39,7 +42,7 @@ def ssz_to_json(v: Any) -> Any:
         return _to_hex(bytes(v))
 
     # 4) Bitfields → bit value
-    if isinstance(v, (BitVector, BitList)):
+    if isinstance(v, (BitVector, BitList, ProgressiveBitList)):
         return bitfield_to_bool_list(v)
 
     # 5) Basic ints/bools

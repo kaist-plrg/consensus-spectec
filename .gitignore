@@ -19,5 +19,12 @@ testing_clients/
 Converter/OfficialTestSuite/
 Converter/.fixture-cache/
 
-# Python cache files
+# Python artifacts
 __pycache__/
+.venv/
+
+# SSZ test vectors - fetched by ssz/scripts/fetch-vectors.sh, not git
+ssz/_vectors/
+
+# forkdiff output (tools/forkdiff)
+build/

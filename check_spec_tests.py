@@ -14,7 +14,8 @@ Cases without a post state must be rejected by failed premises. Interpreter
 faults, CLI errors, and input errors fail the check.
 
 Block cases in sanity/blocks, random, and finality apply blocks in order with
-full validation. The script exits with status 1 if any case fails. It writes
+full validation. Cases in sanity/slots run ProcessSlots to the target slot.
+The script exits with status 1 if any case fails. It writes
 a summary when GITHUB_STEP_SUMMARY is set.
 """
 
@@ -50,8 +51,20 @@ OPERATIONS = {
     "withdrawals": ("withdrawals", "execution_payload", "ExecutionPayload", "--payload"),
     "bls_to_execution_change": ("bls-to-execution-change", "address_change", "SignedBLSToExecutionChange", "--change"),
 }
-EPOCH = {"justification_and_finalization": "justification", "rewards_and_penalties": "rewards"}
-FORKS = ("capella", "deneb")
+# handler -> (relation, input file, input SSZ type) for operations without their own task
+RELATIONS = {
+    "deposit_request": ("ProcessDepositRequest", "deposit_request", "DepositRequest"),
+    "withdrawal_request": ("ProcessWithdrawalRequest", "withdrawal_request", "WithdrawalRequest"),
+    "consolidation_request": ("ProcessConsolidationRequest", "consolidation_request", "ConsolidationRequest"),
+    "execution_payload_bid": ("ProcessExecutionPayloadBid", "execution_payload_bid", "SignedExecutionPayloadBid"),
+    "parent_execution_payload": ("ProcessParentExecutionPayload", "block", "BeaconBlock"),
+    "payload_attestation": ("ProcessPayloadAttestation", "payload_attestation", "PayloadAttestation"),
+    "builder_deposit_request": ("ProcessBuilderDepositRequest", "builder_deposit_request", "BuilderDepositRequest"),
+    "builder_exit_request": ("ProcessBuilderExitRequest", "builder_exit_request", "BuilderExitRequest"),
+}
+# handler -> handler whose processing call it tests
+ALIASES = {"voluntary_exit_churn": "voluntary_exit", "pending_deposits_churn": "pending_deposits"}
+FORKS = ("capella", "deneb", "electra", "fulu", "gloas")
 
 
 def yaml(path):
@@ -70,6 +83,7 @@ def check(case):
         raise ValueError(f"no fork ({', '.join(FORKS)}) in the path")
     runner = next((p for p in case.parts if p in ("operations", "epoch_processing")), "blocks")
     handler = case.parts[case.parts.index(runner) + 1] if runner != "blocks" else None
+    handler = ALIASES.get(handler, handler)
 
     post = case / "post.ssz_snappy"
 
@@ -88,7 +102,7 @@ def check(case):
             out = tmp / "out.json"
             out.unlink(missing_ok=True)
 
-            p = subprocess.run([str(ROOT / "spectecx"), "ethereum", "run", *args,
+            p = subprocess.run([str(ROOT / "spectecx"), "ethereum", "run", *args, "--fork", fork,
                                 "--spec-dir", str(ROOT / f"spec/spec_{fork}"), "--output", str(out)],
                                capture_output=True, text=True)
 
@@ -101,9 +115,33 @@ def check(case):
 
             return json_to_ssz(json.loads(out.read_text()), spec.BeaconState).encode_bytes(), ""
 
+        def relation(name, *args):
+            """Run a relation on the pre-state; args are (input file, SSZ type, JSON value or None)."""
+            flags = []
+            for file, typ, value in args:
+                if value is None:
+                    path = to_json(f"{file}.json", typ, ssz(case / f"{file}.ssz_snappy"))
+                else:
+                    path = str(tmp / f"{file}.json")
+                    Path(path).write_text(json.dumps(value))
+                flags += ["--arg", f"{typ[0].lower()}{typ[1:]}={path}"]
+            return spectec("relation", "--name", name, "--pre", pre, *flags)
+
         pre = to_json("pre.json", "BeaconState", ssz(case / "pre.ssz_snappy"))
+        meta = yaml(case / "meta.yaml") if (case / "meta.yaml").exists() else {}
         if runner == "epoch_processing":
-            state, err = spectec("epoch", EPOCH.get(handler, handler.replace("_", "-")), "--pre", pre)
+            state, err = relation("Process" + handler.title().replace("_", ""))
+        elif "parent_slot" in meta:  # Gloas process_attestation(state, attestation, parent_slot)
+            state, err = relation("ProcessAttestation", ("attestation", "Attestation", None),
+                                  ("parent_slot", "Slot", meta["parent_slot"]))
+        elif handler == "withdrawals" and not (case / "execution_payload.ssz_snappy").exists():
+            state, err = relation("ProcessWithdrawals")  # Gloas process_withdrawals(state)
+        elif handler in RELATIONS:
+            name, file, typ = RELATIONS[handler]
+            state, err = relation(name, (file, typ, None))
+        elif (case / "slots.yaml").exists():  # sanity/slots: process_slots(state, pre.slot + slots)
+            slot = json.loads(Path(pre).read_text())["slot"] + yaml(case / "slots.yaml")
+            state, err = relation("ProcessSlots", ("slot", "Slot", slot))
         elif runner == "operations":
             task, name, typ, flag = OPERATIONS[handler]
             extra = []
