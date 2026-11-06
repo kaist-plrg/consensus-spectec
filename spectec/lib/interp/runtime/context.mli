@@ -107,18 +107,24 @@ end) : sig
     vars:Lang.Il.var list ->
     (Var.t * Value.t) list
 
+  type accumulator = {
+    input : Lang.Il.var;
+    output : Lang.Il.var;
+    final : Lang.Il.var;
+    init : Value.t;
+  }
+
   (** Fold body [f] over the elements of the lists bound to the [vars_input] of
       [iterinstr]. Each run binds every accumulator input to the previous run's
-      output, or to the accumulator's initial value on the first run. Collect
-      the [vars_output] of all runs as lists, and bind each accumulator's final
+      output, or to the accumulator's [init] value on the first run. Collect the
+      [vars_output] of all runs as lists, and bind each accumulator's final
       variable to the last output. With no body runs, bind each final variable
-      to the initial value. Report each collected list through
+      to the accumulator's [init] value. Report each collected list through
       {!emit_iteration}. Stop at the first [Error]. *)
   val fold_iterations :
     t ->
     iterinstr:Lang.Il.iterinstr ->
-    accumulators:(Lang.Il.var * Lang.Il.var * Lang.Il.var) list ->
-    initial_values:Value.t list ->
+    accumulators:accumulator list ->
     f:(t -> t Common.Attempt.attempt) ->
     t Common.Attempt.attempt
 

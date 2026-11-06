@@ -165,16 +165,14 @@ and eval_fold_prem (ctx : Ctx.t) (prem : prem) (iterinstr : iterinstr)
   let* () =
     guard (iterinstr.iter = List) prem.at "a fold can only iterate over a list"
   in
-  let initial_values =
-    List.map (fun { init; _ } -> eval_exp ctx init) accumulators
-  in
   let accumulators =
     List.map
-      (fun { input; output; final; _ } -> (input, output, final))
+      (fun { init; input; output; final } ->
+        { Ctx.input; output; final; init = eval_exp ctx init })
       accumulators
   in
-  Ctx.fold_iterations ctx ~iterinstr ~accumulators ~initial_values
-    ~f:(fun ctx -> eval_iteration ctx prem)
+  Ctx.fold_iterations ctx ~iterinstr ~accumulators ~f:(fun ctx ->
+      eval_iteration ctx prem)
 
 (* Invoke a relation *)
 

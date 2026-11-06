@@ -194,16 +194,14 @@ and eval_fold_instr ~on_bindings (ctx : Ctx.t) (at : Location.t)
   if fold_iterinstr.iter <> Il.List then
     error at "a fold can only iterate over a list";
   let eval_fold ctx =
-    let initial_values =
-      List.map (fun { Il.init; _ } -> eval_exp ctx init) accumulators
-    in
     let accumulators =
       List.map
-        (fun { Il.input; output; final; _ } -> (input, output, final))
+        (fun { Il.init; input; output; final } ->
+          { Ctx.input; output; final; init = eval_exp ctx init })
         accumulators
     in
     Ctx.fold_iterations ctx ~iterinstr:fold_iterinstr ~accumulators
-      ~initial_values ~f:(fun ctx ->
+      ~f:(fun ctx ->
         match eval_instrs ~on_bindings:(fun ctx -> Sign.Bound ctx) ctx body with
         | Sign.Bound ctx -> Ok ctx
         | _ -> Common.Attempt.fail at "fold body did not bind its outputs")

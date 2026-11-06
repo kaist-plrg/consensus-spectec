@@ -329,8 +329,15 @@ struct
       bindings;
     Ok bindings
 
+  type accumulator = {
+    input : Il.var;
+    output : Il.var;
+    final : Il.var;
+    init : Value.t;
+  }
+
   let fold_iterations ctx ~iterinstr:Il.{ iter; vars_input; vars_output }
-      ~accumulators ~initial_values ~f =
+      ~accumulators ~f =
     let* ctxs = expand_iteration_inputs ctx ~iter ~vars:vars_input in
     let* values, contexts_rev =
       List.fold_left
@@ -338,19 +345,18 @@ struct
           let* values, contexts = state in
           let bindings =
             List.map2
-              (fun (input, _, _) value ->
-                ((input.Il.varid, input.iters), value))
+              (fun { input; _ } value -> ((input.Il.varid, input.iters), value))
               accumulators values
           in
           let* body_ctx = f (set_values body_ctx ~bindings) in
           let values =
             List.map
-              (fun (_, output, _) ->
+              (fun { output; _ } ->
                 find_value_exn body_ctx ~var:(output.Il.varid, output.iters))
               accumulators
           in
           Ok (values, body_ctx :: contexts))
-        (Ok (initial_values, []))
+        (Ok (List.map (fun { init; _ } -> init) accumulators, []))
         ctxs
     in
     let bindings =
@@ -361,7 +367,7 @@ struct
       bindings;
     let finals =
       List.map2
-        (fun (_, _, final) value -> ((final.Il.varid, final.iters), value))
+        (fun { final; _ } value -> ((final.Il.varid, final.iters), value))
         accumulators values
     in
     Ok (set_values ctx ~bindings:(finals @ bindings))
