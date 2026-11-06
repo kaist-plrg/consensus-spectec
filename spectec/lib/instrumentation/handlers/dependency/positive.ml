@@ -249,18 +249,13 @@ let is_block_type (t : Il.typ') : bool =
 
 (* === Provenance-based Path Resolution === *)
 
-(* Convert IL provenance to dep_common field_path.
-   No conversion needed for steps: field_step = Il.json_step via type equation. *)
-let provenance_to_field_path (prov : Il.json_provenance) : field_path =
-  let source, steps = prov in
-  {
-    source = (match source with Il.JsonState -> State | Il.JsonBlock -> Block);
-    steps;
-  }
-
-(* Get the field_paths from a value's provenance list *)
+(* compare_sym_mutation treats all `Unknown` suggestions for one path as equal,
+   so which of them State.add_per_test_sym_mutation keeps depends on the order
+   of its input. Sorting the paths by field_path keeps that choice independent
+   of how Origin.t values compare. *)
 let provs_of_val (v : Il.Value.t) : field_path list =
-  List.map provenance_to_field_path (Provenance.provenance_of v)
+  List.filter_map field_path_of_origin_opt (Provenance.origins v)
+  |> List.sort_uniq compare
 
 (* Check if expression is wrapped in LenE *)
 let is_length_exp (exp : Il.exp) : bool =
@@ -517,7 +512,7 @@ let diagnose_no_mutations (lookup : Il.exp -> Il.Value.t option) (exp : Il.exp)
     match lookup e with
     | None -> "eval=false"
     | Some v ->
-        let prov = Provenance.provenance_of v <> [] in
+        let prov = Provenance.origins v <> [] in
         let vstr = Il.Print.string_of_value v in
         (* Truncate long values *)
         let vstr =

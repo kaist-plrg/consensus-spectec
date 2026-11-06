@@ -4,31 +4,32 @@
 
 open Common.Annotated
 module Il = Lang.Il
+module Origin = Instrumentation_api.Origin
 
 (* === Side table === *)
 
-let table : (Il.vid, Il.json_provenance list) Hashtbl.t = Hashtbl.create 4096
+let table : (Il.vid, Origin.t list) Hashtbl.t = Hashtbl.create 4096
 let clear () = Hashtbl.reset table
 
-let lookup (vid : Il.vid) : Il.json_provenance list =
+let lookup (vid : Il.vid) : Origin.t list =
   match Hashtbl.find_opt table vid with Some provs -> provs | None -> []
 
-let provenance_of (v : Il.Value.t) : Il.json_provenance list = lookup v.note.vid
+let origins (v : Il.Value.t) : Origin.t list = lookup v.note.vid
 
-let merged_of (values : Il.Value.t list) : Il.json_provenance list =
+let merged_of (values : Il.Value.t list) : Origin.t list =
   values
   |> List.concat_map (fun (v : Il.Value.t) -> lookup v.note.vid)
   |> List.sort_uniq compare
 
-let add_readset (result : Il.Value.t) (provs : Il.json_provenance list) : unit =
+let add_readset (result : Il.Value.t) (provs : Origin.t list) : unit =
   if provs <> [] then
     let merged = List.sort_uniq compare (lookup result.note.vid @ provs) in
     Hashtbl.replace table result.note.vid merged
 
 (* === Value events === *)
 
-let record_decoded ~(prov : Il.json_provenance) (v : Il.Value.t) : unit =
-  Hashtbl.replace table v.note.vid [ prov ]
+let record_decoded ~(origin : Origin.t) (v : Il.Value.t) : unit =
+  Hashtbl.replace table v.note.vid [ origin ]
 
 let record_derived ~(source : Il.Value.t) (result : Il.Value.t) : unit =
   match lookup source.note.vid with
@@ -67,13 +68,9 @@ let record_updated ~(base : Il.Value.t) (result : Il.Value.t) : unit =
       List.iter
         (fun (atom, (value_f : Il.Value.t)) ->
           if lookup value_f.note.vid = [] && struct_provs <> [] then
-            let field_name =
-              Lang.Xl.Atom.to_string atom.it |> String.lowercase_ascii
-            in
             let field_provs =
               List.map
-                (fun (src, steps) ->
-                  (src, steps @ [ Il.FieldAccess field_name ]))
+                (fun origin -> Origin.extend origin ~step:(Struct atom.it))
                 struct_provs
             in
             Hashtbl.replace table value_f.note.vid field_provs)
@@ -93,25 +90,7 @@ let record_invoked ~(inputs : Il.Value.t list) (result : Il.Value.t) : unit =
     | deduped -> Hashtbl.replace table result.note.vid deduped
 
 let handle_value : Instrumentation_api.Value_event.t -> unit = function
-  | Decoded { value; origin } -> (
-      let source =
-        match origin.label with
-        | "state" -> Some Il.JsonState
-        | "block" -> Some Il.JsonBlock
-        | _ -> None
-      in
-      let path =
-        List.map
-          (function
-            | Instrumentation_api.Origin.Struct atom ->
-                Il.FieldAccess
-                  (Lang.Xl.Atom.to_string atom |> String.lowercase_ascii)
-            | List index -> Il.IndexAccess index)
-          origin.path
-      in
-      match source with
-      | Some source -> record_decoded ~prov:(source, path) value
-      | None -> ())
+  | Decoded { value; origin } -> record_decoded ~origin value
   | Derived { value; source } -> record_derived ~source value
   (* A constructed value gets no entry of its own, so a mutation target names
      the field a premise reads, not the whole value. *)

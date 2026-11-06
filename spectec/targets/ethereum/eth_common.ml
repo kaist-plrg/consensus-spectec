@@ -1,6 +1,7 @@
 (** Ethereum Target - Common utilities and shared functions *)
 
 open Lang
+module Dep_common = Instrumentation.Dependency.Dep_common
 
 (* Source-tree fallback for builds without an installed target package. *)
 let spec_dir =
@@ -40,14 +41,14 @@ let build_tdenv spec =
 let parse_json ~spec filename input_type =
   let tdenv = build_tdenv spec in
   let json_data = Yojson.Safe.from_file filename in
-  let provenance =
+  let origin =
     match String.lowercase_ascii input_type with
-    | "beaconstate" -> Some (Il.JsonState, [])
-    | "signedbeaconblock" -> Some (Il.JsonBlock, [])
+    | "beaconstate" -> Some (Dep_common.origin_of_input_source State)
+    | "signedbeaconblock" -> Some (Dep_common.origin_of_input_source Block)
     | _ -> None
   in
-  Interface.JSON.Parse.json_to_value ~provenance tdenv
-    (Il.Typ.var input_type []) json_data
+  Interface.JSON.Parse.json_to_value ?origin tdenv (Il.Typ.var input_type [])
+    json_data
   |> Result.map_error (fun err ->
          let msg = Interface.JSON.Parse.string_of_error err in
          Runner.Error.TaskParseError (Common.Location.Unknown, msg))
@@ -62,7 +63,7 @@ let parse_string ~spec ~filename:_ content =
   (* Try parsing as beaconState by default; callers should use parse_json
      directly when they know the type *)
   Interface.JSON.Parse.json_to_value
-    ~provenance:(Some (Il.JsonState, []))
+    ~origin:(Dep_common.origin_of_input_source State)
     tdenv
     (Il.Typ.var "beaconState" [])
     json

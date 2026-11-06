@@ -1,4 +1,5 @@
 module Il = Lang.Il
+module Dep = Instrumentation.Dependency.Dep_common
 module Provenance = Instrumentation.Dependency.Provenance
 module Positive = Instrumentation.Dependency.Positive
 
@@ -16,7 +17,7 @@ let tdenv =
 let decode source =
   match
     Json.Parse.json_to_value
-      ~provenance:(Some (source, []))
+      ~origin:(Dep.origin_of_input_source source)
       tdenv
       (Il.Typ.list
          Common.Annotated.(Il.Typ.var "point" [] $ Common.Location.Unknown))
@@ -52,7 +53,8 @@ let evaluate relation ~config ~sources =
       (module Value_handlers.Task)
       ~config ~mode:Il ~spec_il:spec.spec_il input
   with
-  | Ok [ value ] -> Provenance.provenance_of value
+  | Ok [ value ] ->
+      Provenance.origins value |> List.filter_map Dep.field_path_of_origin_opt
   | _ -> failwith ("provenance fixture failed: " ^ relation)
 
 (* One batch session runs every input, and vids restart for each input, so the
@@ -72,14 +74,18 @@ let evaluate_last_in_batch relation ~config ~sources =
     |> List.rev
   with
   | { outcome = Spectec.Task.Pass [ value ]; _ } :: _ ->
-      Provenance.provenance_of value
+      Provenance.origins value |> List.filter_map Dep.field_path_of_origin_opt
   | _ -> failwith ("provenance batch fixture failed: " ^ relation)
 
-let require_x ~source origins =
-  assert (List.mem (source, [ Il.IndexAccess 0; Il.FieldAccess "x" ]) origins);
+let require_x ~source paths =
   assert (
-    not (List.mem (source, [ Il.IndexAccess 0; Il.FieldAccess "y" ]) origins));
-  assert (not (List.mem (source, [ Il.IndexAccess 0 ]) origins))
+    List.mem { Dep.source; steps = [ IndexAccess 0; FieldAccess "x" ] } paths);
+  assert (
+    not
+      (List.mem
+         { Dep.source; steps = [ IndexAccess 0; FieldAccess "y" ] }
+         paths));
+  assert (not (List.mem { Dep.source; steps = [ IndexAccess 0 ] } paths))
 
 let exp typ node : Il.exp =
   Common.Annotated.(
@@ -97,7 +103,7 @@ let hidden_operand_forms_suggest_nothing () =
   let elements = Il.Value.list nat [ element ] in
   let found = Il.Value.bool true in
   let negative = Il.Value.int Bigint.minus_one in
-  let origin = Instrumentation.Origin.make ~label:"state" in
+  let origin = Dep.origin_of_input_source State in
   Provenance.clear ();
   List.iter Provenance.handle_value
     [
@@ -141,7 +147,7 @@ let hidden_operand_forms_suggest_nothing () =
 (* Every interpreter reports a fold's output list as built from the list the
    fold ranges over. *)
 let fold_outputs_name_ranged_lists () =
-  let ranged = decode Il.JsonState in
+  let ranged = decode Dep.State in
   let output =
     Il.Value.list
       Common.Annotated.(Il.Typ.nat $ Common.Location.Unknown)
@@ -152,7 +158,7 @@ let fold_outputs_name_ranged_lists () =
       let log = ref [] in
       let input =
         Value_handlers.input "Running_x" (fun () ->
-            [ decode Il.JsonState; decode Il.JsonBlock ])
+            [ decode Dep.State; decode Dep.Block ])
       in
       (match
          Spectec.eval_task_with_instrumentation
@@ -176,19 +182,22 @@ let run () =
   hidden_operand_forms_suggest_nothing ();
   fold_outputs_name_ranged_lists ();
   let config = config () in
-  let first = evaluate "Feedback" ~config ~sources:[ Il.JsonState ] in
-  require_x ~source:Il.JsonState first;
-  let second = evaluate "Feedback" ~config ~sources:[ Il.JsonBlock ] in
-  require_x ~source:Il.JsonBlock second;
-  assert (not (List.exists (fun (source, _) -> source = Il.JsonState) second));
+  let first = evaluate "Feedback" ~config ~sources:[ Dep.State ] in
+  require_x ~source:Dep.State first;
+  let second = evaluate "Feedback" ~config ~sources:[ Dep.Block ] in
+  require_x ~source:Dep.Block second;
+  assert (
+    not
+      (List.exists (fun (path : Dep.field_path) -> path.source = State) second));
   let batched =
-    evaluate_last_in_batch "Feedback" ~config
-      ~sources:[ Il.JsonState; Il.JsonBlock ]
+    evaluate_last_in_batch "Feedback" ~config ~sources:[ Dep.State; Dep.Block ]
   in
-  require_x ~source:Il.JsonBlock batched;
-  assert (not (List.exists (fun (source, _) -> source = Il.JsonState) batched));
-  let totals =
-    evaluate "Running_x" ~config ~sources:[ Il.JsonState; Il.JsonBlock ]
-  in
-  assert (List.mem (Il.JsonState, []) totals);
-  assert (not (List.exists (fun (source, _) -> source = Il.JsonBlock) totals))
+  require_x ~source:Dep.Block batched;
+  assert (
+    not
+      (List.exists (fun (path : Dep.field_path) -> path.source = State) batched));
+  let totals = evaluate "Running_x" ~config ~sources:[ Dep.State; Dep.Block ] in
+  assert (List.mem { Dep.source = State; steps = [] } totals);
+  assert (
+    not
+      (List.exists (fun (path : Dep.field_path) -> path.source = Block) totals))
