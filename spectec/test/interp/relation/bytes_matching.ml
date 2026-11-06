@@ -29,4 +29,8 @@ let run () =
     (H.returns (fun () -> [ bytes 1 ]));
   H.check spec ~name:"byte value upcasts to int" ~relation:"As_int"
     ~args:(fun () -> [ bytes 1 ])
-    (H.returns (fun () -> [ bytes 1 ]))
+    (H.returns (fun () -> [ bytes 1 ]));
+  H.check spec ~name:"byte value satisfies the integer type predicate"
+    ~relation:"Is_int"
+    ~args:(fun () -> [ bytes 1 ])
+    (H.returns (fun () -> [ V.bool true ]))

@@ -31,3 +31,10 @@ relation As_int:
 
 rule As_int:
   n |- n
+
+relation Is_int:
+  int |- bool
+  hint(input %0)
+
+rule Is_int:
+  k |- k <: int
