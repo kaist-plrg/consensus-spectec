@@ -1,0 +1,1 @@
+fixtures/rejected.py:2:12-2:22: Integer division and modulo require operands that cannot be negative, since Python floors and the target truncates

@@ -1,0 +1,141 @@
+var k : nat
+
+builtin dec $eth_aggregate_pubkeys(nat*): nat
+
+relation Aggregate:
+  nat* |- nat
+  hint(input %0)
+
+rule Aggregate:
+  k* |- $eth_aggregate_pubkeys(k*)
+
+builtin dec $bls_aggregate_pubkeys(nat*): nat
+
+relation Aggregate_translated:
+  nat* |- nat
+  hint(input %0)
+
+rule Aggregate_translated:
+  k* |- $bls_aggregate_pubkeys(k*)
+
+var m : nat
+var s : nat
+
+builtin dec $bls_fast_aggregate_verify(nat*, nat, nat): bool
+
+relation Fast_aggregate_verify:
+  nat*; nat; nat |- bool
+  hint(input %0 %1 %2)
+
+rule Fast_aggregate_verify:
+  k*; m; s |- $bls_fast_aggregate_verify(k*, m, s)
+
+syntax withdrawal = (nat, nat, nat, nat)
+
+var w : withdrawal
+
+builtin dec $hash_tree_root_withdrawals(withdrawal*): nat
+
+relation Withdrawals_root:
+  withdrawal* |- nat
+  hint(input %0)
+
+rule Withdrawals_root:
+  w* |- $hash_tree_root_withdrawals(w*)
+
+builtin dec $bls_key_validate(nat): bool
+builtin dec $bls_g1_canonicalize(nat): nat
+builtin dec $bls_g1_add(nat, nat): nat
+builtin dec $bls_g1_neg(nat): nat
+
+relation Key_validate:
+  nat |- bool
+  hint(input %0)
+
+rule Key_validate:
+  k |- $bls_key_validate(k)
+
+relation G1_canonicalize:
+  nat |- nat
+  hint(input %0)
+
+rule G1_canonicalize:
+  k |- $bls_g1_canonicalize(k)
+
+relation G1_double:
+  nat |- nat
+  hint(input %0)
+
+rule G1_double:
+  k |- $bls_g1_add(k, k)
+
+relation G1_cancel:
+  nat |- nat
+  hint(input %0)
+
+rule G1_cancel:
+  k |- $bls_g1_add(k, $bls_g1_neg(k))
+
+var b : nat
+var n : nat
+
+builtin dec $fixed_bytes(nat, nat): nat
+builtin dec $bytes_valid(nat): bool
+builtin dec $bytes_length(nat): nat
+builtin dec $bytes_slice(nat, nat, nat): nat
+
+relation Fixed_bytes:
+  nat; nat |- nat
+  hint(input %0 %1)
+
+rule Fixed_bytes:
+  b; n |- $fixed_bytes(b, n)
+
+relation Bytes_valid:
+  nat |- bool
+  hint(input %0)
+
+rule Bytes_valid:
+  b |- $bytes_valid(b)
+
+relation Bytes_length:
+  nat |- nat
+  hint(input %0)
+
+rule Bytes_length:
+  b |- $bytes_length(b)
+
+relation Bytes_slice:
+  nat; nat; nat |- nat
+  hint(input %0 %1 %2)
+
+rule Bytes_slice:
+  b; m; n |- $bytes_slice(b, m, n)
+
+syntax epoch = nat
+syntax other = nat
+
+var e : epoch
+var x : other
+
+builtin dec $ssz_hash_tree_root<X>(X): nat
+
+relation Hash_epoch:
+  epoch |- nat
+  hint(input %0)
+
+rule Hash_epoch:
+  e |- $ssz_hash_tree_root<epoch>(e)
+
+relation Hash_other:
+  other |- nat
+  hint(input %0)
+
+rule Hash_other:
+  x |- $ssz_hash_tree_root<other>(x)
+
+builtin dec $enumerate_<X>(X*): (nat, X)*
+
+relation Enumerate: nat* |- (nat, nat)*
+  hint(input %0)
+rule Enumerate: k* |- $enumerate_<nat>(k*)

@@ -67,19 +67,32 @@ let bls_verify ~at (bls_pubkey : Num.t) (root : Num.t) (bls_signature : Num.t) :
           Ok (Value.bool ok)
           (* valid signature *))
 
+let decode_pubkey_opt ~at n =
+  let* () = ensure_fits_bytes ~at n ~len:48 in
+  let bytes = be_of_bigint_fixed n ~len:48 in
+  match Bls12_381.G1.of_compressed_bytes_opt bytes with
+  | Some point when not (Bls12_381.G1.is_zero point) -> Ok (Some point)
+  | _ -> Ok None
+
+let decode_pubkey ~at n =
+  let* point = decode_pubkey_opt ~at n in
+  match point with
+  | Some point -> Ok point
+  | None -> Error (runtime at "invalid BLS public key")
+
+let bls_key_validate ~at pubkey =
+  Ok (Value.bool (Result.is_ok (decode_pubkey ~at (Num.to_int pubkey))))
+
 (* dec $eth_aggregate_pubkeys(blsPubkey* ) : blsPubkey *)
 
 let eth_aggregate_pubkeys ~at (pubkeys_num : Num.t list) : Value.t result =
+  let* () =
+    if pubkeys_num = [] then
+      Error (runtime at "eth_aggregate_pubkeys: empty public key list")
+    else Ok ()
+  in
   let pubkeys_int = List.map Num.to_int pubkeys_num in
   (* 1) int -> bytes48 -> G1 (validation) *)
-  let conv_one n =
-    let* () = ensure_fits_bytes ~at n ~len:48 in
-    let b = be_of_bigint_fixed n ~len:48 in
-    match Bls12_381.G1.of_compressed_bytes_opt b with
-    | None ->
-        Error (runtime at "eth_aggregate_pubkeys: invalid G1 pubkey (bytes48)")
-    | Some p -> Ok p
-  in
   let rec mapM f = function
     | [] -> Ok []
     | x :: xs ->
@@ -87,7 +100,7 @@ let eth_aggregate_pubkeys ~at (pubkeys_num : Num.t list) : Value.t result =
         let* ys = mapM f xs in
         Ok (y :: ys)
   in
-  let* points = mapM conv_one pubkeys_int in
+  let* points = mapM (decode_pubkey ~at) pubkeys_int in
 
   (* 2) cumulative sum *)
   let agg = List.fold_left Bls12_381.G1.add Bls12_381.G1.zero points in
@@ -125,14 +138,7 @@ let bls_fast_aggregate_verify ~at (pubkeys_num : Num.t list) (root : Num.t)
           let* ys = mapM f xs in
           Ok (y :: ys)
     in
-    let conv_pk (n : Bigint.t) =
-      let* () = ensure_fits_bytes ~at n ~len:48 in
-      let b = be_of_bigint_fixed n ~len:48 in
-      match Bls12_381.G1.of_compressed_bytes_opt b with
-      | None -> Ok None
-      | Some p -> Ok (Some p)
-    in
-    let* points_opt = mapM conv_pk pubkeys_int in
+    let* points_opt = mapM (decode_pubkey_opt ~at) pubkeys_int in
     if List.exists (fun o -> o = None) points_opt then Ok (Value.bool false)
     else
       let points = List.map Option.get points_opt in
@@ -156,7 +162,12 @@ let bls_fast_aggregate_verify ~at (pubkeys_num : Num.t list) (root : Num.t)
 
 let builtins : (string * Define.t) list =
   [
+    ("bls_key_validate", Define.T0.a1 Arg.num bls_key_validate);
     ("bls_verify", Define.T0.a3 Arg.num Arg.num Arg.num bls_verify);
+    (* Rules translated from pyspec call bls.AggregatePKs by this name, because
+       the translated $eth_aggregate_pubkeys replaces the builtin of that name. *)
+    ( "bls_aggregate_pubkeys",
+      Define.T0.a1 (Arg.list_of Arg.num) eth_aggregate_pubkeys );
     ( "eth_aggregate_pubkeys",
       Define.T0.a1 (Arg.list_of Arg.num) eth_aggregate_pubkeys );
     ( "bls_fast_aggregate_verify",

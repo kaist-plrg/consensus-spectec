@@ -1,0 +1,58 @@
+(rule
+ (alias runtest)
+ (deps
+  (universe)
+  (sandbox none)
+  (package spectec)
+  extract.py
+  ../../bin/main.exe
+  (glob_files *.expected)
+  (source_tree fixtures)
+  (source_tree ../../targets/ethereum/pyspec/export))
+ (action
+  (no-infer
+   (progn
+    (setenv
+     PYTHONPATH
+     ../../targets/ethereum/pyspec
+     (run
+      %{env:CAPELLA_PYTHON=python3}
+      extract.py
+      %{env:CAPELLA_SOURCE=consensus-specs-capella}
+      fixtures/arithmetic.py
+      fixtures/sequences.py
+      fixtures/state.py
+      fixtures/bytes.py
+      fixtures/rejected.py
+      --mutator
+      advance
+      --mutator
+      update
+      --mutator
+      assign_values))
+    (with-stdout-to
+     capella.actual
+     (run %{exe:../../bin/main.exe} ethereum translate capella.sources))
+    (with-stdout-to
+     arithmetic.actual
+     (run %{exe:../../bin/main.exe} ethereum translate arithmetic.sources))
+    (with-stdout-to
+     sequences.actual
+     (run %{exe:../../bin/main.exe} ethereum translate sequences.sources))
+    (with-stdout-to
+     state.actual
+     (run %{exe:../../bin/main.exe} ethereum translate state.sources))
+    (with-stdout-to
+     bytes.actual
+     (run %{exe:../../bin/main.exe} ethereum translate bytes.sources))
+    (with-outputs-to
+     rejected.actual
+     (with-accepted-exit-codes
+      1
+      (run %{exe:../../bin/main.exe} ethereum translate rejected.sources)))
+    (diff capella.expected capella.actual)
+    (diff arithmetic.expected arithmetic.actual)
+    (diff sequences.expected sequences.actual)
+    (diff state.expected state.actual)
+    (diff bytes.expected bytes.actual)
+    (diff rejected.expected rejected.actual)))))

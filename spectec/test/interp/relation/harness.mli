@@ -11,6 +11,10 @@ val compile_file : string -> compiled_spec
     constructed by [expected]. *)
 val returns : (unit -> Lang.Il.Value.t list) -> expectation
 
+(** [satisfies check] runs [check] on the returned values after evaluation.
+    Callback failures include the test name and interpreter mode. *)
+val satisfies : (Lang.Il.Value.t list -> unit) -> expectation
+
 (** [fails] accepts any evaluation error. *)
 val fails : expectation
 
@@ -21,10 +25,12 @@ val fails_with : string -> expectation
 (** [check spec ~name ~relation ~args expectation] evaluates [relation] in every
     mode in [modes], which contains all three modes by default. [check] creates
     fresh target state for each mode and runs [args], evaluation, and any
-    expected-value callback within that state. *)
+    expected-value callback within that state. [check] supplies [builtins],
+    empty by default, to its pure target. *)
 val check :
   compiled_spec ->
   ?modes:mode list ->
+  ?builtins:(string * Interp.Builtins.Define.t) list ->
   name:string ->
   relation:string ->
   args:(unit -> Lang.Il.Value.t list) ->

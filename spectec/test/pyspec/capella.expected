@@ -1,0 +1,17 @@
+dec $compute_epoch_at_slot(slot) : epoch
+
+relation IncreaseBalance: beaconState validatorIndex gwei ~> beaconState
+  hint(input %0 %1 %2)
+
+def $compute_epoch_at_slot(slot_slot) = $(slot_slot / $SLOTS_PER_EPOCH)
+  -- if $SLOTS_PER_EPOCH =/= 0
+
+rule IncreaseBalance/path0:
+  beaconState_state validatorIndex_index gwei_delta ~> beaconState_translated1
+  -- if $(validatorIndex_index < |beaconState_state.BALANCES|)
+  -- if beaconState_state.BALANCES[validatorIndex_index] = gwei_translated0
+  -- if $(gwei_delta <= 18446744073709551615)
+  -- if $(gwei_translated0 <= (18446744073709551615 - gwei_delta))
+  -- if beaconState_state[.BALANCES[validatorIndex_index] = $(gwei_translated0
+        + gwei_delta)]
+        = beaconState_translated1
