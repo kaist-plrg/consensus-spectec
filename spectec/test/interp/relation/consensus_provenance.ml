@@ -1,5 +1,5 @@
 module Il = Lang.Il
-module Provenance = Instrumentation.Dependency.Provenance_hooks
+module Provenance = Instrumentation.Dependency.Provenance
 module Positive = Instrumentation.Dependency.Positive
 
 let spec = Harness.compile_file "consensus_provenance.spectec"
