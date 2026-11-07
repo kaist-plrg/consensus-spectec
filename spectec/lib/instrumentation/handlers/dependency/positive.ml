@@ -132,7 +132,6 @@ module State = struct
   let current_relation : string ref = ref ""
   let current_rule : string ref = ref ""
   let current_test_id : string ref = ref ""
-  let func_calls : (string * Il.Value.t list) list ref = ref []
 
   (* --- Result accumulation: persists across tests --- *)
 
@@ -188,7 +187,6 @@ module State = struct
     current_relation := "";
     current_rule := "";
     current_test_id := "";
-    func_calls := [];
     Hashtbl.clear per_test_sym_mutations;
     premise_count := 0;
     if_prem_count := 0;
@@ -569,7 +567,18 @@ module M : Instrumentation_api.Handler.S = struct
       : Instrumentation_static.Static.S);
     ]
 
-  let handle_value = Some Provenance.handle_value
+  (* Run Provenance.handle_value before adding origins from a readset. The
+     handler assigns input origins to the call's output only if the output
+     has no entry. *)
+  let handle_value =
+    Some
+      (fun (event : Instrumentation_api.Value_event.t) ->
+        Provenance.handle_value event;
+        match event with
+        | Invoked { callee = Func id; inputs; outputs = [ result ]; _ } ->
+            let lookup fid = StringMap.find_opt fid !State.readsets in
+            Provenance.add_readset result (call_provenance ~lookup id inputs)
+        | _ -> ())
 
   let init ~spec =
     Provenance.clear ();
@@ -591,25 +600,8 @@ module M : Instrumentation_api.Handler.S = struct
 
   let on_rule_enter ~id:_ ~rule_id ~at:_ = State.current_rule := rule_id
   let on_rule_exit ~id:_ ~rule_id:_ ~at:_ ~success:_ = State.current_rule := ""
-
-  let on_func_enter ~id ~at:_ ~values =
-    State.func_calls := (id, values) :: !State.func_calls
-
-  let on_func_exit ~id ~at:_ ~output =
-    let values =
-      match !State.func_calls with
-      | (entered_id, values) :: rest when entered_id = id ->
-          State.func_calls := rest;
-          values
-      | _ -> []
-    in
-    match output with
-    | None -> ()
-    | Some result ->
-        let lookup fid = StringMap.find_opt fid !State.readsets in
-        let provs = call_provenance ~lookup id values in
-        Provenance.add_readset result provs
-
+  let on_func_enter ~id:_ ~at:_ ~values:_ = ()
+  let on_func_exit ~id:_ ~at:_ ~output:_ = ()
   let on_clause_enter ~id:_ ~clause_idx:_ ~at:_ = ()
   let on_clause_exit ~id:_ ~clause_idx:_ ~at:_ ~success:_ = ()
   let on_iter_prem_enter ~prem:_ ~at:_ = ()
