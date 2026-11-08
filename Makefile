@@ -192,6 +192,7 @@ clean-fixture:
 #   make test-roundtrip-el - EL pretty-printer roundtrip test (mini-spec, p4-old, p4, impty)
 #   make test-parsegen   - Grammar-driven parser differential test (impty expressions + programs)
 #   make test-package    - Package ownership and plugin discovery tests
+#   make test-pyspec     - Pyspec pinned-output tests
 #   make test-il-pos     - IL interpreter positive tests (slow)
 #   make test-il-neg     - IL interpreter negative tests
 #   make test-sl-pos     - SL interpreter positive tests (slow)
@@ -229,7 +230,7 @@ clean-fixture:
 #
 #   make test            - quick + interpreter tests
 
-.PHONY: test test-quick test-lang test-context test-interp test-elab test-elab-pos test-elab-neg test-interp-relation test-attempt test-interp-neg test-cli test-launcher test-lsp test-struct test-annotate test-roundtrip-il test-roundtrip-el test-parsegen test-package test-bytesv test-instrumentation test-testgen-checkpoint test-dep
+.PHONY: test test-quick test-lang test-context test-interp test-elab test-elab-pos test-elab-neg test-interp-relation test-attempt test-interp-neg test-cli test-launcher test-lsp test-struct test-annotate test-roundtrip-il test-roundtrip-el test-parsegen test-package test-pyspec test-bytesv test-instrumentation test-testgen-checkpoint test-dep
 .PHONY: test-il test-il-pos test-il-neg
 .PHONY: test-sl test-sl-pos test-sl-neg
 .PHONY: test-pl test-pl-pos test-pl-neg
@@ -325,6 +326,10 @@ test-roundtrip-il:
 test-parsegen:
 	@echo "#### Running grammar-driven parser differential test"
 	@$(DUNE) build @spectec/test/parsegen/runtest --profile=release && echo OK
+
+test-pyspec:
+	@echo "#### Running Pyspec pinned-output tests"
+	@CAPELLA_SOURCE=$(CAPELLA_SOURCE) CAPELLA_PYTHON=$(CAPELLA_PYTHON) $(DUNE) build --promote-install-files=false @spectec/test/pyspec/pyspec --profile=release && echo OK
 
 test-package:
 	@echo "#### Running package ownership and plugin discovery tests"

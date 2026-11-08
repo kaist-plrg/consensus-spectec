@@ -1,0 +1,59 @@
+error: Integer division and modulo require operands that cannot be negative, since Python floors and the target truncates
+  --> fixtures/rejected.py:2:12
+  |
+2 |     return value // 2
+  |            ^^^^^^^^^^
+  |
+  | source: translate
+error: A bitvector slice bound past the bitvector length raises in Python
+  --> fixtures/rejected_bitvector_slice.py:2:12
+  |
+2 |     return state.justification_bits[2:6]
+  |            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  |
+  | source: translate
+error: Loop bodies cannot read an optional local
+  --> fixtures/rejected_loop_optional.py:3:5
+  |
+3 |     for value in values:
+  |     ^^^^^^^^^^^^^^^^^^^^
+4 |         if limit is None:
+  | ^^^^^^^^^^^^^^^^^^^^^^^^^
+5 |             total += value
+  | ^^^^^^^^^^^^^^^^^^^^^^^^^^
+  |
+  | source: translate
+error: Arguments keep their number class, which must match the parameter annotation
+  --> fixtures/rejected_argument_class.py:2:12
+  |
+2 |     return decrement(len(values))
+  |            ^^^^^^^^^^^^^^^^^^^^^^
+  |
+  | source: translate
+error: Return values keep their number class, which must match the return annotation
+  --> fixtures/rejected_return_class.py:2:5
+  |
+2 |     return value
+  |     ^^^^^^^^^^^^
+  |
+  | source: translate
+error: SSZ stores an unsigned value only into a field of the same width
+  --> fixtures/rejected_store_width.py:2:5
+  |
+2 |     state.slot = uint8(1)
+  |     ^^^^^^^^^^
+  |
+  | source: translate
+error: Python lists store a value unconverted, so it must have the list's element class
+  --> fixtures/rejected_list_store.py:3:5
+  |
+3 |     rewards[0] = 5
+  |     ^^^^^^^^^^
+  |
+  | source: translate
+error: missing.json cannot be read. Expected a module document from python -m export.
+
+  source: translate
+error: extract.py is not JSON. Expected a module document from python -m export.
+
+  source: translate

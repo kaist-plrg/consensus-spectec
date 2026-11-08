@@ -100,3 +100,42 @@ Presentation declarations use `Spectec.parse_spec_source`. Consumers elaborate g
 | Free identifiers | `Lang.El.Free` analyzes EL syntax. | Source capture and mutation analyses operate on Python syntax and storage identities. They cannot use EL free identifiers as a substitute. |
 | Diagnostics | `Spectec.Diagnostic` collects source-located compiler errors. | Decoding and translation raise `Error.Rejected` with a location and message. The command renders the rejection through `Spectec.Diagnostic`. Parsing and elaboration use compiler diagnostics. |
 | Fresh variables | `Lang.Il.Fresh` allocates typed IL variables. | The translator allocates EL patterns before elaboration, including tuple and iteration patterns under SpecTec's variable conventions. |
+
+## Translation tests
+
+`make test-pyspec` runs Dune output comparisons in `spectec/test/pyspec`. Each fixture case extracts Python syntax and runtime type annotations, invokes `spectec ethereum translate`, and compares its output with a checked-in `.expected` file.
+
+The checks use the dedicated `pyspec` Dune alias, so `dune test` omits them.
+
+`extract.py` writes one module document per case.
+
+The tests do not execute the source functions or generated definitions.
+
+| Case | Pinned behavior |
+| --- | --- |
+| `arithmetic` | Unsigned bounds, signed division guards, optional parameters, boolean defaults and keyword calls. |
+| `sequences` | Comprehension captures with an unused optional parameter, list alias updates, loop-carried values and `break`. |
+| `state` | Checked field and element assignment, borrowed state-field updates, mutator calls and nested record writes. |
+| `bytes` | Fixed-byte slicing, record construction, SSZ hashing and BLS call emission. |
+| `rejected` | Diagnostics and exit status 1 for unsupported arithmetic, bitvector slices, optional loop reads, number-class changes, SSZ store conversions, missing files and invalid JSON. |
+| `capella` | Production source selection and translation of `compute_epoch_at_slot` and `increase_balance`. |
+
+The `capella` case exports bodies for `compute_epoch_at_slot` and `increase_balance`, which call no other functions. Fixture documents give fixture functions bodies and reached pyspec functions signatures only. Their spans refer to the fixture file.
+
+The state-transition case exports every function reached by `state_transition`. It checks that `spectec struct` accepts the generated definitions with the handwritten Capella files and `prelude.spectec`.
+
+Run from the repository root with OCaml 5.1.0 and the pinned source's locked Python 3.12 environment:
+
+```sh
+export CAPELLA_SOURCE=/absolute/path/to/consensus-specs-capella
+git clone --depth 1 --branch v1.6.0 https://github.com/ethereum/consensus-specs.git "$CAPELLA_SOURCE"
+uv sync --project "$CAPELLA_SOURCE" --python 3.12 --frozen --no-install-project
+export CAPELLA_PYTHON="$CAPELLA_SOURCE/.venv/bin/python"
+make test-pyspec SWITCH=5.1.0
+```
+
+Dune builds the translator and runs the extraction once per invocation. Extraction requires the exact source revision above and clean tracked files. It writes generated Python modules inside that checkout, so concurrent runs need separate checkouts.
+
+Module documents and actual output files stay under `_build`.
+
+Review any output diff before running `opam exec --switch=5.1.0 -- dune promote`, then rerun the tests.
