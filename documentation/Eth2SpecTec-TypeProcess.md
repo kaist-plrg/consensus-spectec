@@ -759,6 +759,10 @@ dec $eth_aggregate_pubkeys(blsPubkey*) : blsPubkey
 ```ocaml
 let eth_aggregate_pubkeys ~at (pubkeys_num : Num.t list)
   : (Value.t, Err.t) result =
+  let* () =
+    if pubkeys_num = [] then Error (runtime at "empty public key list")
+    else Ok ()
+  in
   let pubkeys_int = List.map Num.to_int pubkeys_num in
   let rec mapM f = function
     | [] -> Ok []
@@ -774,6 +778,8 @@ let eth_aggregate_pubkeys ~at (pubkeys_num : Num.t list)
   let out_n = bigint_of_be_bytes out_b in
   Ok (make_bytes ~num:out_n ~len:48)
 ```
+
+`eth_aggregate_pubkeys` returns an error for an empty key list, as required by the consensus specification.
 
 **Why This Design:**
 

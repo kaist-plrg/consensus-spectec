@@ -38,6 +38,9 @@ let check ~name ~relation ~args expectation =
   H.check spec ~target:(module Target) ~name ~relation ~args expectation
 
 let aggregation () =
+  check ~name:"aggregation rejects an empty key list" ~relation:"Aggregate"
+    ~args:(fun () -> [ keys [] ])
+    (H.fails_with "empty public key list");
   check ~name:"aggregation rejects the point at infinity" ~relation:"Aggregate"
     ~args:(fun () -> [ keys [ key; infinity ] ])
     (H.fails_with "invalid BLS public key");

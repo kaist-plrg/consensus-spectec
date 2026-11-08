@@ -86,6 +86,12 @@ let decode_pubkey ~at n =
 (* dec $eth_aggregate_pubkeys(blsPubkey* ) : blsPubkey *)
 
 let eth_aggregate_pubkeys ~at (pubkeys_num : Num.t list) : Value.t result =
+  (* The consensus specification's eth_aggregate_pubkeys requires a nonempty
+     key list. *)
+  let* () =
+    if pubkeys_num = [] then Error (runtime at "empty public key list")
+    else Ok ()
+  in
   let pubkeys_int = List.map Num.to_int pubkeys_num in
   let rec mapM f = function
     | [] -> Ok []
