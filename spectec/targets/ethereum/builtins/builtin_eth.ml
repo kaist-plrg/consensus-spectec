@@ -1,4 +1,5 @@
 module Engine = Engine
+module SszImpl = SszImpl
 
 let builtins =
   [
@@ -10,5 +11,6 @@ let builtins =
     Lists.builtins;
     Math.builtins;
     MerkleImpl.builtins;
+    SszImpl.builtins;
   ]
   |> List.concat

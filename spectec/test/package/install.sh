@@ -14,7 +14,8 @@ assert_missing() {
 
 install_local() {
   package=$1
-  opam pin add --yes --no-action --kind=path "$package" .
+  path=${2:-.}
+  opam pin add --yes --no-action --kind=path "$package" "$path"
   opam install --yes --with-test "$package"
 }
 
@@ -31,6 +32,8 @@ check_target() {
   assert_missing "$command"
 }
 
+# The Ethereum builtins merkleize with the ssz package under ssz/.
+install_local ssz ssz
 install_local spectec
 run_spectec ethereum --help
 assert_missing impty
