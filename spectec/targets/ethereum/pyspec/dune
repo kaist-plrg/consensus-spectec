@@ -1,0 +1,24 @@
+(include_subdirs unqualified)
+
+(library
+ (name pyspec)
+ (public_name spectec.targets.ethereum.pyspec)
+ (private_modules
+  names
+  translate
+  store
+  value
+  ctx
+  branch
+  library
+  prelude
+  numeric_ops
+  byte_ops
+  sequence_ops
+  ssz_ops
+  loop
+  call
+  expr
+  write
+  stmt)
+ (libraries spectec spectec.common spectec.lang yojson bignum))

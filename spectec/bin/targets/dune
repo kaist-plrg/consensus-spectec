@@ -9,7 +9,8 @@
   spectec.cli
   spectec.instrumentation
   spectec.runner
-  spectec.targets.ethereum)
+  spectec.targets.ethereum
+  spectec.targets.ethereum.pyspec)
  (preprocess
   (pps ppx_let)))
 

@@ -78,6 +78,32 @@ vsix:
 	cd editors/vscode && npm ci --include=dev --ignore-scripts && npm run package
 	@echo "#### extension written to editors/vscode/$(NAME).vsix"
 
+# Pyspec translation of the Capella state transition
+#
+# `make pyspec-capella` translates the functions reached by `state_transition`
+# from a consensus-specs v1.6.0 checkout. The output directory contains
+# module.json, the generated definitions and links to prelude.spectec and the
+# handwritten types, constants, containers and variables. `spectec ethereum
+# run` accepts this directory through --spec-dir as a complete Capella spec.
+#   make pyspec-capella CAPELLA_SOURCE=$HOME/consensus-specs CAPELLA_PYTHON=$HOME/consensus-specs/.venv/bin/python
+
+CAPELLA_SOURCE ?= $(abspath consensus-specs-capella)
+CAPELLA_PYTHON ?= $(CAPELLA_SOURCE)/.venv/bin/python
+PYSPEC_CAPELLA = _build/pyspec-capella
+PYSPEC_CAPELLA_HANDWRITTEN = 00-types 00.1-constants 00.2-containers 01-variables
+PYSPEC_PRELUDE = spectec/targets/ethereum/pyspec/prelude.spectec
+
+.PHONY: pyspec-capella
+pyspec-capella: exe
+	@test -x "$(CAPELLA_PYTHON)" || { echo "$(CAPELLA_PYTHON) is not an executable Python. Set CAPELLA_SOURCE to a consensus-specs v1.6.0 checkout with a .venv, or set CAPELLA_PYTHON. See spectec/targets/ethereum/pyspec/README.md." >&2; exit 1; }
+	rm -rf $(PYSPEC_CAPELLA)
+	mkdir -p $(PYSPEC_CAPELLA)
+	PYTHONPATH=spectec/targets/ethereum/pyspec $(CAPELLA_PYTHON) -m export $(CAPELLA_SOURCE) $(PYSPEC_CAPELLA)/module.json
+	./$(NAME) ethereum translate $(PYSPEC_CAPELLA)/module.json > $(PYSPEC_CAPELLA)/state-transition.spectec
+	for file in $(PYSPEC_CAPELLA_HANDWRITTEN); do ln -s ../../spec/spec_capella/$$file.spectec $(PYSPEC_CAPELLA)/; done
+	ln -s ../../$(PYSPEC_PRELUDE) $(PYSPEC_CAPELLA)/
+	@echo $(PYSPEC_CAPELLA)
+
 # Differential-testing fixtures
 #
 # The official test vectors are release assets of ethereum/consensus-specs,
