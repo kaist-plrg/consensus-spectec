@@ -305,9 +305,12 @@ module ExecutionPayload = struct
     let* payload_il =
       parse_json ~spec input.execution_payload_file "beaconBlockBody"
     in
+    let engine_il =
+      Lang.Il.Value.Make.tuple (Lang.Il.Typ.var "executionEngine" []) []
+    in
     Ok
       (Spectec.Task.Relation
-         ("ProcessExecutionPayload", [ beaconState_il; payload_il ]))
+         ("ProcessExecutionPayload", [ beaconState_il; payload_il; engine_il ]))
 
   let source { pre_file; _ } = pre_file
   let expectation { expect; _ } = expect

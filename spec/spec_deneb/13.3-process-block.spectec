@@ -11,7 +11,7 @@ rule ProcessBlock:
   ;; Capella
   -- ProcessWithdrawals:       state_0               block.BODY.EXECUTION_PAYLOAD  ~>  state_1
   ;; Bellatrix -> Capella
-  -- ProcessExecutionPayload: state_1               block.BODY                    ~>  state_2
+  -- ProcessExecutionPayload: state_1               block.BODY ()                 ~>  state_2
   ;; Phase0
   -- ProcessRandao:            state_2               block.BODY                    ~>  state_3
   ;; Phase0

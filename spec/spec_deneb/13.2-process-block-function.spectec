@@ -93,11 +93,11 @@ rule ProcessWithdrawals/lenPartial:
 ;; [Capella -> Deneb]
 ;; added assertion
 relation ProcessExecutionPayload:
-  beaconState beaconBlockBody ~> beaconState
-  hint(input %0 %1)
+  beaconState beaconBlockBody executionEngine ~> beaconState
+  hint(input %0 %1 %2)
 
 rule ProcessExecutionPayload/main:
-  state body ~> state[ .LATEST_EXECUTION_PAYLOAD_HEADER = executionPayloadHeader ]
+  state body executionEngine ~> state[ .LATEST_EXECUTION_PAYLOAD_HEADER = executionPayloadHeader ]
   -- if executionPayload = body.EXECUTION_PAYLOAD
   ;; assert 1
   -- if executionPayload.PARENT_HASH = state.LATEST_EXECUTION_PAYLOAD_HEADER.BLOCK_HASH
