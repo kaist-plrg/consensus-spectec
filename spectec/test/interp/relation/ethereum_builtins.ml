@@ -181,7 +181,26 @@ let list_limits () =
       [ execution_payload_header ~extra_data:(String.make 33 '\001') ])
     (H.fails_with "extra_data: a list of 33 elements exceeds its limit of 32")
 
+let enumeration () =
+  List.iter
+    [ []; [ 4; 9 ] ]
+    ~f:(fun values ->
+      check
+        ~name:
+          (sprintf "enumeration of %d values annotates its pair type"
+             (List.length values))
+        ~relation:"Enumerate"
+        ~args:(fun () -> [ V.list (Typ.nat $ at) (List.map values ~f:nat) ])
+        (H.returns_typed (fun () ->
+             [
+               V.list
+                 (Typ.tuple [ Typ.nat $ at; Typ.nat $ at ] $ at)
+                 (List.mapi values ~f:(fun index item ->
+                      V.tuple [ nat index; nat item ]));
+             ])))
+
 let run () =
   aggregation ();
   fast_verification ();
-  list_limits ()
+  list_limits ();
+  enumeration ()

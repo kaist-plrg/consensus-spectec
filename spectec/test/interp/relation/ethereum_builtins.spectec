@@ -90,3 +90,12 @@ relation Execution_payload_header_root:
 
 rule Execution_payload_header_root:
   eph |- $hash_tree_root_ExecutionPayloadHeader(eph)
+
+builtin dec $enumerate_<X>(X*): (nat, X)*
+
+relation Enumerate:
+  nat* |- (nat, nat)*
+  hint(input %0)
+
+rule Enumerate:
+  k* |- $enumerate_<nat>(k*)

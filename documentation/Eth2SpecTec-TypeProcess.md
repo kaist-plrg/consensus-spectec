@@ -1615,7 +1615,12 @@ The `lists.ml` module provides generic list operations that are extensively used
           Value.tuple [index; v])
         vs
     in
-    Ok (Value.list typ enumerated_list)
+    Ok
+      (Value.list
+         Common.Annotated.(
+           Typ.tuple [ Typ.nat $ Common.Location.Unknown; typ ]
+           $ Common.Location.Unknown)
+         enumerated_list)
   ```
   Used when index information is needed alongside list elements (e.g., processing sync committee members with their indices).
 

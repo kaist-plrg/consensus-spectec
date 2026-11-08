@@ -126,7 +126,12 @@ let enumerate_ ~at (typ : targ) (vs : Value.t list) : Value.t result =
         Value.tuple [ index; v ])
       vs
   in
-  Ok (Value.list typ enumerated_list)
+  Ok
+    (Value.list
+       Common.Annotated.(
+         Typ.tuple [ Typ.nat $ Common.Location.Unknown; typ ]
+         $ Common.Location.Unknown)
+       enumerated_list)
 
 (* dec $set_or_append_list_<X>(X*, nat, X) : X* *)
 
