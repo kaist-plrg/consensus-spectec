@@ -38,6 +38,9 @@ let check ~name ~relation ~args expectation =
   H.check spec ~target:(module Target) ~name ~relation ~args expectation
 
 let aggregation () =
+  check ~name:"aggregation rejects the point at infinity" ~relation:"Aggregate"
+    ~args:(fun () -> [ keys [ key; infinity ] ])
+    (H.fails_with "invalid BLS public key");
   check ~name:"aggregation returns an aggregate at infinity"
     ~relation:"Aggregate"
     ~args:(fun () -> [ keys [ key; negated_key ] ])
@@ -54,7 +57,11 @@ let fast_verification () =
   check ~name:"fast aggregate verification accepts a valid signature"
     ~relation:"Fast_aggregate_verify"
     ~args:(fun () -> [ keys [ key ]; bytes message; bytes signature ])
-    (H.returns (fun () -> [ V.bool true ]))
+    (H.returns (fun () -> [ V.bool true ]));
+  check ~name:"fast aggregate verification rejects a key at infinity"
+    ~relation:"Fast_aggregate_verify"
+    ~args:(fun () -> [ keys [ key; infinity ]; bytes message; bytes signature ])
+    (H.returns (fun () -> [ V.bool false ]))
 
 let withdrawals count =
   V.list

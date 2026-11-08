@@ -67,17 +67,21 @@ let bls_verify ~at (bls_pubkey : Num.t) (root : Num.t) (bls_signature : Num.t) :
           Ok (Value.bool ok)
           (* valid signature *))
 
+(* KeyValidate in the BLS signature standard rejects the point at infinity
+   as a public key. *)
+(* Bls12_381.G1.of_compressed_bytes_opt performs KeyValidate's subgroup check. *)
 let decode_pubkey_opt ~at n =
   let* () = ensure_fits_bytes ~at n ~len:48 in
   let bytes = be_of_bigint_fixed n ~len:48 in
-  Ok (Bls12_381.G1.of_compressed_bytes_opt bytes)
+  match Bls12_381.G1.of_compressed_bytes_opt bytes with
+  | Some point when not (Bls12_381.G1.is_zero point) -> Ok (Some point)
+  | _ -> Ok None
 
 let decode_pubkey ~at n =
   let* point = decode_pubkey_opt ~at n in
   match point with
   | Some point -> Ok point
-  | None ->
-      Error (runtime at "eth_aggregate_pubkeys: invalid G1 pubkey (bytes48)")
+  | None -> Error (runtime at "invalid BLS public key")
 
 (* dec $eth_aggregate_pubkeys(blsPubkey* ) : blsPubkey *)
 

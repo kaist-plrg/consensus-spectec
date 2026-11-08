@@ -777,7 +777,7 @@ let eth_aggregate_pubkeys ~at (pubkeys_num : Num.t list)
 
 **Why This Design:**
 
-1. **Point Conversion and Error Handling**: `decode_pubkey_opt` returns `None` for an invalid encoding or a point outside the subgroup. `decode_pubkey` turns `None` into an error.
+1. **Point Conversion and Error Handling**: `decode_pubkey_opt` returns `None` for an invalid encoding, a point outside the subgroup, or the point at infinity. `decode_pubkey` turns `None` into the error "invalid BLS public key".
 
 2. **Elliptic Curve Addition**: The aggregated public key is computed by adding all G1 points together:
    ```ocaml
