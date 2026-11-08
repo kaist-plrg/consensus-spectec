@@ -99,3 +99,12 @@ relation Enumerate:
 
 rule Enumerate:
   k* |- $enumerate_<nat>(k*)
+
+builtin dec $range(nat): nat*
+
+relation Range:
+  nat |- nat*
+  hint(input %0)
+
+rule Range:
+  k |- $range(k)

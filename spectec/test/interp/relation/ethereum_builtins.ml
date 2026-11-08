@@ -199,8 +199,15 @@ let enumeration () =
                       V.tuple [ nat index; nat item ]));
              ])))
 
+let range_annotation () =
+  check ~name:"range annotates its result as a nat list" ~relation:"Range"
+    ~args:(fun () -> [ nat 3 ])
+    (H.returns_typed (fun () ->
+         [ V.list (Typ.nat $ at) [ nat 0; nat 1; nat 2 ] ]))
+
 let run () =
   aggregation ();
   fast_verification ();
   list_limits ();
-  enumeration ()
+  enumeration ();
+  range_annotation ()

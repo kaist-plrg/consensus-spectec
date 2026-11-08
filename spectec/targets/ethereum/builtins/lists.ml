@@ -110,7 +110,7 @@ let range ~at (count : Num.t) : Value.t result =
       let range_list = List.init n (fun i -> Value.nat (Bigint.of_int i)) in
       Ok
         (Value.list
-           Common.Annotated.(Typ.int $ Common.Location.Unknown)
+           Common.Annotated.(Typ.nat $ Common.Location.Unknown)
            range_list)
   with _ -> Error (runtime at "range: count is too large to be an integer")
 

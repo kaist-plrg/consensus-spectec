@@ -1634,7 +1634,7 @@ The `lists.ml` module provides generic list operations that are extensively used
         Error (Err.runtime at "range: count must be non-negative")
       else
         let range_list = List.init n (fun i -> Value.nat (Bigint.of_int i)) in
-        Ok (Value.list' Typ.int range_list)
+        Ok (Value.list' Typ.nat range_list)
     with
     | _ -> Error (Err.runtime at "range: count is too large to be an integer")
   ```
