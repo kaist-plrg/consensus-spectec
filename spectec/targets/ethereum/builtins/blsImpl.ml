@@ -67,19 +67,22 @@ let bls_verify ~at (bls_pubkey : Num.t) (root : Num.t) (bls_signature : Num.t) :
           Ok (Value.bool ok)
           (* valid signature *))
 
+let decode_pubkey_opt ~at n =
+  let* () = ensure_fits_bytes ~at n ~len:48 in
+  let bytes = be_of_bigint_fixed n ~len:48 in
+  Ok (Bls12_381.G1.of_compressed_bytes_opt bytes)
+
+let decode_pubkey ~at n =
+  let* point = decode_pubkey_opt ~at n in
+  match point with
+  | Some point -> Ok point
+  | None ->
+      Error (runtime at "eth_aggregate_pubkeys: invalid G1 pubkey (bytes48)")
+
 (* dec $eth_aggregate_pubkeys(blsPubkey* ) : blsPubkey *)
 
 let eth_aggregate_pubkeys ~at (pubkeys_num : Num.t list) : Value.t result =
   let pubkeys_int = List.map Num.to_int pubkeys_num in
-  (* 1) int -> bytes48 -> G1 (validation) *)
-  let conv_one n =
-    let* () = ensure_fits_bytes ~at n ~len:48 in
-    let b = be_of_bigint_fixed n ~len:48 in
-    match Bls12_381.G1.of_compressed_bytes_opt b with
-    | None ->
-        Error (runtime at "eth_aggregate_pubkeys: invalid G1 pubkey (bytes48)")
-    | Some p -> Ok p
-  in
   let rec mapM f = function
     | [] -> Ok []
     | x :: xs ->
@@ -87,7 +90,8 @@ let eth_aggregate_pubkeys ~at (pubkeys_num : Num.t list) : Value.t result =
         let* ys = mapM f xs in
         Ok (y :: ys)
   in
-  let* points = mapM conv_one pubkeys_int in
+  (* 1) int -> bytes48 -> G1 (validation) *)
+  let* points = mapM (decode_pubkey ~at) pubkeys_int in
 
   (* 2) cumulative sum *)
   let agg = List.fold_left Bls12_381.G1.add Bls12_381.G1.zero points in
@@ -125,14 +129,7 @@ let bls_fast_aggregate_verify ~at (pubkeys_num : Num.t list) (root : Num.t)
           let* ys = mapM f xs in
           Ok (y :: ys)
     in
-    let conv_pk (n : Bigint.t) =
-      let* () = ensure_fits_bytes ~at n ~len:48 in
-      let b = be_of_bigint_fixed n ~len:48 in
-      match Bls12_381.G1.of_compressed_bytes_opt b with
-      | None -> Ok None
-      | Some p -> Ok (Some p)
-    in
-    let* points_opt = mapM conv_pk pubkeys_int in
+    let* points_opt = mapM (decode_pubkey_opt ~at) pubkeys_int in
     if List.exists (fun o -> o = None) points_opt then Ok (Value.bool false)
     else
       let points = List.map Option.get points_opt in

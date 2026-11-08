@@ -760,18 +760,11 @@ dec $eth_aggregate_pubkeys(blsPubkey*) : blsPubkey
 let eth_aggregate_pubkeys ~at (pubkeys_num : Num.t list)
   : (Value.t, Err.t) result =
   let pubkeys_int = List.map Num.to_int pubkeys_num in
-  let conv_one n =
-    let* () = ensure_fits_bytes ~at n ~len:48 in
-    let b = be_of_bigint_fixed n ~len:48 in
-    match Bls12_381.G1.of_compressed_bytes_opt b with
-    | None -> Error (Err.runtime at "eth_aggregate_pubkeys: invalid G1 pubkey (bytes48)")
-    | Some p -> Ok p
-  in
   let rec mapM f = function
     | [] -> Ok []
     | x::xs -> let* y = f x in let* ys = mapM f xs in Ok (y::ys)
   in
-  let* points = mapM conv_one pubkeys_int in
+  let* points = mapM (decode_pubkey ~at) pubkeys_int in
 
   let agg =
     List.fold_left Bls12_381.G1.add Bls12_381.G1.zero points
@@ -784,7 +777,7 @@ let eth_aggregate_pubkeys ~at (pubkeys_num : Num.t list)
 
 **Why This Design:**
 
-1. **Point Conversion and Error Handling**: Each public key (48 bytes) is converted to a G1 point using `Bls12_381.G1.of_compressed_bytes_opt`. If any public key is invalid (invalid encoding, point at infinity, or non-subgroup element), the function returns an error. This strict error handling at the API boundary ensures validity guarantees and facilitates debugging, in contrast to verification routines that return `false` for consensus-friendly behavior.
+1. **Point Conversion and Error Handling**: `decode_pubkey_opt` returns `None` for an invalid encoding or a point outside the subgroup. `decode_pubkey` turns `None` into an error.
 
 2. **Elliptic Curve Addition**: The aggregated public key is computed by adding all G1 points together:
    ```ocaml
@@ -869,14 +862,7 @@ let bls_fast_aggregate_verify
         let* ys = mapM f xs in
         Ok (y::ys)
     in
-    let conv_pk (n:Bigint.t) =
-      let* () = ensure_fits_bytes ~at n ~len:48 in
-      let b = be_of_bigint_fixed n ~len:48 in
-      match Bls12_381.G1.of_compressed_bytes_opt b with
-      | None   -> Ok None
-      | Some p -> Ok (Some p)
-    in
-    let* points_opt = mapM conv_pk pubkeys_int in
+    let* points_opt = mapM (decode_pubkey_opt ~at) pubkeys_int in
     if List.exists (fun o -> o = None) points_opt
     then Ok (Value.bool false)
     else
