@@ -304,19 +304,7 @@ let htr_basic_list_with_limit ~at ~field ~limit ~elem_size
     let total_bytes = limit * elem_size in
     if total_bytes = 0 then 0 else (total_bytes + 31) / 32
   in
-  let root =
-    if need_chunks = 0 then zero32
-    else if Array.length chunks = 0 then
-      (*  : ZERO_HASHES[max_depth] . max_depth = (need_chunks-1).bit_length() *)
-      let max_depth =
-        if need_chunks <= 1 then 0 else bit_length_of (need_chunks - 1)
-      in
-      let zero_hashes = compute_zero_hashes ~max_depth in
-      zero_hashes.(max_depth)
-    else
-      (* Python merkleize_chunks(chunks, limit=need_chunks)   *)
-      merkleize_chunks_with_limit ~chunk_limit:need_chunks chunks
-  in
+  let root = merkleize_chunks_with_limit ~chunk_limit:need_chunks chunks in
   (*    mix_in_length *)
   (* SSZ :  List  mix_in_length     *)
   let elem_len = List.length items in
@@ -347,30 +335,7 @@ let htr_bytevec_list_with_limit ~at ~field ~limit ~elem_size
     let total_bytes = limit * elem_size in
     if total_bytes = 0 then 0 else (total_bytes + 31) / 32
   in
-  let root =
-    if need_chunks = 0 then zero32
-    else if Array.length chunks = 0 then
-      let max_depth =
-        if need_chunks <= 1 then 0 else bit_length_of (need_chunks - 1)
-      in
-      let zero_hashes = compute_zero_hashes ~max_depth in
-      zero_hashes.(max_depth)
-    else
-      let h0 = merkleize_leaves chunks in
-      let chunk_count = Array.length chunks in
-      let depth =
-        if chunk_count = 0 then 0 else bit_length_of (chunk_count - 1)
-      in
-      let max_depth =
-        if need_chunks <= 1 then 0 else bit_length_of (need_chunks - 1)
-      in
-      let zero_hashes = compute_zero_hashes ~max_depth in
-      let rec lift h d =
-        if d >= max_depth then h
-        else lift (merkle_hash_ h zero_hashes.(d)) (d + 1)
-      in
-      lift h0 depth
-  in
+  let root = merkleize_chunks_with_limit ~chunk_limit:need_chunks chunks in
   (* 4)   mix_in_length *)
   (* SSZ :  List  mix_in_length     *)
   let elem_len = List.length items_be_bytes in
@@ -395,33 +360,7 @@ let htr_bitlist_with_limit ~at ~field ~limit (bits : bool list) : Bytes.t result
   let chunks = chunkize_bytes_bytev arr in
   (* limit  '  ' *)
   let need_chunks = (limit + 255) / 256 in
-  let root =
-    if need_chunks = 0 then zero32
-    else if Array.length chunks = 0 then
-      (*  : ZERO_HASHES[max_depth] . max_depth = (need_chunks-1).bit_length() *)
-      let max_depth =
-        if need_chunks <= 1 then 0 else bit_length_of (need_chunks - 1)
-      in
-      let zero_hashes = compute_zero_hashes ~max_depth in
-      zero_hashes.(max_depth)
-    else
-      (*   merkleize  , limit  "" (  ) *)
-      (* Python: depth = max(count-1, 0).bit_length(), max_depth = (limit-1).bit_length() *)
-      let h0 = merkleize_leaves chunks in
-      let chunk_count = Array.length chunks in
-      let depth =
-        if chunk_count = 0 then 0 else bit_length_of (chunk_count - 1)
-      in
-      let max_depth =
-        if need_chunks <= 1 then 0 else bit_length_of (need_chunks - 1)
-      in
-      let zero_hashes = compute_zero_hashes ~max_depth in
-      let rec lift h d =
-        if d >= max_depth then h
-        else lift (merkle_hash_ h zero_hashes.(d)) (d + 1)
-      in
-      lift h0 depth
-  in
+  let root = merkleize_chunks_with_limit ~chunk_limit:need_chunks chunks in
   Ok (mix_in_length root (Bigint.of_int bitlen))
 
 let leaf_uint_le (n : Bigint.t) ~(nbytes : int) : Bytes.t =
