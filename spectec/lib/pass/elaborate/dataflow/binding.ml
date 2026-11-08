@@ -1,5 +1,7 @@
 open Common.Domain
-open Common.Source
+open Common.Annotated
+module Location = Common.Location
+open Lang.Il.Expression
 open Lang.Il
 open Diagnostic
 open Ctx
@@ -112,15 +114,16 @@ let rec analyze_prem (dctx : Dctx.t) (prem : prem) :
   | LetPr _ ->
       (* unreachable: analyze_let_prem produces LetPr within this pass. *)
       assert false
-  | IterPr (_, (_, _ :: _)) -> assert false
-  | IterPr (prem, (iter, [])) -> analyze_iter_prem dctx prem.at prem iter
-  | FoldPr (_, (_, _ :: _), _) -> assert false
-  | FoldPr (prem, (iter, []), accumulators) ->
+  | IterPr (prem, { iter; vars_input = []; vars_output = [] }) ->
+      analyze_iter_prem dctx prem.at prem iter
+  | IterPr _ -> assert false
+  | FoldPr (prem, { iter; vars_input = []; vars_output = [] }, accumulators) ->
       analyze_fold_prem dctx prem.at prem iter accumulators
+  | FoldPr _ -> assert false
   | DebugPr exp -> analyze_debug_prem dctx prem.at exp
 
-and analyze_rule_prem (dctx : Dctx.t) (at : region) (id : id) (notexp : notexp)
-    : Dctx.t * VEnv.t * prem * prem list =
+and analyze_rule_prem (dctx : Dctx.t) (at : Location.t) (id : id)
+    (notexp : notexp) : Dctx.t * VEnv.t * prem * prem list =
   let mixop, exps = Mixop.split notexp in
   let reltyp = Dctx.find_reltyp dctx id in
   let exps_input, exps_output = Mode.partition reltyp.it exps in
@@ -130,10 +133,10 @@ and analyze_rule_prem (dctx : Dctx.t) (at : region) (id : id) (notexp : notexp)
   in
   let exps = Mode.interleave reltyp.it ~ins:exps_input ~outs:exps_output in
   let notexp = Mixop.fill mixop exps in
-  let prem = RelPr { relid = id; notexp } $ at in
+  let prem = RelPr { relid = id; notexp } $$ (at, None) in
   (dctx, venv, prem, sideconditions)
 
-and analyze_if_eq_prem (dctx : Dctx.t) (at : region) (note : typ')
+and analyze_if_eq_prem (dctx : Dctx.t) (at : Location.t) (note : typ')
     (optyp : optyp) (exp_l : exp) (exp_r : exp) :
     Dctx.t * VEnv.t * prem' * prem list =
   let binds_l = Collectbind.collect_exp dctx exp_l in
@@ -143,7 +146,9 @@ and analyze_if_eq_prem (dctx : Dctx.t) (at : region) (note : typ')
       let prem =
         IfPr
           {
-            cond = CmpE (`EqOp, optyp, exp_l, exp_r) $$ (at, note);
+            cond =
+              CmpE (`EqOp, optyp, exp_l, exp_r)
+              $$ (at, { typ = note; annot = () });
             role = Condition;
           }
       in
@@ -161,24 +166,24 @@ and analyze_if_eq_prem (dctx : Dctx.t) (at : region) (note : typ')
            bound, or as a binder when one side is. With new variables on both \
            sides it fits neither."
 
-and analyze_if_prem (dctx : Dctx.t) (at : region) (exp : exp) :
+and analyze_if_prem (dctx : Dctx.t) (at : Location.t) (exp : exp) :
     Dctx.t * VEnv.t * prem * prem list =
   match exp.it with
   | CmpE (`EqOp, optyp, exp_l, exp_r) ->
       let dctx, venv, prem, prems =
-        analyze_if_eq_prem dctx exp.at exp.note optyp exp_l exp_r
+        analyze_if_eq_prem dctx exp.at exp.note.typ optyp exp_l exp_r
       in
-      let prem = prem $ at in
+      let prem = prem $$ (at, None) in
       (dctx, venv, prem, prems)
   | _ ->
       analyze_exp_as_bound dctx exp;
-      let prem = IfPr { cond = exp; role = Condition } $ at in
+      let prem = IfPr { cond = exp; role = Condition } $$ (at, None) in
       (dctx, VEnv.empty, prem, [])
 
-and analyze_rel_assert_prem (dctx : Dctx.t) (at : region) (call : relcall)
+and analyze_rel_assert_prem (dctx : Dctx.t) (at : Location.t) (call : relcall)
     (expect : bool) : Dctx.t * VEnv.t * prem * prem list =
   analyze_exps_as_bound dctx (Mixop.args call.notexp);
-  let prem = RelAssertPr { call; expect } $ at in
+  let prem = RelAssertPr { call; expect } $$ (at, None) in
   (dctx, VEnv.empty, prem, [])
 
 and analyze_let_prem (dctx : Dctx.t) (exp_l : exp) (binds_l : BEnv.t)
@@ -199,16 +204,21 @@ and analyze_let_prem (dctx : Dctx.t) (exp_l : exp) (binds_l : BEnv.t)
   let prem = LetPr (exp_l, exp_r) in
   (dctx, venv, prem, prems)
 
-and analyze_iter_prem (dctx : Dctx.t) (at : region) (prem : prem) (iter : iter)
-    : Dctx.t * VEnv.t * prem * prem list =
+and analyze_iter_prem (dctx : Dctx.t) (at : Location.t) (prem : prem)
+    (iter : iter) : Dctx.t * VEnv.t * prem * prem list =
   let dctx, venv, prem, prems = analyze_prem dctx prem in
   let venv = VEnv.map (Typ.add_iter iter) venv in
-  let prems = List.map (fun prem -> IterPr (prem, (iter, [])) $ at) prems in
-  let prem = IterPr (prem, (iter, [])) $ at in
+  let prems =
+    List.map
+      (fun prem -> IterPr (prem, unannotated_iterinstr iter) $$ (at, None))
+      prems
+  in
+  let prem = IterPr (prem, unannotated_iterinstr iter) $$ (at, None) in
   (dctx, venv, prem, prems)
 
-and analyze_fold_prem (dctx : Dctx.t) (at : region) (prem : prem) (iter : iter)
-    (accumulators : accumulator list) : Dctx.t * VEnv.t * prem * prem list =
+and analyze_fold_prem (dctx : Dctx.t) (at : Location.t) (prem : prem)
+    (iter : iter) (accumulators : accumulator list) :
+    Dctx.t * VEnv.t * prem * prem list =
   let var_typ ({ typ; iters; _ } : var) = (typ, iters) in
   let accumulator_local_ids =
     List.concat_map
@@ -245,12 +255,18 @@ and analyze_fold_prem (dctx : Dctx.t) (at : region) (prem : prem) (iter : iter)
       (fun venv { final; _ } -> VEnv.add final.varid (var_typ final) venv)
       venv accumulators
   in
-  let prems = List.map (fun prem -> IterPr (prem, (iter, [])) $ at) prems in
-  let prem = FoldPr (prem, (iter, []), accumulators) $ at in
+  let prems =
+    List.map
+      (fun prem -> IterPr (prem, unannotated_iterinstr iter) $$ (at, None))
+      prems
+  in
+  let prem =
+    FoldPr (prem, unannotated_iterinstr iter, accumulators) $$ (at, None)
+  in
   (dctx, venv, prem, prems)
 
-and analyze_debug_prem (dctx : Dctx.t) (at : region) (exp : exp) :
+and analyze_debug_prem (dctx : Dctx.t) (at : Location.t) (exp : exp) :
     Dctx.t * VEnv.t * prem * prem list =
   analyze_exp_as_bound dctx exp;
-  let prem = DebugPr exp $ at in
+  let prem = DebugPr exp $$ (at, None) in
   (dctx, VEnv.empty, prem, [])

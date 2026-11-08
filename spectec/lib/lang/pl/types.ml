@@ -1,4 +1,4 @@
-open Common.Source
+open Common.Annotated
 
 [@@@ocamlformat "disable"]
 
@@ -43,6 +43,7 @@ type pattern = Sl.pattern
 type tparam = Sl.tparam
 type targ = Sl.targ
 type iterexp = Sl.iterexp
+type iterinstr = Sl.iterinstr
 
 type pid = Sl.pid
 type phantom = Sl.phantom
@@ -50,60 +51,19 @@ type pathcond = Sl.pathcond
 
 (* Expressions *)
 
-type exp = ((exp', typ') note_phrase) Annot.t
-and exp' =
-  | BoolE of bool
-  | NumE of num
-  | TextE of text
-  | VarE of id
-  | UnE of unop * optyp * exp
-  | BinE of binop * optyp * exp * exp
-  | CmpE of cmpop * optyp * exp * exp
-  | UpCastE of typ * exp
-  | DownCastE of typ * exp
-  | SubE of exp * typ
-  | MatchE of exp * pattern
-  | TupleE of exp list
-  | CaseE of notexp
-  | StrE of (atom * exp) list
-  | OptE of exp option
-  | ListE of exp list
-  | ConsE of exp * exp
-  | CatE of exp * exp
-  | MemE of exp * exp
-  | LenE of exp
-  | DotE of exp * atom
-  | IdxE of exp * exp
-  | SliceE of exp * exp * exp
-  | UpdE of exp * path * exp
-  | CallE of id * targ list * arg list
-  | IterE of exp * iterexp
+type exp = Annot.hints Il.Expression.t
+type exp' = Annot.hints Il.Expression.node
+type notexp = Annot.hints Il.Expression.notation
+type path = Annot.hints Il.Expression.path
+type path' = Annot.hints Il.Expression.path_node
+type arg = Annot.hints Il.Expression.arg
+type arg' = Annot.hints Il.Expression.arg_node
 
-and notexp = exp Il.Mixfix.t
-
-(* Relation calls *)
-
-and relcall = { relid : id; notexp : notexp }
-
-(* Paths *)
-
-and path = (path', typ') note_phrase
-and path' =
-  | RootP
-  | IdxP of path * exp
-  | SliceP of path * exp * exp
-  | DotP of path * atom
-
-(* Arguments *)
-
-and arg = arg' phrase
-and arg' =
-  | ExpA of exp
-  | DefA of id
+type relcall = { relid : id; notexp : notexp }
 
 (* Parameters *)
 
-and param = param' phrase
+type param = param' located
 and param' =
   | ExpP of typ * exp
   | DefP of id
@@ -128,18 +88,18 @@ and accumulator = { init : exp; input : Il.var; output : Il.var; final : Il.var 
 
 (* Instructions *)
 
-and instr = (instr' phrase) Annot.t
+and instr = (instr' located) Annot.t
 and instr' =
-  | RelI of { call : relcall; iterexps : iterexp list }
+  | RelI of { call : relcall; iterinstrs : iterinstr list }
   | RelAssertI of { call : relcall; expect : bool; iterexps : iterexp list; block : instr list; phantom : phantom option }
   | IfI of exp * iterexp list * instr list * phantom option
   | CaseI of exp * case list * phantom option
   | OtherwiseI of instr
   | TryI of block list
-  | LetI of exp * exp * iterexp list
+  | LetI of exp * exp * iterinstr list
   | FoldI of {
-      fold_iterexp : iterexp;
-      outer_iterexps : iterexp list;
+      fold_iterinstr : iterinstr;
+      outer_iterinstrs : iterinstr list;
       accumulators : accumulator list;
       body : block;
     }
@@ -150,9 +110,8 @@ and instr' =
   (* DestructI: bind each [exp] from [exp_source]'s positional CaseV args;
      [string option] is the prose field name (None = underscore, hidden). *)
   | DestructI of (string option * exp) list * exp
-  (* CheckLetI: bind [exp_target] to [exp_source] after a subtype-or-match
-     check, then run [block]. *)
-  | CheckLetI of exp * exp * instr list
+  (* A subtype check and its assignment use the same type for downcasting. *)
+  | CheckLetI of { check : [ `Match of pattern | `Subtype of typ ]; exp_l : exp; exp_r : exp; block : block }
   (* OptionGetI: bind [exp_target] to the inner value of [exp_source] when it is
      [Some _] and then run [block]; otherwise skip [block]. *)
   | OptionGetI of exp * exp * block
@@ -162,11 +121,11 @@ and elseblock = instr list
 
 (* Definitions *)
 
-type def = (def' phrase) Annot.t
+type def = (def' located) Annot.t
 and def' =
   | TypD of id * tparam list * deftyp
   | RelD of id * (mixop * int list) * exp list * block * elseblock option
-  | BuiltinDecD of id * tparam list * arg list
+  | BuiltinDecD of id * tparam list * arg list * typ
   | DecD of id * tparam list * arg list * block * elseblock option
 
 type spec = def list

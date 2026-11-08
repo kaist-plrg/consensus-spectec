@@ -3,7 +3,7 @@
    from the table via [lookup]. The dependency analysis reads back through
    [provenance_of]. The table is cleared per test. *)
 
-open Common.Source
+open Common.Annotated
 module Il = Lang.Il
 
 (* === Side table === *)
@@ -72,9 +72,6 @@ let on_invoke_fallback ~(inputs : Il.Value.t list) (result : Il.Value.t) :
      | deduped -> Hashtbl.replace table result.note.vid deduped);
   result
 
-let hooks : Instrumentation_core.Value_hooks.t =
-  { on_created; on_derived; on_combined; on_field_updated; on_invoke_fallback }
-
 (* Union readset provenance (from on_func_result) into the result's entry. *)
 let add_readset (result : Il.Value.t) (provs : Il.json_provenance list) : unit =
   if provs <> [] then
@@ -85,15 +82,50 @@ let add_readset (result : Il.Value.t) (provs : Il.json_provenance list) : unit =
 
 let provenance_of (v : Il.Value.t) : Il.json_provenance list = lookup v.note.vid
 
-(* === Lifecycle === *)
-
-module Handler : Instrumentation_api.Handler.S = struct
-  let static_dependencies = []
-  let init ~spec:_ = ()
-
-  let handle = function
-    | Instrumentation_api.Event.Test_start _ -> clear ()
-    | _ -> ()
-
-  let finish () = ()
-end
+let handle_value : Instrumentation_api.Value_event.t -> unit = function
+  | Decoded { value; origin } -> (
+      let source =
+        match origin.label with
+        | "state" -> Some Il.JsonState
+        | "block" -> Some Il.JsonBlock
+        | _ -> None
+      in
+      let path =
+        List.map
+          (function
+            | Instrumentation_api.Origin.Struct atom ->
+                Il.FieldAccess
+                  (Lang.Xl.Atom.to_string atom |> String.lowercase_ascii)
+            | List index -> Il.IndexAccess index)
+          origin.path
+      in
+      match source with
+      | Some source -> ignore (on_created (source, path) value)
+      | None -> ())
+  | Derived { value; source } -> ignore (on_derived ~source value)
+  | Constructed _ -> ()
+  | Combined { value; sources } ->
+      (* A list or option takes the provenance of the other values it was
+         computed from, such as the lists an iteration ranges over, but not of
+         its elements, which keep their own. *)
+      let elements =
+        match value.it with
+        | Il.ListV values -> values
+        | Il.OptV value_opt -> Option.to_list value_opt
+        | _ -> []
+      in
+      let element_vids = Hashtbl.create (List.length elements) in
+      List.iter
+        (fun (element : Il.Value.t) ->
+          Hashtbl.replace element_vids element.note.vid ())
+        elements;
+      let sources =
+        List.filter
+          (fun (source : Il.Value.t) ->
+            not (Hashtbl.mem element_vids source.note.vid))
+          sources
+      in
+      ignore (on_combined ~sources value)
+  | Updated { value; base; _ } -> ignore (on_field_updated ~base value)
+  | Invoked { inputs; outputs; _ } ->
+      List.iter (fun value -> ignore (on_invoke_fallback ~inputs value)) outputs

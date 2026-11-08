@@ -9,5 +9,5 @@ The forked package includes Ethereum and leaves upstream targets independent.
   $ spectec --help | grep '^  ethereum'
     ethereum                   . Ethereum commands
 
-  $ grep -Eq 'target_plugins/(impty|miniml|p4)/META' ../../../../spectec.install
+  $ grep -Eq 'target_plugins/(ae|vae|f1vae|fvae|fae|rfae|bfae|mfae|lfae|kfae|tfae|trfae|tvfae|ptfae|stfae|tifae|impty|miniml|p4)/META' ../../../../spectec.install
   [1]

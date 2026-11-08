@@ -11,6 +11,5 @@
   lang
   instrumentation_api
   instrumentation_config
-  instrumentation_core
   instrumentation_spec
   instrumentation_static))

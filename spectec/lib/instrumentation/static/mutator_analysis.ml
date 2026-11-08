@@ -1,4 +1,4 @@
-open Common.Source
+open Common.Annotated
 module Il = Lang.Il
 
 (* === Types === *)
@@ -45,12 +45,12 @@ end
 
 (* Extract variable name from expression *)
 let extract_var_name (exp : Il.exp) : string option =
-  match exp.it with Il.VarE id -> Some id.it | _ -> None
+  match exp.it with Il.Expression.VarE id -> Some id.it | _ -> None
 
 (* Detect block input pattern from input expression (recursive) *)
 let rec detect_block_pattern (exp : Il.exp) : block_input_pattern option =
   match exp.it with
-  | Il.VarE id -> (
+  | Il.Expression.VarE id -> (
       (* Check variable name to infer pattern *)
       match id.it with
       | "signedBeaconBlock" -> Some FullBlock
@@ -59,7 +59,7 @@ let rec detect_block_pattern (exp : Il.exp) : block_input_pattern option =
       | "executionPayload" -> Some ExecutionPayload
       | "syncAggregate" -> Some SyncAggregate
       | _ -> None)
-  | Il.DotE (base, atom) -> (
+  | Il.Expression.DotE (base, atom) -> (
       (* Check for block.BODY.EXECUTION_PAYLOAD pattern *)
       let field_name = Lang.Xl.Atom.to_string atom.it in
       match detect_block_pattern base with
@@ -167,11 +167,11 @@ let init spec =
                     List.map
                       (fun arg ->
                         match arg.it with
-                        | Il.ExpA e -> (
+                        | Il.Expression.ExpA e -> (
                             match extract_var_name e with
                             | Some n -> n
                             | None -> "_")
-                        | Il.DefA id -> id.it)
+                        | Il.Expression.DefA id -> id.it)
                       args
                 | [] -> List.map (fun _ -> "_") params
               in

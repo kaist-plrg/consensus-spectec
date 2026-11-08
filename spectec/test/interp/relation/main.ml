@@ -1,6 +1,19 @@
 let () =
+  Opaque_values.run ();
+  Opaque.run ();
+  Callbacks.run ();
+  Value_types.run ();
   Iteration.run ();
   Optional_iteration.run ();
-  Bytes_matching.run ();
+  Partial_binding.run ();
   Nested_call_expansion.run ();
-  Fold.run ()
+  Expressions.run ();
+  Builtin_arities.run ();
+  Builtin_type_arguments.run ();
+  Casts.run ();
+  Determinism.run ();
+  Bytes_matching.run ();
+  Fold.run ();
+  Structuring.run ();
+  Value_handlers.run ();
+  Consensus_provenance.run ()

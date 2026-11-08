@@ -1,4 +1,4 @@
-open Common.Source
+open Common.Annotated
 module Sl = Lang.Sl
 
 [@@@ocamlformat "disable"]
@@ -11,6 +11,7 @@ type notexp = Sl.notexp
 type relcall = Sl.relcall
 type iterexp = Sl.iterexp
 type accumulator = Sl.accumulator
+type iterinstr = Sl.iterinstr
 type pattern = Sl.pattern
 type tparam = Sl.tparam
 type typ = Sl.typ
@@ -33,18 +34,18 @@ and guard =
 
 (* Instructions *)
 
-and instr = instr' phrase
+and instr = instr' located
 and instr' =
-  | RelI of { call : relcall; iterexps : iterexp list }
+  | RelI of { call : relcall; iterinstrs : iterinstr list }
   | RelAssertI of { call : relcall; expect : bool; iterexps : iterexp list; block : block; phantom : phantom option }
   | IfI of exp * iterexp list * block * phantom option
   | CaseI of exp * case list * phantom option
   | OtherwiseI of block
   | TryI of block list
-  | LetI of exp * exp * iterexp list
+  | LetI of exp * exp * iterinstr list
   | FoldI of {
-      fold_iterexp : iterexp;
-      outer_iterexps : iterexp list;
+      fold_iterinstr : iterinstr;
+      outer_iterinstrs : iterinstr list;
       accumulators : accumulator list;
       body : block;
     }
@@ -57,11 +58,11 @@ and elseblock = instr list
 
 (* Definitions *)
 
-type def = def' phrase
+type def = def' located
 and def' =
   | TypD of id * tparam list * deftyp
   | RelD of id * (mixop * int list) * exp list * block * elseblock option
-  | BuiltinDecD of id * tparam list * arg list
+  | BuiltinDecD of id * tparam list * arg list * typ
   | DecD of id * tparam list * arg list * block * elseblock option
 
 type spec = def list

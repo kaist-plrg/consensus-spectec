@@ -1,17 +1,19 @@
-open Common.Source
+module Location = Common.Location
 
-module Ctx : sig
-  type t
-end
-
-type error = region * string
+type error = Location.t * string
 
 val error_to_diagnostic : error -> Diag.t
 
-val run :
+type context
+
+val context_of_spec :
+  ?check_determinism:bool ->
   (module Target.S) ->
   Lang.Sl.spec ->
-  string ->
-  Lang.Il.Value.t list ->
-  string ->
-  (Ctx.t * Lang.Il.Value.t list, error) result
+  (context, error) result
+
+val eval_rel :
+  context ->
+  rel:string ->
+  values:Lang.Il.Value.t list ->
+  (Lang.Il.Value.t list, error) result

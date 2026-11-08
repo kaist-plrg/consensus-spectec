@@ -19,19 +19,8 @@ module Target : Runner.Target.S = struct
   let name = "ethereum"
   let spec_dir = spec_dir
   let builtins = Builtin_eth.builtins
-
-  (* Monotonic across target runs so vids never repeat in a process. The
-     provenance side table is keyed by vid, so a repeat would alias entries. *)
-  let vid_counter = ref 0
-
-  let with_state f =
-    let fresh_vid () =
-      let vid = !vid_counter in
-      incr vid_counter;
-      vid
-    in
-    Lang.Il.Value.GlobalVidProvider.with_provider fresh_vid f
-
+  let opaque_types = []
+  let with_state f = f ()
   let is_impure_func _ = false
   let is_impure_rel _ = false
   let state_version = ref 0
@@ -61,7 +50,7 @@ let parse_json ~spec filename input_type =
     (Il.Typ.var input_type []) json_data
   |> Result.map_error (fun err ->
          let msg = Interface.JSON.Parse.string_of_error err in
-         Runner.Error.TaskParseError (Common.Source.no_region, msg))
+         Runner.Error.TaskParseError (Common.Location.Unknown, msg))
 
 (* Shared parse_string: parse a JSON string given a type name.
    Requires the caller to provide type context via the spec. *)
@@ -80,7 +69,7 @@ let parse_string ~spec ~filename:_ content =
   |> Result.map (fun v -> [ v ])
   |> Result.map_error (fun err ->
          let msg = Interface.JSON.Parse.string_of_error err in
-         Runner.Error.TaskParseError (Common.Source.no_region, msg))
+         Runner.Error.TaskParseError (Common.Location.Unknown, msg))
 
 (* Shared unparse: convert IL values back to JSON string *)
 let unparse ~spec:_ values =
@@ -100,13 +89,17 @@ let save_state filename values =
           try
             Yojson.Safe.to_file filename json;
             Ok ()
-          with Sys_error msg -> Error (Runner.Error.TaskOutputError msg))
+          with Sys_error msg ->
+            Error (Runner.Error.TaskError (Common.Location.Unknown, msg)))
       | Error err ->
           Error
-            (Runner.Error.TaskOutputError
-               (Interface.JSON.Print.string_of_error err)))
+            (Runner.Error.TaskError
+               ( Common.Location.Unknown,
+                 Interface.JSON.Print.string_of_error err )))
   | _ ->
-      Error (Runner.Error.TaskOutputError "task must return exactly one state")
+      Error
+        (Runner.Error.TaskError
+           (Common.Location.Unknown, "task must return exactly one state"))
 
 (* Expectation filter for collecting tests *)
 type expectation_filter = All | PositiveOnly | NegativeOnly
@@ -192,7 +185,7 @@ module JsonParse = struct
   let parse_input ~spec input =
     let ( let* ) = Result.bind in
     let* value = parse_json ~spec input.json_file input.input_type in
-    Ok ("", [ value ])
+    Ok (Spectec.Task.Relation ("", [ value ]))
 
   let parse_string = parse_string
   let unparse = unparse

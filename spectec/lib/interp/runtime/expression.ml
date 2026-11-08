@@ -1,0 +1,741 @@
+open Common.Annotated
+module Location = Common.Location
+open Lang.Xl
+module Il = Lang.Il
+module Value = Il.Value
+open Il.Expression
+open Il
+open Envs.Make
+module Typ = Envs.Il.Typ
+
+module type Context = sig
+  type t
+  type annotation
+
+  module Func : sig
+    type t
+  end
+
+  val find_value_exn : t -> var:Envs.Interp.Var.t -> Lang.Il.value
+  val opaque_types : t -> Opaque_types.t
+  val find_typdef_exn : t -> id:Common.Domain.TId.t -> Envs.Il.Typdef.t
+  val find_func_exn : t -> id:Common.Domain.FId.t -> Func.t
+  val add_func_exn : t -> id:Common.Domain.FId.t -> func:Func.t -> t
+  val set_value : t -> var:Envs.Interp.Var.t -> value:Lang.Il.value -> t
+  val set_values : t -> bindings:(Envs.Interp.Var.t * Lang.Il.value) list -> t
+  val without_values : t -> t
+
+  val expand_iteration_inputs :
+    t ->
+    iter:Lang.Il.iter ->
+    vars:Lang.Il.var list ->
+    t list Common.Attempt.attempt
+
+  val collect_iteration_value :
+    Lang.Il.value list ->
+    iter:Lang.Il.iter ->
+    result_typ:Lang.Il.typ' ->
+    Lang.Il.value
+
+  val collect_iteration_bindings :
+    t list ->
+    iter:Lang.Il.iter ->
+    vars:Lang.Il.var list ->
+    (Envs.Interp.Var.t * Lang.Il.value) list
+
+  val emit_iteration :
+    t ->
+    vars:Lang.Il.var list ->
+    iter:Lang.Il.iter ->
+    value:Lang.Il.value ->
+    unit
+
+  val get_exn : 'a Common.Attempt.attempt -> 'a
+  val error : Common.Location.t -> string -> 'a
+end
+
+module Make (Ctx : Context) = struct
+  type exp = Ctx.annotation Il.Expression.t
+  type path = Ctx.annotation Il.Expression.path
+  type arg = Ctx.annotation Il.Expression.arg
+
+  let error = Ctx.error
+
+  let set_iteration_bindings (ctx : Ctx.t) ~bindings ~(source : value) : Ctx.t =
+    List.iter
+      (fun (_, binding) -> ignore (Emit_value.derived binding ~source))
+      bindings;
+    Ctx.set_values ctx ~bindings
+
+  let rec assign_exp (ctx : Ctx.t) ~(exp : exp) ~(value : value) : Ctx.t =
+    match (exp.it, value.it) with
+    | VarE id, _ -> Ctx.set_value ctx ~var:(id, []) ~value
+    | TupleE exps, TupleV values | ListE exps, ListV values ->
+        assign_exps ctx ~exps ~values
+    | CaseE notexp, CaseV valuecase ->
+        assign_exps ctx ~exps:(Mixfix.args notexp)
+          ~values:(Mixfix.args valuecase)
+    | StrE expfields, StructV valuefields ->
+        assign_exps ctx ~exps:(List.map snd expfields)
+          ~values:(List.map snd valuefields)
+    | OptE (Some exp), OptV (Some value) -> assign_exp ctx ~exp ~value
+    | OptE None, OptV None -> ctx
+    | ConsE (exp_h, exp_t), ListV (value_h :: values_t) ->
+        let value_t =
+          Value.Make.list value.note.typ values_t
+          |> Emit_value.derived ~source:value
+        in
+        let ctx = assign_exp ctx ~exp:exp_h ~value:value_h in
+        assign_exp ctx ~exp:exp_t ~value:value_t
+    | IterE (_, (Opt, vars)), OptV None ->
+        let bindings = Ctx.collect_iteration_bindings [] ~iter:Opt ~vars in
+        set_iteration_bindings ctx ~bindings ~source:value
+    | IterE (exp, (Opt, vars)), OptV (Some value_inner) ->
+        let ctx_inner = assign_exp ctx ~exp ~value:value_inner in
+        let bindings =
+          Ctx.collect_iteration_bindings [ ctx_inner ] ~iter:Opt ~vars
+        in
+        set_iteration_bindings ctx ~bindings ~source:value
+    | ( IterE
+          ({ it = VarE id; _ }, (List, [ ({ varid; iters = []; _ } as var) ])),
+        ListV values )
+      when id.it = varid.it ->
+        (* Binding each element in its own context is slow for recursive list
+           filtering, so a bare iterated variable binds the whole list at once. *)
+        let typ = (Il.Typ.iterate var.typ [ List ]).it in
+        let bindings = [ ((varid, [ Il.List ]), Value.Make.list typ values) ] in
+        set_iteration_bindings ctx ~bindings ~source:value
+    | IterE (exp, (List, vars)), ListV values ->
+        let ctx_inner = Ctx.without_values ctx in
+        let ctxs =
+          List.map (fun value -> assign_exp ctx_inner ~exp ~value) values
+        in
+        let bindings = Ctx.collect_iteration_bindings ctxs ~iter:List ~vars in
+        set_iteration_bindings ctx ~bindings ~source:value
+    | _ ->
+        let exp = Il.Expression.map_annotations (fun _ -> ()) exp in
+        error exp.at
+          (Format.asprintf "match failed %s <- %s"
+             (Il.Print.string_of_exp exp)
+             (Il.Print.string_of_value ~short:true value))
+
+  and assign_exps (ctx : Ctx.t) ~(exps : exp list) ~(values : value list) :
+      Ctx.t =
+    if List.length exps <> List.length values then
+      error
+        (Location.cover (List.map at exps))
+        (Format.asprintf
+           "mismatch in number of expressions and values while assigning, \
+            expected %d value(s) but got %d"
+           (List.length exps) (List.length values));
+    List.fold_left2
+      (fun ctx exp value -> assign_exp ctx ~exp ~value)
+      ctx exps values
+
+  let assign_arg (callee : Ctx.t) ~(caller : Ctx.t) ~(arg : arg)
+      ~(value : value) : Ctx.t =
+    match arg.it with
+    | ExpA exp -> assign_exp callee ~exp ~value
+    | DefA id -> (
+        match value.it with
+        | FuncV id_f ->
+            let func = Ctx.find_func_exn caller ~id:id_f in
+            Ctx.add_func_exn callee ~id ~func
+        | _ ->
+            error id.at
+              (Format.asprintf "cannot assign a value %s to a definition %s"
+                 (Il.Print.string_of_value ~short:true value)
+                 id.it))
+
+  let assign_args (callee : Ctx.t) ~(caller : Ctx.t) ~(args : arg list)
+      ~(values : value list) : Ctx.t =
+    if List.length args <> List.length values then
+      error
+        (Location.cover (List.map at args))
+        (Format.asprintf
+           "mismatch in number of arguments and values while assigning, \
+            expected %d value(s) but got %d"
+           (List.length args) (List.length values));
+    List.fold_left2
+      (fun callee arg value -> assign_arg callee ~caller ~arg ~value)
+      callee args values
+
+  let matches_pattern (value : value) ~(pattern : pattern) : bool =
+    match (pattern, value.it) with
+    | CaseP mixop_p, CaseV valuecase -> Mixfix.eq_mixop mixop_p valuecase
+    | ListP listpattern, ListV values -> (
+        let len_v = List.length values in
+        match listpattern with
+        | `Cons -> len_v > 0
+        | `Fixed len_p -> len_v = len_p
+        | `Nil -> len_v = 0)
+    | OptP `Some, OptV (Some _) -> true
+    | OptP `None, OptV None -> true
+    | _ -> false
+
+  let rec upcast (value : value) ~to_typ:(typ : typ) ~(ctx : Ctx.t) : value =
+    match typ.it with
+    | NumT `IntT -> (
+        match value.it with
+        | BytesV _ -> value
+        | NumV (`Nat n) -> Value.int n |> Emit_value.derived ~source:value
+        | NumV (`Int _) -> value
+        | _ -> assert false)
+    | VarT { synid = tid; targs } -> (
+        let tparams, deftyp = Ctx.find_typdef_exn ctx ~id:tid in
+        let theta = List.combine tparams targs |> TIdMap.of_list in
+        match deftyp.it with
+        | PlainT typ ->
+            let typ = Typ.subst_typ theta typ in
+            upcast value ~to_typ:typ ~ctx
+        | _ -> value)
+    | TupleT typs -> (
+        match value.it with
+        | TupleV values ->
+            let values =
+              List.map2
+                (fun typ value -> upcast value ~to_typ:typ ~ctx)
+                typs values
+            in
+            Value.Make.tuple typ.it values |> Emit_value.derived ~source:value
+        | _ -> assert false)
+    | IterT { typ = typ_inner; iter = Opt } -> (
+        match value.it with
+        | OptV value_opt ->
+            let value_opt =
+              Option.map
+                (fun value -> upcast value ~to_typ:typ_inner ~ctx)
+                value_opt
+            in
+            Value.Make.opt typ.it value_opt |> Emit_value.derived ~source:value
+        | _ -> assert false)
+    | IterT { typ = typ_inner; iter = List } -> (
+        match value.it with
+        | ListV values ->
+            let values =
+              List.map (fun value -> upcast value ~to_typ:typ_inner ~ctx) values
+            in
+            Value.Make.list typ.it values |> Emit_value.derived ~source:value
+        | _ -> assert false)
+    | _ -> value
+
+  let rec downcast (value : value) ~to_typ:(typ : typ) ~(ctx : Ctx.t) : value =
+    match typ.it with
+    | NumT `NatT -> (
+        match value.it with
+        | BytesV _ | NumV (`Nat _) -> value
+        | NumV (`Int i) when Bigint.(i >= zero) ->
+            Value.nat i |> Emit_value.derived ~source:value
+        | _ -> assert false)
+    | VarT { synid = tid; targs } -> (
+        let tparams, deftyp = Ctx.find_typdef_exn ctx ~id:tid in
+        let theta = List.combine tparams targs |> TIdMap.of_list in
+        match deftyp.it with
+        | PlainT typ ->
+            let typ = Typ.subst_typ theta typ in
+            downcast value ~to_typ:typ ~ctx
+        | _ -> value)
+    | TupleT typs -> (
+        match value.it with
+        | TupleV values ->
+            let values =
+              List.map2
+                (fun typ value -> downcast value ~to_typ:typ ~ctx)
+                typs values
+            in
+            Value.Make.tuple typ.it values |> Emit_value.derived ~source:value
+        | _ -> assert false)
+    | IterT { typ = typ_inner; iter = Opt } -> (
+        match value.it with
+        | OptV value_opt ->
+            let value_opt =
+              Option.map
+                (fun value -> downcast value ~to_typ:typ_inner ~ctx)
+                value_opt
+            in
+            Value.Make.opt typ.it value_opt |> Emit_value.derived ~source:value
+        | _ -> assert false)
+    | IterT { typ = typ_inner; iter = List } -> (
+        match value.it with
+        | ListV values ->
+            let values =
+              List.map
+                (fun value -> downcast value ~to_typ:typ_inner ~ctx)
+                values
+            in
+            Value.Make.list typ.it values |> Emit_value.derived ~source:value
+        | _ -> assert false)
+    | _ -> value
+
+  let rec matches_type (value : value) ~(typ : typ) ~(ctx : Ctx.t) : bool =
+    match typ.it with
+    | BoolT -> ( match value.it with BoolV _ -> true | _ -> false)
+    | NumT `NatT -> (
+        match value.it with
+        | BytesV _ | NumV (`Nat _) -> true
+        | NumV (`Int i) -> Bigint.(i >= zero)
+        | _ -> false)
+    | NumT `IntT -> (
+        match value.it with NumV _ | BytesV _ -> true | _ -> false)
+    | TextT -> ( match value.it with TextV _ -> true | _ -> false)
+    | VarT { synid = tid; targs } -> (
+        let tparams, deftyp = Ctx.find_typdef_exn ctx ~id:tid in
+        let theta = List.combine tparams targs |> TIdMap.of_list in
+        match (deftyp.it, value.it) with
+        | OpaqueT, OpaqueV value ->
+            Opaque_types.has_type (Ctx.opaque_types ctx) ~name:tid.it ~value
+        | OpaqueT, _ -> false
+        | PlainT typ, _ ->
+            let typ = Typ.subst_typ theta typ in
+            matches_type value ~typ ~ctx
+        | VariantT typcases, CaseV valuecase ->
+            List.exists
+              (fun typcase ->
+                let { Il.notation = nottyp; _ } = typcase in
+                let nottyp' = Mixfix.map (Typ.subst_typ theta) nottyp.it in
+                Mixfix.eq_mixop nottyp' valuecase
+                && matches_types (Mixfix.args valuecase)
+                     ~typs:(Mixfix.args nottyp') ~ctx)
+              typcases
+        | _ -> true)
+    | TupleT typs -> (
+        match value.it with
+        | TupleV values -> matches_types values ~typs ~ctx
+        | _ -> false)
+    | IterT { typ = typ_inner; iter = Opt } -> (
+        match value.it with
+        | OptV value_opt -> (
+            match value_opt with
+            | Some value_inner -> matches_type value_inner ~typ:typ_inner ~ctx
+            | None -> true)
+        | _ -> false)
+    | IterT { typ = typ_inner; iter = List } -> (
+        match value.it with
+        | ListV values -> List.for_all (matches_type ~typ:typ_inner ~ctx) values
+        | _ -> false)
+    | _ -> false
+
+  and matches_types (values : value list) ~(typs : typ list) ~(ctx : Ctx.t) :
+      bool =
+    List.length typs = List.length values
+    && List.for_all2 (fun typ value -> matches_type value ~typ ~ctx) typs values
+
+  let int_of_value (value : value) : int =
+    value |> Value.get_num |> Num.to_int |> Bigint.to_int_exn
+
+  let index_value (value : value) ~index:(value_index : value) ~at ~bounds_at :
+      value =
+    let index = int_of_value value_index in
+    match value.it with
+    | TextV text when index < 0 || index >= String.length text ->
+        error bounds_at
+          (Format.asprintf "index %d out of bounds [0, %d)" index
+             (String.length text))
+    | TextV text ->
+        Value.Make.text Il.TextT (String.make 1 (String.get text index))
+        |> Emit_value.combined ~sources:[ value; value_index ]
+    | ListV values when index < 0 || index >= List.length values ->
+        error bounds_at
+          (Format.asprintf "index %d out of bounds [0, %d)" index
+             (List.length values))
+    | ListV values -> List.nth values index
+    | _ ->
+        error at
+          (Format.asprintf
+             "indexing expects either a text or a list, but got %s"
+             (Il.Print.string_of_value ~short:true value))
+
+  let slice_value (value : value) ~start:(value_start : value)
+      ~length:(value_length : value) ~list_typ ~at ~bounds_at : value =
+    let start = int_of_value value_start in
+    let stop = start + int_of_value value_length in
+    let sources = [ value; value_start; value_length ] in
+    match value.it with
+    | TextV text when start < 0 || stop > String.length text ->
+        error bounds_at
+          (Format.asprintf "slice [%d, %d) out of bounds [0, %d)" start stop
+             (String.length text))
+    | TextV text ->
+        Value.Make.text Il.TextT (String.sub text start (stop - start))
+        |> Emit_value.combined ~sources
+    | ListV values when start < 0 || stop > List.length values ->
+        error bounds_at
+          (Format.asprintf "slice [%d, %d) out of bounds [0, %d)" start stop
+             (List.length values))
+    | ListV values ->
+        let values =
+          List.mapi
+            (fun index value ->
+              if start <= index && index < stop then Some value else None)
+            values
+          |> List.filter_map Fun.id
+        in
+        Value.Make.list list_typ values |> Emit_value.combined ~sources
+    | _ ->
+        error at
+          (Format.asprintf "slicing expects either a text or a list, but got %s"
+             (Il.Print.string_of_value ~short:true value))
+
+  let eval_exp exp ~ctx ~call_func =
+    let rec eval_exp (ctx : Ctx.t) (exp : exp) : value =
+      let at, typ = (exp.at, exp.note.typ) in
+      match exp.it with
+      | BoolE b -> Value.Make.bool typ b
+      | NumE n -> Value.Make.num typ n
+      | TextE s -> Value.Make.text typ s
+      | VarE id -> Ctx.find_value_exn ctx ~var:(id, [])
+      | UnE (unop, _, exp) -> eval_un_exp typ ctx unop exp
+      | BinE (binop, _, exp_l, exp_r) -> eval_bin_exp typ ctx binop exp_l exp_r
+      | CmpE (cmpop, _, exp_l, exp_r) -> eval_cmp_exp typ ctx cmpop exp_l exp_r
+      | UpCastE (typ, exp) -> upcast (eval_exp ctx exp) ~to_typ:typ ~ctx
+      | DownCastE (typ, exp) -> downcast (eval_exp ctx exp) ~to_typ:typ ~ctx
+      | SubE (exp, typ_target) ->
+          let value = eval_exp ctx exp in
+          Value.Make.bool typ (matches_type value ~typ:typ_target ~ctx)
+          |> Emit_value.derived ~source:value
+      | MatchE (exp, pattern) ->
+          let value = eval_exp ctx exp in
+          Value.Make.bool typ (matches_pattern value ~pattern)
+          |> Emit_value.derived ~source:value
+      | TupleE exps ->
+          let values = eval_exps ctx exps in
+          Value.Make.tuple typ values
+          |> Emit_value.constructed ~components:values
+      | CaseE notexp ->
+          let mixop, exps = Mixfix.split notexp in
+          let values = eval_exps ctx exps in
+          Value.Make.case typ (Mixfix.fill mixop values)
+          |> Emit_value.constructed ~components:values
+      | StrE fields ->
+          let atoms, exps = List.split fields in
+          let values = eval_exps ctx exps in
+          Value.Make.record typ (List.combine atoms values)
+          |> Emit_value.constructed ~components:values
+      | OptE exp_opt ->
+          let value_opt = Option.map (eval_exp ctx) exp_opt in
+          Value.Make.opt typ value_opt
+          |> Emit_value.constructed ~components:(Option.to_list value_opt)
+      | ListE exps ->
+          let values = eval_exps ctx exps in
+          Value.Make.list typ values
+          |> Emit_value.constructed ~components:values
+      | ConsE (exp_h, exp_t) -> eval_cons_exp typ ctx exp_h exp_t
+      | CatE (exp_l, exp_r) -> eval_cat_exp typ ctx at exp_l exp_r
+      | MemE (exp_e, exp_s) -> eval_mem_exp typ ctx exp_e exp_s
+      | LenE exp -> eval_len_exp typ ctx exp
+      | DotE (exp_b, atom) -> eval_dot_exp ctx exp_b atom
+      | IdxE (exp_b, exp_i) -> eval_idx_exp ctx exp_b exp_i
+      | SliceE (exp_b, exp_i, exp_n) -> eval_slice_exp typ ctx exp_b exp_i exp_n
+      | UpdE (exp_b, path, exp_f) -> eval_upd_exp ctx exp_b path exp_f
+      | CallE (id, targs, args) -> call_func ctx id targs args
+      | IterE (exp, iterexp) -> eval_iter_exp typ ctx exp iterexp
+    and eval_exps (ctx : Ctx.t) (exps : exp list) : value list =
+      List.map (eval_exp ctx) exps
+    and eval_un_exp (typ : typ') (ctx : Ctx.t) (unop : unop) (exp : exp) : value
+        =
+      let eval_un_bool typ unop value =
+        match unop with
+        | `NotOp -> (not (Value.get_bool value)) |> Value.Make.bool typ
+      in
+      let eval_un_num typ unop value =
+        let num = Value.get_num value in
+        let num = Num.un unop num in
+        num |> Value.Make.num typ
+      in
+      let value = eval_exp ctx exp in
+      (match unop with
+      | #Bool.unop as unop -> eval_un_bool typ unop value
+      | #Num.unop as unop -> eval_un_num typ unop value)
+      |> Emit_value.derived ~source:value
+    and eval_bin_exp (typ : typ') (ctx : Ctx.t) (binop : binop) (exp_l : exp)
+        (exp_r : exp) : value =
+      let eval_bin_bool typ binop value_l value_r =
+        let bool_l = Value.get_bool value_l in
+        let bool_r = Value.get_bool value_r in
+        let bool_res =
+          match binop with
+          | `AndOp -> bool_l && bool_r
+          | `OrOp -> bool_l || bool_r
+          | `ImplOp -> (not bool_l) || bool_r
+          | `EquivOp -> bool_l = bool_r
+        in
+        bool_res |> Value.Make.bool typ
+      in
+      let eval_bin_num typ binop value_l value_r =
+        let num_l = Value.get_num value_l in
+        let num_r = Value.get_num value_r in
+        Num.bin binop num_l num_r |> Value.Make.num typ
+      in
+      let value_l = eval_exp ctx exp_l in
+      let value_r = eval_exp ctx exp_r in
+      (match binop with
+      | #Bool.binop as binop -> eval_bin_bool typ binop value_l value_r
+      | #Num.binop as binop -> eval_bin_num typ binop value_l value_r)
+      |> Emit_value.combined ~sources:[ value_l; value_r ]
+    and eval_cmp_exp (typ : typ') (ctx : Ctx.t) (cmpop : cmpop) (exp_l : exp)
+        (exp_r : exp) : value =
+      let eval_cmp_bool typ cmpop value_l value_r =
+        let eq = Value.eq value_l value_r in
+        let bool_res = match cmpop with `EqOp -> eq | `NeOp -> not eq in
+        Value.Make.bool typ bool_res
+      in
+      let eval_cmp_num typ cmpop value_l value_r =
+        let num_l = Value.get_num value_l in
+        let num_r = Value.get_num value_r in
+        Num.cmp cmpop num_l num_r |> Value.Make.bool typ
+      in
+      let value_l = eval_exp ctx exp_l in
+      let value_r = eval_exp ctx exp_r in
+      (match cmpop with
+      | #Bool.cmpop as cmpop -> eval_cmp_bool typ cmpop value_l value_r
+      | #Num.cmpop as cmpop -> eval_cmp_num typ cmpop value_l value_r)
+      |> Emit_value.combined ~sources:[ value_l; value_r ]
+    and eval_cons_exp (typ : typ') (ctx : Ctx.t) (exp_h : exp) (exp_t : exp) :
+        value =
+      let value_h = eval_exp ctx exp_h in
+      let value_t = eval_exp ctx exp_t in
+      let values_t = Value.get_list value_t in
+      Value.Make.list typ (value_h :: values_t)
+      |> Emit_value.combined ~sources:[ value_h; value_t ]
+    and eval_cat_exp (typ : typ') (ctx : Ctx.t) (at : Location.t) (exp_l : exp)
+        (exp_r : exp) : value =
+      let value_l = eval_exp ctx exp_l in
+      let value_r = eval_exp ctx exp_r in
+      (match (value_l.it, value_r.it) with
+      | TextV s_l, TextV s_r -> s_l ^ s_r |> Value.Make.text typ
+      | ListV values_l, ListV values_r ->
+          values_l @ values_r |> Value.Make.list typ
+      | _ -> error at "concatenation expects either two texts or two lists")
+      |> Emit_value.combined ~sources:[ value_l; value_r ]
+    and eval_mem_exp (typ : typ') (ctx : Ctx.t) (exp_e : exp) (exp_s : exp) :
+        value =
+      let value_e = eval_exp ctx exp_e in
+      let value_s = eval_exp ctx exp_s in
+      let values_s = Value.get_list value_s in
+      List.exists (Value.eq value_e) values_s
+      |> Value.Make.bool typ
+      |> Emit_value.combined ~sources:[ value_e; value_s ]
+    and eval_len_exp (typ : typ') (ctx : Ctx.t) (exp : exp) : value =
+      let value = eval_exp ctx exp in
+      let len =
+        match value.it with
+        | TextV s -> s |> String.length |> Bigint.of_int
+        | ListV values -> values |> List.length |> Bigint.of_int
+        | _ ->
+            error exp.at
+              (Format.asprintf
+                 "length operation expects either a text or a list, but got %s"
+                 (Il.Print.string_of_value ~short:true value))
+      in
+      Value.Make.nat typ len |> Emit_value.derived ~source:value
+    and eval_dot_exp (ctx : Ctx.t) (exp_b : exp) (atom : atom) : value =
+      let value_b = eval_exp ctx exp_b in
+      let fields = Value.get_struct value_b in
+      fields
+      |> List.map (fun (atom, value) -> (atom.it, value))
+      |> List.assoc atom.it
+    and eval_idx_exp (ctx : Ctx.t) (exp_b : exp) (exp_i : exp) : value =
+      let value_b = eval_exp ctx exp_b in
+      let value_i = eval_exp ctx exp_i in
+      index_value value_b ~index:value_i ~at:exp_b.at ~bounds_at:exp_i.at
+    and eval_slice_exp (typ : typ') (ctx : Ctx.t) (exp_b : exp) (exp_i : exp)
+        (exp_n : exp) : value =
+      let value_b = eval_exp ctx exp_b in
+      let value_i = eval_exp ctx exp_i in
+      let value_len = eval_exp ctx exp_n in
+      let bounds_at =
+        match value_b.it with TextV _ -> exp_i.at | _ -> exp_n.at
+      in
+      slice_value value_b ~start:value_i ~length:value_len ~list_typ:typ
+        ~at:exp_b.at ~bounds_at
+    and eval_upd_exp (ctx : Ctx.t) (exp_b : exp) (path : path) (exp_f : exp) :
+        value =
+      let rec eval_access_path ctx value_b path =
+        match path.it with
+        | RootP -> value_b
+        | IdxP (path, exp_i) ->
+            let value = eval_access_path ctx value_b path in
+            let value_i = eval_exp ctx exp_i in
+            index_value value ~index:value_i ~at:path.at ~bounds_at:exp_i.at
+        | SliceP (path, exp_i, exp_n) ->
+            let value = eval_access_path ctx value_b path in
+            let value_i = eval_exp ctx exp_i in
+            let value_len = eval_exp ctx exp_n in
+            slice_value value ~start:value_i ~length:value_len
+              ~list_typ:path.note ~at:path.at ~bounds_at:exp_n.at
+        | DotP (path, atom) ->
+            let value = eval_access_path ctx value_b path in
+            let fields = value |> Value.get_struct in
+            let value =
+              fields
+              |> List.map (fun (atom, value) -> (atom.it, value))
+              |> List.assoc atom.it
+            in
+            value
+      and eval_update_path ctx value_b path value_new =
+        match path.it with
+        | RootP -> value_new
+        | IdxP (path, exp_i) -> (
+            let value = eval_access_path ctx value_b path in
+            let value_i = eval_exp ctx exp_i in
+            let idx_target = int_of_value value_i in
+            match value.it with
+            | TextV s when idx_target < 0 || idx_target >= String.length s ->
+                error exp_i.at
+                  (Format.asprintf "index %d out of bounds [0, %d)" idx_target
+                     (String.length s))
+            | TextV s ->
+                let s_new = Value.get_text value_new in
+                if String.length s_new <> 1 then
+                  error exp_i.at
+                    (Format.asprintf
+                       "updating a character requires a single-character text, \
+                        but got %s"
+                       (Il.Print.string_of_value ~short:true value_new))
+                else
+                  let s_updated =
+                    String.sub s 0 idx_target ^ s_new
+                    ^ String.sub s (idx_target + 1)
+                        (String.length s - idx_target - 1)
+                  in
+                  let value_updated =
+                    Value.Make.text Il.TextT s_updated
+                    |> Emit_value.updated ~base:value ~replacement:value_new
+                  in
+                  eval_update_path ctx value_b path value_updated
+            | ListV values
+              when idx_target < 0 || idx_target >= List.length values ->
+                error exp_i.at
+                  (Format.asprintf "index %d out of bounds [0, %d)" idx_target
+                     (List.length values))
+            | ListV values ->
+                let values_updated =
+                  List.mapi
+                    (fun idx value ->
+                      if idx = idx_target then value_new else value)
+                    values
+                in
+                let value_updated =
+                  Value.Make.list path.note values_updated
+                  |> Emit_value.updated ~base:value ~replacement:value_new
+                in
+                eval_update_path ctx value_b path value_updated
+            | _ ->
+                error path.at
+                  (Format.asprintf
+                     "indexing expects either a text or a list, but got %s"
+                     (Il.Print.string_of_value ~short:true value)))
+        | SliceP (path, exp_i, exp_n) -> (
+            let value = eval_access_path ctx value_b path in
+            let value_i = eval_exp ctx exp_i in
+            let idx_l = int_of_value value_i in
+            let value_len = eval_exp ctx exp_n in
+            let idx_n = int_of_value value_len in
+            let idx_h = idx_l + idx_n in
+            match value.it with
+            | TextV s when idx_l < 0 || idx_h > String.length s ->
+                error exp_n.at
+                  (Format.asprintf "slice [%d, %d) out of bounds [0, %d)" idx_l
+                     idx_h (String.length s))
+            | TextV s ->
+                let s_new = Value.get_text value_new in
+                if String.length s_new <> idx_n then
+                  error exp_n.at
+                    (Format.asprintf
+                       "updating a slice of length %d requires a text of \
+                        length %d, but got %s"
+                       idx_n (String.length s_new)
+                       (Il.Print.string_of_value ~short:true value_new))
+                else
+                  let s_updated =
+                    String.sub s 0 idx_l ^ s_new
+                    ^ String.sub s idx_h (String.length s - idx_h)
+                  in
+                  let value_updated =
+                    Value.Make.text Il.TextT s_updated
+                    |> Emit_value.updated ~base:value ~replacement:value_new
+                  in
+                  eval_update_path ctx value_b path value_updated
+            | ListV values when idx_l < 0 || idx_h > List.length values ->
+                error exp_n.at
+                  (Format.asprintf "slice [%d, %d) out of bounds [0, %d)" idx_l
+                     idx_h (List.length values))
+            | ListV values ->
+                let values_new = Value.get_list value_new in
+                if List.length values_new <> idx_n then
+                  error exp_n.at
+                    (Format.asprintf
+                       "updating a slice of length %d requires a list of \
+                        length %d, but got %s"
+                       idx_n (List.length values_new)
+                       (Il.Print.string_of_value ~short:true value_new))
+                else
+                  let values_updated =
+                    List.mapi
+                      (fun idx value ->
+                        if idx_l <= idx && idx < idx_h then
+                          List.nth values_new (idx - idx_l)
+                        else value)
+                      values
+                  in
+                  let value_updated =
+                    Value.Make.list path.note values_updated
+                    |> Emit_value.updated ~base:value ~replacement:value_new
+                  in
+                  eval_update_path ctx value_b path value_updated
+            | _ ->
+                error path.at
+                  (Format.asprintf
+                     "slicing expects either a text or a list, but got %s"
+                     (Il.Print.string_of_value ~short:true value)))
+        | DotP (path, atom) ->
+            let value = eval_access_path ctx value_b path in
+            let fields = value |> Value.get_struct in
+            let fields =
+              List.map
+                (fun (atom_f, value_f) ->
+                  if atom_f.it = atom.it then (atom_f, value_new)
+                  else (atom_f, value_f))
+                fields
+            in
+            let value_updated =
+              Value.Make.record path.note fields
+              |> Emit_value.updated ~base:value ~replacement:value_new
+            in
+            eval_update_path ctx value_b path value_updated
+      in
+      let value_b = eval_exp ctx exp_b in
+      let value_f = eval_exp ctx exp_f in
+      eval_update_path ctx value_b path value_f
+    and eval_iter_exp (typ : typ') (ctx : Ctx.t) (exp : exp) (iterexp : iterexp)
+        : value =
+      let iter, vars = iterexp in
+      let value =
+        match (iterexp, exp.it) with
+        | (List, [ { varid; iters = []; _ } ]), VarE id when id.it = varid.it ->
+            Ctx.find_value_exn ctx ~var:(varid, [ List ])
+            |> Value.get_list |> Value.Make.list typ
+        | _ ->
+            let ctxs_sub =
+              Ctx.expand_iteration_inputs ctx ~iter ~vars |> Ctx.get_exn
+            in
+            let values =
+              List.map (fun ctx_sub -> eval_exp ctx_sub exp) ctxs_sub
+            in
+            Ctx.collect_iteration_value values ~iter ~result_typ:typ
+      in
+      Ctx.emit_iteration ctx ~vars ~iter ~value;
+      value
+    in
+    eval_exp ctx exp
+
+  let eval_exps exps ~ctx ~call_func = List.map (eval_exp ~call_func ~ctx) exps
+
+  let eval_args args ~ctx ~call_func =
+    List.map
+      (fun (arg : arg) ->
+        match arg.it with
+        | ExpA exp -> eval_exp exp ~ctx ~call_func
+        | DefA id -> Value.func id)
+      args
+end

@@ -1,5 +1,7 @@
 open Common.Domain
-open Common.Source
+open Common.Annotated
+module Location = Common.Location
+open Types.Expression
 open Types
 
 let fresh_id (ids : IdSet.t) (id : Id.t) : Id.t =
@@ -16,7 +18,7 @@ let fresh_id (ids : IdSet.t) (id : Id.t) : Id.t =
   in
   fresh_id' id
 
-let rec fresh_var_from_typ (at : region) (typ : typ) : var =
+let rec fresh_var_from_typ (at : Location.t) (typ : typ) : var =
   match typ.it with
   | IterT { typ; iter } ->
       let var = fresh_var_from_typ at typ in
@@ -26,7 +28,7 @@ let rec fresh_var_from_typ (at : region) (typ : typ) : var =
       { varid; typ; iters = [] }
 
 let fresh_var_from_exp ?(wildcard = false) (ids : IdSet.t) (exp : exp) : var =
-  let var = fresh_var_from_typ exp.at (exp.note $ exp.at) in
+  let var = fresh_var_from_typ exp.at (exp.note.typ $ exp.at) in
   let varid =
     if wildcard then "_" ^ var.varid.it $ var.varid.at else var.varid
   in
@@ -39,14 +41,18 @@ let fresh_exp_from_typ (ids : IdSet.t) (typ : typ) : exp * IdSet.t =
   in
   let id_base = fresh_id ids id_base in
   let ids = IdSet.add id_base ids in
-  let exp_base = VarE id_base $$ (typ_base.at, typ_base.it) in
+  let exp_base =
+    VarE id_base $$ (typ_base.at, { typ = typ_base.it; annot = () })
+  in
   let exp_match, _ =
     List.fold_left
-      (fun (exp_match, iters) iter ->
-        let typ = IterT { typ = exp_match.note $ exp_match.at; iter } in
+      (fun ((exp_match : exp), iters) iter ->
+        let typ = IterT { typ = exp_match.note.typ $ exp_match.at; iter } in
         let var = { varid = id_base; typ = typ_base; iters } in
         let iterexp = (iter, [ var ]) in
-        let exp_match = IterE (exp_match, iterexp) $$ (exp_match.at, typ) in
+        let exp_match =
+          IterE (exp_match, iterexp) $$ (exp_match.at, { typ; annot = () })
+        in
         (exp_match, iters @ [ iter ]))
       (exp_base, []) iters
   in

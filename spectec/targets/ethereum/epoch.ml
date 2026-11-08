@@ -37,7 +37,7 @@ struct
   let parse_input ~spec (input : input) =
     let ( let* ) = Result.bind in
     let* beaconState_il = parse_json ~spec input.pre_file "beaconState" in
-    Ok (M.relation_name, [ beaconState_il ])
+    Ok (Spectec.Task.Relation (M.relation_name, [ beaconState_il ]))
 
   let parse_string = parse_string
   let unparse = unparse

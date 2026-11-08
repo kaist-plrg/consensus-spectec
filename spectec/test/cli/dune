@@ -5,6 +5,8 @@
   (package spectec-target-impty)
   (package spectec-target-miniml)
   (package spectec-target-p4)
+  ../interp/p4/counter-array.p4
+  determinism-overlay.spectec
   ../dep_pos/pre.json.gz
   ../dep_pos/block.json
   ../../../run_test_suite.py
@@ -14,5 +16,11 @@
   (source_tree ../../../spec/spec_deneb)
   (source_tree ../../specs/impty)
   (source_tree ../../specs/miniml)
+  (source_tree ../../specs/p4)
+  (source_tree ../../testdata/interp/p4)
   (source_tree ../../testdata/interp/impty)
   (source_tree ../../testdata/interp/miniml)))
+
+(cram
+ (applies_to launcher)
+ (deps ../../scripts/make-launcher.sh))

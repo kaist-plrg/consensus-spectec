@@ -1,7 +1,9 @@
 open Xl
+open Types.Expression
 open Types
 open Common.Print
-open Common.Source
+open Common.Annotated
+module Location = Common.Location
 
 (* Numbers *)
 
@@ -70,6 +72,7 @@ and string_of_reltyp reltyp =
 
 and string_of_deftyp deftyp =
   match deftyp.it with
+  | OpaqueT -> "opaque"
   | PlainT typ -> string_of_typ typ
   | StructT typfields -> "{" ^ string_of_typfields ", " typfields ^ "}"
   | VariantT typcases -> "\n   | " ^ string_of_typcases "\n   | " typcases
@@ -137,6 +140,7 @@ and string_of_value ?(short = false) ?(level = 0) value =
               values))
         (indent level)
   | FuncV id -> string_of_defid id
+  | OpaqueV value -> "<opaque " ^ Opaque.name value ^ ">"
 
 and string_of_notval ?(level = 0) notval =
   Mixfix.render ~pad_brackets:true ~string_of_atom
@@ -224,6 +228,14 @@ and string_of_iterexp iterexp =
 and string_of_iterexps iterexps =
   iterexps |> List.map string_of_iterexp |> String.concat ""
 
+and string_of_iterinstr iterinstr =
+  let iter, vars = iterexp_of_iterinstr iterinstr in
+  let vars = List.sort (fun a b -> String.compare a.varid.it b.varid.it) vars in
+  string_of_iterexp (iter, vars)
+
+and string_of_iterinstrs iterinstrs =
+  iterinstrs |> List.map string_of_iterinstr |> String.concat ""
+
 (* Patterns *)
 
 and string_of_pattern pattern =
@@ -296,7 +308,7 @@ and string_of_targs targs =
 
 and string_of_rule rule =
   let { ruleid; concl; prems } = rule.it in
-  ";; " ^ string_of_region rule.at ^ "\n   rule " ^ string_of_ruleid ruleid
+  ";; " ^ Location.to_string rule.at ^ ":\n   rule " ^ string_of_ruleid ruleid
   ^ ": " ^ string_of_notexp concl ^ string_of_prems prems
 
 and string_of_rules rules =
@@ -307,8 +319,10 @@ and string_of_rules rules =
 
 and string_of_clause idx clause =
   let { args; body; prems } = clause.it in
-  ";; " ^ string_of_region clause.at ^ "\n   clause " ^ string_of_int idx
-  ^ string_of_args args ^ " = " ^ string_of_exp body ^ string_of_prems prems
+  ";; "
+  ^ Location.to_string clause.at
+  ^ ":\n   clause " ^ string_of_int idx ^ string_of_args args ^ " = "
+  ^ string_of_exp body ^ string_of_prems prems
 
 and string_of_clauses clauses =
   String.concat ""
@@ -331,11 +345,15 @@ and string_of_prem prem =
   | ElsePr -> "otherwise"
   | LetPr (exp_l, exp_r) ->
       "let " ^ string_of_exp exp_l ^ " = " ^ string_of_exp exp_r
-  | IterPr (({ it = IterPr _; _ } as prem), iterexp) ->
-      string_of_prem prem ^ string_of_iterexp iterexp
-  | IterPr (prem, iterexp) ->
-      "(" ^ string_of_prem prem ^ ")" ^ string_of_iterexp iterexp
-  | FoldPr (prem, (iter, vars), accumulators) ->
+  | IterPr (({ it = IterPr _; _ } as prem), iterinstr) ->
+      string_of_prem prem ^ string_of_iterinstr iterinstr
+  | IterPr (prem, iterinstr) ->
+      "(" ^ string_of_prem prem ^ ")" ^ string_of_iterinstr iterinstr
+  | FoldPr (prem, iterinstr, accumulators) ->
+      let iter, vars = iterexp_of_iterinstr iterinstr in
+      let vars =
+        List.sort (fun a b -> String.compare a.varid.it b.varid.it) vars
+      in
       let string_of_iter_binding var =
         string_of_var var ^ " <- "
         ^ string_of_var { var with iters = var.iters @ [ iter ] }
@@ -367,9 +385,11 @@ and string_of_hints hints = String.concat "" (List.map string_of_hint hints)
 (* Definitions *)
 
 let rec string_of_def def =
-  ";; " ^ string_of_region def.at ^ "\n"
+  ";; " ^ Location.to_string def.at ^ ":\n"
   ^
   match def.it with
+  | TypD { synid = id; deftyp = { it = OpaqueT; _ }; _ } ->
+      "opaque syntax " ^ string_of_typid id
   | TypD { synid; tparams; deftyp } ->
       "syntax " ^ string_of_typid synid ^ string_of_tparams tparams ^ " = "
       ^ string_of_deftyp deftyp
@@ -389,3 +409,68 @@ and string_of_defs defs = String.concat "\n\n" (List.map string_of_def defs)
 (* Spec *)
 
 let string_of_spec spec = string_of_defs spec
+
+(* Values as an indented tree *)
+
+type tree_part = Type | Mixop | Atom | Leaf | Location | No_location
+
+let string_of_value_tree ?(style = fun _ s -> s) value =
+  let buf = Buffer.create 1024 in
+  let unquote s =
+    let len = String.length s in
+    if len >= 2 && s.[0] = '`' && s.[len - 1] = '`' then String.sub s 1 (len - 2)
+    else s
+  in
+  let string_of_at (at : Location.t) =
+    match at with
+    | Location.Span { left; right; _ } ->
+        style Location (Location.string_of_range left right)
+    | Location.Unknown | Location.File _ -> style No_location "(no location)"
+  in
+  let add_line prefix label at =
+    Buffer.add_string buf (prefix ^ label ^ "  " ^ string_of_at at ^ "\n")
+  in
+  let values_of values = List.map (fun value -> Mixfix.Arg value) values in
+  let rec add_node prefix child_prefix value =
+    let label, children =
+      match value.it with
+      | CaseV valuecase ->
+          let mixop_str =
+            unquote (string_of_mixop (Mixfix.to_mixop valuecase))
+          in
+          let typ_name =
+            match value.note.typ with VarT { synid; _ } -> synid.it | _ -> ""
+          in
+          let label =
+            if mixop_str = "" then style Type typ_name
+            else style Type typ_name ^ " " ^ style Mixop mixop_str
+          in
+          (label, valuecase)
+      | TupleV values -> (style Type "tuple", values_of values)
+      | ListV values -> (style Type "list", values_of values)
+      | OptV (Some value) -> (style Type "some", [ Mixfix.Arg value ])
+      | StructV valuefields ->
+          (style Type "struct", values_of (List.map snd valuefields))
+      | _ -> (style Leaf (string_of_value value), [])
+    in
+    add_line prefix label value.at;
+    let arity = List.length children in
+    List.iteri
+      (fun idx child ->
+        let is_last = idx = arity - 1 in
+        let connector = if is_last then "└─" else "├─" in
+        let continuation = if is_last then "  " else "│ " in
+        match child with
+        | Mixfix.Arg value ->
+            add_node (child_prefix ^ connector)
+              (child_prefix ^ continuation)
+              value
+        | Mixfix.Atom atom ->
+            add_line (child_prefix ^ connector)
+              (style Type "atom" ^ " "
+              ^ style Atom (unquote (Xl.Atom.to_string atom.it)))
+              atom.at)
+      children
+  in
+  add_node "" "" value;
+  Buffer.contents buf

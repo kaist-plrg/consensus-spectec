@@ -1,5 +1,6 @@
-open Common.Source
+open Common.Annotated
 open Types
+open Types.Expression
 
 (** Apply [f] to every immediate child [exp] of [exp]; reconstruct if any
     changed. Caller is responsible for recursion — this only goes one level

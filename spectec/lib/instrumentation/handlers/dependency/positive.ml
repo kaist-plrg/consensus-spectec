@@ -12,7 +12,7 @@
    Uses Common module for shared types and utilities.
 *)
 
-open Common.Source
+open Common.Annotated
 module Il = Lang.Il
 module Premise_uid = Instrumentation_static.Premise_uid
 module Premise_values = Instrumentation_static.Premise_values
@@ -264,11 +264,11 @@ let provs_of_val (v : Il.Value.t) : field_path list =
 
 (* Check if expression is wrapped in LenE *)
 let is_length_exp (exp : Il.exp) : bool =
-  match exp.it with Il.LenE _ -> true | _ -> false
+  match exp.it with Il.Expression.LenE _ -> true | _ -> false
 
 (* Get the inner expression of LenE, or the expression itself *)
 let strip_len (exp : Il.exp) : Il.exp =
-  match exp.it with Il.LenE inner -> inner | _ -> exp
+  match exp.it with Il.Expression.LenE inner -> inner | _ -> exp
 
 (* === String Formatting === *)
 
@@ -299,15 +299,37 @@ let string_of_sym_mutation (mut : sym_mutation) : string =
 
 (* === Provenance-based Mutation Extraction === *)
 
+(* The values of unary operators and of membership, subtype and pattern tests
+   carry their operands' provenance, but a constraint on such a value is not
+   the same constraint on its operands. So a comparison target, a call argument
+   or a tested condition of one of these forms yields no suggestion. The cases
+   for negation and list patterns read the operands directly.
+
+   Test results bound by a let premise, returned by a function or stored in a
+   structure retain their operands' provenance. Values built by cons, slicing,
+   text indexing and option expressions do too. When a later premise tests
+   these values, the extractor can suggest constants whose types do not match
+   the target fields' types. The extractor needs to check each constant against
+   the target field's type to suppress these suggestions. *)
+let hides_operand_fields (exp : Il.exp) : bool =
+  match exp.it with
+  | Il.Expression.UnE _ | Il.Expression.MemE _ | Il.Expression.SubE _
+  | Il.Expression.MatchE _ ->
+      true
+  | _ -> false
+
 let rec extract_symbolic_mutations' (depth : int)
     (lookup : Il.exp -> Il.Value.t option) (exp : Il.exp) : sym_mutation list =
+  let lookup_target exp =
+    if hides_operand_fields exp then None else lookup exp
+  in
   (* For a (target_exp, constraint_exp, op) triple:
      evaluate target for provenance, constraint for concrete value.
      Returns sym_mutations for each provenance path. *)
   let make_muts_from_prov target_exp constraint_exp effective_op is_len =
     (* For LenE(inner), get provenance from inner, not the length value *)
     let prov_exp = strip_len target_exp in
-    match lookup prov_exp with
+    match lookup_target prov_exp with
     | None -> []
     | Some tv ->
         let paths = provs_of_val tv in
@@ -338,7 +360,7 @@ let rec extract_symbolic_mutations' (depth : int)
             paths
   in
   match exp.it with
-  | Il.CmpE (op, _, lhs, rhs) ->
+  | Il.Expression.CmpE (op, _, lhs, rhs) ->
       let lhs_is_len = is_length_exp lhs in
       let rhs_is_len = is_length_exp rhs in
       (* LHS as target: lhs op rhs *)
@@ -348,14 +370,14 @@ let rec extract_symbolic_mutations' (depth : int)
         make_muts_from_prov rhs lhs (invert_cmp_op op) rhs_is_len
       in
       muts_lhs @ muts_rhs
-  | Il.CallE (id, _, args) -> (
+  | Il.Expression.CallE (id, _, args) -> (
       (* Fallback: per-argument Unknown hints (builtins, clause-guarded defs) *)
       let arg_muts () =
         List.concat_map
           (fun arg ->
             match arg.it with
-            | Il.ExpA e -> (
-                match lookup e with
+            | Il.Expression.ExpA e -> (
+                match lookup_target e with
                 | Some v ->
                     let paths = provs_of_val v in
                     List.map
@@ -363,7 +385,7 @@ let rec extract_symbolic_mutations' (depth : int)
                         { target_path = Some path; suggestion = Unknown v })
                       paths
                 | None -> [])
-            | Il.DefA _ -> [])
+            | Il.Expression.DefA _ -> [])
           args
       in
       match if depth > 0 then Premise_values.expand id args else None with
@@ -372,7 +394,7 @@ let rec extract_symbolic_mutations' (depth : int)
           | [] -> arg_muts ()
           | muts -> muts)
       | None -> arg_muts ())
-  | Il.MatchE (inner, pat) -> (
+  | Il.Expression.MatchE (inner, pat) -> (
       match pat with
       | Il.ListP `Nil -> (
           (* Satisfying direction (len <= 0); the global negation in
@@ -410,8 +432,8 @@ let rec extract_symbolic_mutations' (depth : int)
                 paths
           | None -> [])
       | _ -> [])
-  | Il.UnE (`NotOp, _, e) -> (
-      match lookup e with
+  | Il.Expression.UnE (`NotOp, _, e) -> (
+      match lookup_target e with
       | Some v ->
           let paths = provs_of_val v in
           List.map
@@ -422,11 +444,11 @@ let rec extract_symbolic_mutations' (depth : int)
               })
             paths
       | None -> [])
-  | Il.BinE (`AndOp, _, e1, e2) ->
+  | Il.Expression.BinE (`AndOp, _, e1, e2) ->
       (* Recurse into each conjunct independently *)
       extract_symbolic_mutations' depth lookup e1
       @ extract_symbolic_mutations' depth lookup e2
-  | Il.BinE (`OrOp, _, e1, e2) ->
+  | Il.Expression.BinE (`OrOp, _, e1, e2) ->
       (* Only the concretely-true disjunct(s) decided the result, so only
          their fields can flip it *)
       let is_true e =
@@ -439,7 +461,7 @@ let rec extract_symbolic_mutations' (depth : int)
       in
       List.concat_map (extract_symbolic_mutations' depth lookup) branches
   | _ -> (
-      match lookup exp with
+      match lookup_target exp with
       | Some v ->
           let paths = provs_of_val v in
           List.map
@@ -466,7 +488,7 @@ let rec is_if_prem (prem : Il.prem) : bool =
 (* Strip negation wrappers: ¬e -> e *)
 let rec strip_negation (exp : Il.exp) : Il.exp * bool =
   match exp.it with
-  | Il.UnE (`NotOp, _, inner) ->
+  | Il.Expression.UnE (`NotOp, _, inner) ->
       let stripped, was_negated = strip_negation inner in
       (stripped, not was_negated)
   | _ -> (exp, false)
@@ -474,10 +496,18 @@ let rec strip_negation (exp : Il.exp) : Il.exp * bool =
 (* Strip = true / = false wrappers *)
 let strip_bool_eq (exp : Il.exp) : Il.exp * bool =
   match exp.it with
-  | Il.CmpE (`EqOp, _, inner, { it = Il.BoolE true; _ }) -> (inner, false)
-  | Il.CmpE (`EqOp, _, inner, { it = Il.BoolE false; _ }) -> (inner, true)
-  | Il.CmpE (`EqOp, _, { it = Il.BoolE true; _ }, inner) -> (inner, false)
-  | Il.CmpE (`EqOp, _, { it = Il.BoolE false; _ }, inner) -> (inner, true)
+  | Il.Expression.CmpE (`EqOp, _, inner, { it = Il.Expression.BoolE true; _ })
+    ->
+      (inner, false)
+  | Il.Expression.CmpE (`EqOp, _, inner, { it = Il.Expression.BoolE false; _ })
+    ->
+      (inner, true)
+  | Il.Expression.CmpE (`EqOp, _, { it = Il.Expression.BoolE true; _ }, inner)
+    ->
+      (inner, false)
+  | Il.Expression.CmpE (`EqOp, _, { it = Il.Expression.BoolE false; _ }, inner)
+    ->
+      (inner, true)
   | _ -> (exp, false)
 
 (* Diagnose why extract_symbolic_mutations returned empty for a given expression *)
@@ -497,13 +527,15 @@ let diagnose_no_mutations (lookup : Il.exp -> Il.Value.t option) (exp : Il.exp)
         else Printf.sprintf "eval=true,prov=false,val=%s" vstr
   in
   match exp.it with
-  | Il.CmpE (op, _, lhs, rhs) ->
+  | Il.Expression.CmpE (op, _, lhs, rhs) ->
       Printf.sprintf "CmpE(%s): lhs(%s) rhs(%s)" (string_of_cmp_op op)
         (val_info (strip_len lhs))
         (val_info (strip_len rhs))
-  | Il.CallE _ -> "CallE: all args prov=NONE or eval failed"
-  | Il.MatchE (inner, _) -> Printf.sprintf "MatchE: inner(%s)" (val_info inner)
-  | Il.UnE (`NotOp, _, e) -> Printf.sprintf "UnE(NotOp): inner(%s)" (val_info e)
+  | Il.Expression.CallE _ -> "CallE: all args prov=NONE or eval failed"
+  | Il.Expression.MatchE (inner, _) ->
+      Printf.sprintf "MatchE: inner(%s)" (val_info inner)
+  | Il.Expression.UnE (`NotOp, _, e) ->
+      Printf.sprintf "UnE(NotOp): inner(%s)" (val_info e)
   | _ -> Printf.sprintf "Other: exp(%s)" (val_info exp)
 
 (** Extract mutations from an if-expression, adjust for negation, and record. *)
@@ -542,7 +574,10 @@ module M : Instrumentation_api.Handler.S = struct
       : Instrumentation_static.Static.S);
     ]
 
+  let handle_value = Some Provenance_hooks.handle_value
+
   let init ~spec =
+    Provenance_hooks.clear ();
     State.reset ();
     match spec with
     | Instrumentation_api.Handler.IlSpec il_spec ->

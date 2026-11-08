@@ -75,7 +75,7 @@ splice-clean:
 .PHONY: vsix
 
 vsix:
-	cd editors/vscode && npx -y @vscode/vsce package -o $(NAME).vsix
+	cd editors/vscode && npm ci --include=dev --ignore-scripts && npm run package
 	@echo "#### extension written to editors/vscode/$(NAME).vsix"
 
 # Differential-testing fixtures
@@ -155,6 +155,7 @@ clean-fixture:
 # Tests
 #
 # Individual tests:
+#   make test-lang       - Shared language operations
 #   make test-elab       - Elaboration test (both p4 and p4-old)
 #   make test-struct     - Structuring test (both p4 and p4-old)
 #   make test-bytesv     - BytesV hex / width test
@@ -172,28 +173,22 @@ clean-fixture:
 #   make test-pl-pos     - PL interpreter positive tests (slow)
 #   make test-pl-neg     - PL interpreter negative tests
 #
-# p4-old interpreter tests:
-#   make test-il-pos-old / test-il-neg-old / test-sl-pos-old / test-sl-neg-old
-#   make test-pl-pos-old / test-pl-neg-old
-#
 # Relation and per-case interpreter tests:
 #   make test-interp-relation - Relation tests across IL/SL/PL
 #   make test-interp-neg      - Per-case impty IL negative tests
 #
-# CLI snapshot tests (target commands and instrumentation):
-#   make test-cli        - target CLI and instrumentation snapshots
-#   make test-lsp        - LSP diagnostics snapshot (Check.run -> LSP JSON)
+# CLI tests (snapshots and the ./spectecx launcher):
+#   make test-cli        - target CLI, instrumentation and launcher snapshots
+#   make test-launcher   - ./spectecx concurrent runs and config lookup
+#   make test-lsp        - LSP multi-file diagnostics
 #
 # Grouped tests:
-#   make test-quick      - Fast tests, including local and upstream coverage
+#   make test-quick      - Fast tests, including P4 instantiation across IL/SL/PL
 #   make test-dep        - Dependency mutation-report golden (slow, opt-in)
-#   make test-il         - IL tests for new p4 (pos + neg)
-#   make test-sl         - SL tests for new p4 (pos + neg)
-#   make test-pl         - PL tests for new p4 (pos + neg)
-#   make test-il-old     - IL tests for p4-old (pos + neg)
-#   make test-sl-old     - SL tests for p4-old (pos + neg)
-#   make test-pl-old     - PL tests for p4-old (pos + neg)
-#   make test-old        - All p4-old interpreter tests
+#   make test-interp     - Interpreter tests for p4, impty, and Mini-ML, including P4 instantiation
+#   make test-il         - IL tests for p4 (pos + neg)
+#   make test-sl         - SL tests for p4 (pos + neg)
+#   make test-pl         - PL tests for p4 (pos + neg)
 #
 # impty interpreter tests (per-variant: base, closure):
 #   make test-impty-<v>-il-pos / -il-neg / -sl-pos / -sl-neg
@@ -206,15 +201,12 @@ clean-fixture:
 #   make test-miniml-il / -sl / -pl                  - per-mode pos+neg
 #   make test-miniml                                  - all Mini-ML tests
 #
-#   make test            - quick + new p4 il/sl/pl
+#   make test            - quick + interpreter tests
 
-.PHONY: test test-quick test-elab test-elab-pos test-elab-neg test-interp-relation test-attempt test-interp-neg test-cli test-lsp test-struct test-annotate test-roundtrip-il test-roundtrip-el test-parsegen test-package test-bytesv test-instrumentation test-testgen-checkpoint test-dep
+.PHONY: test test-quick test-lang test-context test-interp test-elab test-elab-pos test-elab-neg test-interp-relation test-attempt test-interp-neg test-cli test-launcher test-lsp test-struct test-annotate test-roundtrip-il test-roundtrip-el test-parsegen test-package test-bytesv test-instrumentation test-testgen-checkpoint test-dep
 .PHONY: test-il test-il-pos test-il-neg
 .PHONY: test-sl test-sl-pos test-sl-neg
 .PHONY: test-pl test-pl-pos test-pl-neg
-.PHONY: test-old test-il-old test-il-pos-old test-il-neg-old
-.PHONY: test-sl-old test-sl-pos-old test-sl-neg-old
-.PHONY: test-pl-old test-pl-pos-old test-pl-neg-old
 .PHONY: test-impty test-impty-base test-impty-closure
 .PHONY: test-impty-base-il test-impty-base-sl test-impty-base-pl
 .PHONY: test-impty-closure-il test-impty-closure-sl test-impty-closure-pl
@@ -228,6 +220,10 @@ clean-fixture:
 .PHONY: test-miniml-sl-pos test-miniml-sl-neg
 .PHONY: test-miniml-pl-pos test-miniml-pl-neg
 .PHONY: promote
+
+test-lang:
+	@echo "#### Running language unit tests"
+	@$(DUNE) build @spectec/test/lang/runtest --profile=release && echo OK
 
 test-elab:
 	@echo "#### Running elaboration test"
@@ -252,6 +248,10 @@ test-interp-relation:
 test-attempt:
 	@$(DUNE) build @spectec/test/attempt/runtest --profile=release
 
+test-context:
+	@echo "#### Running interpreter context tests"
+	@$(DUNE) build @spectec/test/interp/context/runtest --profile=release && echo OK
+
 test-interp-neg:
 	@echo "#### Running interpreter negative tests (per-case impty IL corpus)"
 	@$(DUNE) build @spectec/test/interp/neg/runtest --profile=release && echo OK
@@ -260,10 +260,9 @@ test-cli:
 	@echo "#### Running CLI snapshot tests"
 	@$(DUNE) build @spectec/test/cli/runtest --profile=release && echo OK
 
-.PHONY: test-launcher
-
 test-launcher: exe
-	@python3 spectec/test/launcher/main.py ./$(NAME)
+	@echo "#### Running launcher test"
+	@sh spectec/test/launcher/main.sh ./$(NAME)
 
 test-lsp:
 	@echo "#### Running LSP diagnostics test"
@@ -305,8 +304,8 @@ test-package:
 	@echo "#### Running package ownership and plugin discovery tests"
 	@$(DUNE) build --promote-install-files=false @spectec/test/package/runtest --profile=release && echo OK
 
-# $(1): target prefix (p4 / p4-old)
-# $(2): il / sl
+# $(1): target prefix, such as p4 or impty-base
+# $(2): il / sl / pl
 # $(3): pos / neg
 define run_interp_test
 	@echo "#### Running $(2) interpreter $(3) tests ($(1))"
@@ -333,26 +332,13 @@ test-pl-pos:
 test-pl-neg:
 	$(call run_interp_test,p4,pl,neg)
 
-test-il-pos-old:
-	$(call run_interp_test,p4-old,il,pos)
-
-test-il-neg-old:
-	$(call run_interp_test,p4-old,il,neg)
-
-test-sl-pos-old:
-	$(call run_interp_test,p4-old,sl,pos)
-
-test-sl-neg-old:
-	$(call run_interp_test,p4-old,sl,neg)
-
-test-pl-pos-old:
-	$(call run_interp_test,p4-old,pl,pos)
-
-test-pl-neg-old:
-	$(call run_interp_test,p4-old,pl,neg)
-
-test-quick: test-elab test-elab-pos test-elab-neg test-interp-relation test-attempt test-interp-neg test-cli test-launcher test-lsp test-struct test-annotate test-roundtrip-il test-roundtrip-el test-impty test-miniml test-parsegen test-package test-bytesv test-instrumentation test-testgen-checkpoint
+test-quick: test-context test-lang test-elab test-elab-pos test-elab-neg test-interp-relation test-attempt test-interp-neg test-cli test-launcher test-lsp test-struct test-annotate test-roundtrip-il test-roundtrip-el test-impty test-miniml test-parsegen test-package test-bytesv test-instrumentation test-testgen-checkpoint
+	@$(DUNE) build @spectec/test/interp/p4/runtest --profile=release
 	@echo "#### Quick tests passed"
+
+test-interp: test-interp-relation test-interp-neg test-il test-sl test-pl test-impty test-miniml
+	@$(DUNE) build @spectec/test/interp/p4/runtest --profile=release
+	@echo "#### Interpreter tests passed"
 
 test-il: test-il-pos test-il-neg
 	@echo "#### IL tests passed"
@@ -362,18 +348,6 @@ test-sl: test-sl-pos test-sl-neg
 
 test-pl: test-pl-pos test-pl-neg
 	@echo "#### PL tests passed"
-
-test-il-old: test-il-pos-old test-il-neg-old
-	@echo "#### IL (p4-old) tests passed"
-
-test-sl-old: test-sl-pos-old test-sl-neg-old
-	@echo "#### SL (p4-old) tests passed"
-
-test-pl-old: test-pl-pos-old test-pl-neg-old
-	@echo "#### PL (p4-old) tests passed"
-
-test-old: test-il-old test-sl-old test-pl-old
-	@echo "#### p4-old interpreter tests passed"
 
 test-impty-base-il-pos:
 	$(call run_interp_test,impty-base,il,pos)
@@ -468,5 +442,5 @@ test-miniml-pl: test-miniml-pl-pos test-miniml-pl-neg
 test-miniml: test-miniml-il test-miniml-sl test-miniml-pl
 	@echo "#### Mini-ML interpreter tests passed"
 
-test: test-quick test-il test-sl test-pl
+test: test-quick test-interp
 	@echo "#### All quick tests + p4 + impty + Mini-ML interpreter tests passed"

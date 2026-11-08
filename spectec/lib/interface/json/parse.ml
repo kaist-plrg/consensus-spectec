@@ -1,4 +1,5 @@
-open Common.Source
+module Location = Common.Location
+open Common.Annotated
 open Lang.Xl
 open Lang.Il
 open Envs.Il
@@ -17,7 +18,7 @@ let string_of_error = function
       Format.asprintf "JSON parse error in '%s': %s" filename msg
   | TypeError (msg, typ, json) ->
       Format.asprintf "Type error (%s) : expected %s, got JSON: %s" msg
-        (Lang.Il.Typ.to_string (typ $ no_region))
+        (Lang.Il.Typ.to_string (typ $ Location.Unknown))
         (Yojson.Safe.pretty_to_string json)
   | FieldMissing (field_name, struct_name) ->
       Format.asprintf "Field '%s' is missing in struct '%s'" field_name
@@ -39,7 +40,7 @@ let result_all results =
   aux [] results
 
 let field_atom (id : string) : atom =
-  Atom.keyword (id |> String.uppercase_ascii) $ no_region
+  Atom.keyword (id |> String.uppercase_ascii) $ Location.Unknown
 
 (* Parse hex string to BytesV *)
 let hex_string_to_bytes (s : string) : (Bigint.t * int, error) result =
@@ -72,7 +73,28 @@ let extend_provenance (prov : json_provenance option) (step : json_step) :
 let apply_provenance (prov : json_provenance option) (v : Value.t) : Value.t =
   match prov with
   | None -> v
-  | Some p -> Instrumentation_core.Value_hooks.on_created p v
+  | Some (source, steps) ->
+      (if Instrumentation_dispatcher.Dispatcher.has_value_handlers () then
+         let label =
+           match source with JsonState -> "state" | JsonBlock -> "block"
+         in
+         let origin =
+           List.fold_left
+             (fun origin step ->
+               let step =
+                 match step with
+                 | FieldAccess field ->
+                     Instrumentation_api.Origin.Struct
+                       (Lang.Xl.Atom.keyword (String.uppercase_ascii field))
+                 | IndexAccess index -> Instrumentation_api.Origin.List index
+               in
+               Instrumentation_api.Origin.extend origin ~step)
+             (Instrumentation_api.Origin.make ~label)
+             steps
+         in
+         Instrumentation_dispatcher.Dispatcher.emit_value
+           (Decoded { value = v; origin }));
+      v
 
 let rec json_to_value ?(provenance : json_provenance option = None)
     (tdenv : TDEnv.t) (expected : typ') (json : Yojson.Safe.t) : parse_result =
@@ -129,7 +151,7 @@ let rec json_to_value ?(provenance : json_provenance option = None)
         List.init bit_length (fun bit_index ->
             Z.testbit int bit_index |> Value.bool)
       in
-      Value.list (Lang.Il.Typ.bool $ no_region) bool_list
+      Value.list (Lang.Il.Typ.bool $ Location.Unknown) bool_list
       |> apply_prov |> Result.ok
   | VarT { synid = tid; targs = [] }, _ -> (
       match (TDEnv.find_opt tid tdenv, json) with

@@ -5,7 +5,7 @@
     attach extra fields; sites that do not need them omit the labels. The
     payload is the lib value type {!Diag.t} directly. *)
 
-open Common.Source
+module Location = Common.Location
 open Common.Attempt
 
 (** {1 Diagnostic payload} *)
@@ -87,8 +87,10 @@ type code =
   | Ctx_metavar_redefined
   | Ctx_type_redefined
   | Ctx_relation_redefined
+  | Ctx_relation_fallback_redefined
   | Ctx_builtin_dec_redefined
   | Ctx_dec_redefined
+  | Ctx_dec_fallback_redefined
   (* dataflow *)
   | Dataflow_free_variable_in_output
   | Dataflow_bind_both_sides_of_equality
@@ -109,19 +111,19 @@ type code =
 val error :
   ?code:code ->
   ?detail:string ->
-  ?related:(region * string) list ->
-  region ->
+  ?related:(Location.t * string) list ->
+  Location.t ->
   string ->
   'a
 
-val warn : ?code:code -> ?detail:string -> region -> string -> unit
+val warn : ?code:code -> ?detail:string -> Location.t -> string -> unit
 
 val check :
   ?code:code ->
   ?detail:string ->
-  ?related:(region * string) list ->
+  ?related:(Location.t * string) list ->
   bool ->
-  region ->
+  Location.t ->
   string ->
   unit
 
@@ -131,7 +133,7 @@ val check :
 val error_with_traces :
   ?code:code ->
   ?detail:string ->
-  ?related:(region * string) list ->
+  ?related:(Location.t * string) list ->
   failtrace list ->
   'a
 

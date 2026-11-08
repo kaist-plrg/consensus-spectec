@@ -24,7 +24,8 @@ let init_il (spec : Il.spec) =
             List.filter_map
               (fun (param : Il.arg) ->
                 match param.it with
-                | Il.ExpA { it = Il.VarE pid; _ } -> Some pid.it
+                | Il.Expression.ExpA { it = Il.Expression.VarE pid; _ } ->
+                    Some pid.it
                 | _ -> None)
               params
           in
@@ -35,7 +36,7 @@ let init_il (spec : Il.spec) =
 
 let rec subst (env : (string * Il.exp) list) (exp : Il.exp) : Il.exp =
   match exp.it with
-  | Il.VarE id -> (
+  | Il.Expression.VarE id -> (
       match List.assoc_opt id.it env with Some e -> e | None -> exp)
   | _ -> Il.Traverse.map_children_exp (subst env) exp
 
@@ -46,7 +47,9 @@ let expand (id : Il.id) (args : Il.arg list) : Il.exp option =
       let arg_exps =
         List.filter_map
           (fun (arg : Il.arg) ->
-            match arg.it with Il.ExpA exp -> Some exp | Il.DefA _ -> None)
+            match arg.it with
+            | Il.Expression.ExpA exp -> Some exp
+            | Il.Expression.DefA _ -> None)
           args
       in
       if List.length arg_exps = List.length param_ids then
@@ -62,7 +65,7 @@ let expressions_of_exp (exp : Il.exp) : Il.exp list =
     List.concat_map
       (fun (subexp : Il.exp) ->
         match subexp.it with
-        | Il.CallE (id, _, args) -> (
+        | Il.Expression.CallE (id, _, args) -> (
             match expand id args with
             | Some body -> subexpressions body
             | None -> [])

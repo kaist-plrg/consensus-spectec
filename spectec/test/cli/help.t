@@ -42,6 +42,8 @@ eval shares this exact set:
     [--dep-pos.targets UIDS]   . comma-separated premise UIDs to analyze
     [--dep-pos.targets-file FILE]
                                . premise UIDs, one per line
+    [--det]                    . reject multiple successful alternatives for the
+                                 current input
     [--instruction-coverage.level LEVEL]
                                . verbosity level (e.g., summary|full)
     [--instruction-coverage.output FILE]
@@ -80,6 +82,7 @@ parse has a distinct, minimal surface with no instrumentation flags:
     [--spec-dir DIR]           . directory of .spectec files, collected
                                  recursively; mutually exclusive with --spec
     [-r]                       . roundtrip parse/unparse
+    [-t]                       . print the parsed values as a tree with locations
     [-help], -?                . print this help text and exit
   
 
@@ -105,6 +108,8 @@ batch drops -p and adds the checkpoint-persistence flags:
     [--dep-pos.targets UIDS]   . comma-separated premise UIDs to analyze
     [--dep-pos.targets-file FILE]
                                . premise UIDs, one per line
+    [--det]                    . reject multiple successful alternatives for the
+                                 current input
     [--instruction-coverage.level LEVEL]
                                . verbosity level (e.g., summary|full)
     [--instruction-coverage.output FILE]

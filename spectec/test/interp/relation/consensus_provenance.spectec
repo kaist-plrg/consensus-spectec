@@ -1,0 +1,42 @@
+syntax point = { X nat, Y nat }
+var p : point
+
+dec $uses_x(point) : bool
+def $uses_x(p) = true
+  -- if $(p.X > 0)
+def $uses_x(p) = false
+  -- otherwise
+
+dec $filter_list_<X>(X*, def $cond(X) : bool) : X*
+def $filter_list_<X>(eps, def $cond) = eps
+def $filter_list_<X>(X_h :: X_t*, def $cond)
+  = X_h :: $filter_list_<X>(X_t*, def $cond)
+  -- if $cond(X_h) = true
+def $filter_list_<X>(X_h :: X_t*, def $cond)
+  = $filter_list_<X>(X_t*, def $cond)
+  -- if $cond(X_h) = false
+
+relation Feedback:
+  point* |- nat
+  hint(input %0)
+
+rule Feedback:
+  p* |- |$filter_list_<point>(p*, def $uses_x)|
+
+var acc : nat
+var n : nat
+
+relation Add_x:
+  nat point |- nat '#' nat
+  hint(input %0 %1)
+
+rule Add_x:
+  acc p |- $(acc + p.X) '#' $(acc + p.X)
+
+relation Running_x:
+  point* '#' point* |- nat*
+  hint(input %0 %1)
+
+rule Running_x:
+  p_read* '#' p_unread* |- n*
+  -- (Add_x: acc_cur p_read |- acc_next '#' n)*{ 0 -> acc_cur ... acc_next -> acc_last }

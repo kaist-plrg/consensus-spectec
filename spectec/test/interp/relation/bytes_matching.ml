@@ -3,8 +3,8 @@ module H = Harness
 module V = Lang.Il.Value
 module Typ = Lang.Il.Typ
 
-let ( $ ) = Common.Source.( $ )
-let at = Common.Source.no_region
+let ( $ ) = Common.Annotated.( $ )
+let at = Common.Location.Unknown
 let nat n = V.nat (Bigint.of_int n)
 let bytes n = V.make_bytes ~num:(Bigint.of_int n) ~len:48
 let pair_type = Typ.tuple [ Typ.nat $ at; Typ.var "key" [] $ at ] $ at

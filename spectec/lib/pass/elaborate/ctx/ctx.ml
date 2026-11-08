@@ -1,5 +1,6 @@
 open Common.Domain
-open Common.Source
+open Common.Annotated
+module Location = Common.Location
 open Lang.El
 module Il = Lang.Il
 open Diagnostic
@@ -7,10 +8,10 @@ open Envs.Make
 
 (* Error *)
 
-let error_undef ?code (at : region) (kind : string) (id : string) =
+let error_undef ?code (at : Location.t) (kind : string) (id : string) =
   error ?code at (Format.asprintf "%s `%s` is undefined" kind id)
 
-let error_dup ?code ?related (at : region) (kind : string) (id : string) =
+let error_dup ?code ?related (at : Location.t) (kind : string) (id : string) =
   error ?code ?related at
     (Format.asprintf "%s `%s` was already defined" kind id)
 
@@ -79,34 +80,34 @@ let empty : t =
 let init () : t =
   let menv =
     MEnv.empty
-    |> MEnv.add ("bool" $ no_region) (Il.BoolT $ no_region)
-    |> MEnv.add ("nat" $ no_region) (Il.NumT `NatT $ no_region)
-    |> MEnv.add ("int" $ no_region) (Il.NumT `IntT $ no_region)
-    |> MEnv.add ("text" $ no_region) (Il.TextT $ no_region)
+    |> MEnv.add ("bool" $ Location.Unknown) (Il.BoolT $ Location.Unknown)
+    |> MEnv.add ("nat" $ Location.Unknown) (Il.NumT `NatT $ Location.Unknown)
+    |> MEnv.add ("int" $ Location.Unknown) (Il.NumT `IntT $ Location.Unknown)
+    |> MEnv.add ("text" $ Location.Unknown) (Il.TextT $ Location.Unknown)
   in
   { empty with menv }
 
 (* Finders *)
 
-(* Locate the region of an original declaration whose key compares equal to the
+(* Find the location of an original declaration whose key compares equal to the
    given id. Used to populate [~related] spans on redefinition diagnostics. *)
 
-let metavar_prior_at (ctx : t) (tid : TId.t) : region option =
+let metavar_prior_at (ctx : t) (tid : TId.t) : Location.t option =
   match MEnv.find_first_opt (fun k -> Id.compare k tid >= 0) ctx.menv with
   | Some (k, _) when Id.compare k tid = 0 -> Some k.at
   | _ -> None
 
-let typdef_prior_at (ctx : t) (tid : TId.t) : region option =
+let typdef_prior_at (ctx : t) (tid : TId.t) : Location.t option =
   match TDEnv.find_first_opt (fun k -> Id.compare k tid >= 0) ctx.tdenv with
   | Some (k, _) when Id.compare k tid = 0 -> Some k.at
   | _ -> None
 
-let rel_prior_at (ctx : t) (rid : RId.t) : region option =
+let rel_prior_at (ctx : t) (rid : RId.t) : Location.t option =
   match REnv.find_first_opt (fun k -> Id.compare k rid >= 0) ctx.renv with
   | Some (k, _) when Id.compare k rid = 0 -> Some k.at
   | _ -> None
 
-let dec_prior_at (ctx : t) (fid : FId.t) : region option =
+let dec_prior_at (ctx : t) (fid : FId.t) : Location.t option =
   match FEnv.find_first_opt (fun k -> Id.compare k fid >= 0) ctx.fenv with
   | Some (k, _) when Id.compare k fid = 0 -> Some k.at
   | _ -> None
@@ -191,6 +192,21 @@ let find_dec_signature (ctx : t) (fid : FId.t) :
 let bound_dec (ctx : t) (fid : FId.t) : bool =
   find_dec_signature_opt ctx fid |> Option.is_some
 
+(* Fallback detection must match structuring's trailing-premise convention. *)
+
+let fallback_at (prems : Il.prem list) : Location.t option =
+  match List.rev prems with
+  | { it = Il.ElsePr; at; _ } :: _ -> Some at
+  | _ -> None
+
+let rule_fallback_at (rule : Il.rule) : Location.t option =
+  let ({ prems; _ } : Il.rule') = rule.it in
+  fallback_at prems
+
+let clause_fallback_at (clause : Il.clause) : Location.t option =
+  let ({ prems; _ } : Il.clause') = clause.it in
+  fallback_at prems
+
 (* Adders *)
 
 (* Adders for free variables *)
@@ -248,6 +264,13 @@ let add_rule (ctx : t) (rid : RId.t) (rule : Il.rule) : t =
     (* unreachable: elab_rule_def calls find_rel on the same rid first. *)
     assert false;
   let reltyp, rules = REnv.find rid ctx.renv in
+  let fallback_prior_at = List.find_map rule_fallback_at rules in
+  (match (rule_fallback_at rule, fallback_prior_at) with
+  | Some at, Some prior_at ->
+      error_dup at "an `otherwise` rule for relation" rid.it
+        ~code:Ctx_relation_fallback_redefined
+        ~related:[ (prior_at, "originally defined here") ]
+  | _ -> ());
   let rel = (reltyp, rules @ [ rule ]) in
   let renv = REnv.add rid rel ctx.renv in
   { ctx with renv }
@@ -281,6 +304,13 @@ let add_defined_clause (ctx : t) (fid : FId.t) (clause : Il.clause) : t =
     (* unreachable: elab_def_def calls find_defined_dec on the same fid first. *)
     assert false;
   let tparams, params, typ, clauses = find_defined_dec ctx fid in
+  let fallback_prior_at = List.find_map clause_fallback_at clauses in
+  (match (clause_fallback_at clause, fallback_prior_at) with
+  | Some at, Some prior_at ->
+      error_dup at "an `otherwise` clause for dec" fid.it
+        ~code:Ctx_dec_fallback_redefined
+        ~related:[ (prior_at, "originally defined here") ]
+  | _ -> ());
   let func = Func.Defined (tparams, params, typ, clauses @ [ clause ]) in
   let fenv = FEnv.add fid func ctx.fenv in
   { ctx with fenv }

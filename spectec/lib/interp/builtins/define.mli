@@ -1,23 +1,35 @@
-open Common.Source
+module Location = Common.Location
 open Lang.Il
-module Arg : module type of Arg
-module Error : module type of Error
 
-type t = at:region -> targ list -> value list -> Value.t Error.result
+type implementation =
+  at:Location.t -> targ list -> value list -> Value.t Error.result
+
+type t
+
+val make : implementation -> t
+
+(** [args] is a [T0], [T1], or [T2] function with its readers supplied. *)
+val make_with_callback :
+  args:('impl -> t) -> (callback:Callback.t -> 'impl) -> t
+
+val invoke : t -> callback:Callback.t -> implementation
 
 (* Builtins with no type arguments *)
 module T0 : sig
-  val a0 : (at:region -> Value.t Error.result) -> t
-  val a1 : 'a Arg.t -> (at:region -> 'a -> Value.t Error.result) -> t
+  val a0 : (at:Location.t -> (Value.t, Error.t) result) -> t
+  val a1 : 'a Arg.t -> (at:Location.t -> 'a -> (Value.t, Error.t) result) -> t
 
   val a2 :
-    'a Arg.t -> 'b Arg.t -> (at:region -> 'a -> 'b -> Value.t Error.result) -> t
+    'a Arg.t ->
+    'b Arg.t ->
+    (at:Location.t -> 'a -> 'b -> (Value.t, Error.t) result) ->
+    t
 
   val a3 :
     'a Arg.t ->
     'b Arg.t ->
     'c Arg.t ->
-    (at:region -> 'a -> 'b -> 'c -> Value.t Error.result) ->
+    (at:Location.t -> 'a -> 'b -> 'c -> (Value.t, Error.t) result) ->
     t
 
   val a4 :
@@ -25,7 +37,7 @@ module T0 : sig
     'b Arg.t ->
     'c Arg.t ->
     'd Arg.t ->
-    (at:region -> 'a -> 'b -> 'c -> 'd -> Value.t Error.result) ->
+    (at:Location.t -> 'a -> 'b -> 'c -> 'd -> (Value.t, Error.t) result) ->
     t
 
   val a5 :
@@ -34,44 +46,53 @@ module T0 : sig
     'c Arg.t ->
     'd Arg.t ->
     'e Arg.t ->
-    (at:region -> 'a -> 'b -> 'c -> 'd -> 'e -> Value.t Error.result) ->
+    (at:Location.t -> 'a -> 'b -> 'c -> 'd -> 'e -> (Value.t, Error.t) result) ->
     t
 end
 
 (* Builtins with one type argument *)
 
 module T1 : sig
-  val a1 : 'a Arg.t -> (at:region -> targ -> 'a -> Value.t Error.result) -> t
+  val a1 :
+    'a Arg.t -> (at:Location.t -> targ -> 'a -> (Value.t, Error.t) result) -> t
 
   val a2 :
     'a Arg.t ->
     'b Arg.t ->
-    (at:region -> targ -> 'a -> 'b -> Value.t Error.result) ->
+    (at:Location.t -> targ -> 'a -> 'b -> (Value.t, Error.t) result) ->
     t
 
   val a3 :
     'a Arg.t ->
     'b Arg.t ->
     'c Arg.t ->
-    (at:region -> targ -> 'a -> 'b -> 'c -> Value.t Error.result) ->
+    (at:Location.t -> targ -> 'a -> 'b -> 'c -> (Value.t, Error.t) result) ->
     t
 end
 
 (* Builtins with two type arguments *)
 module T2 : sig
   val a1 :
-    'a Arg.t -> (at:region -> targ -> targ -> 'a -> Value.t Error.result) -> t
+    'a Arg.t ->
+    (at:Location.t -> targ -> targ -> 'a -> (Value.t, Error.t) result) ->
+    t
 
   val a2 :
     'a Arg.t ->
     'b Arg.t ->
-    (at:region -> targ -> targ -> 'a -> 'b -> Value.t Error.result) ->
+    (at:Location.t -> targ -> targ -> 'a -> 'b -> (Value.t, Error.t) result) ->
     t
 
   val a3 :
     'a Arg.t ->
     'b Arg.t ->
     'c Arg.t ->
-    (at:region -> targ -> targ -> 'a -> 'b -> 'c -> Value.t Error.result) ->
+    (at:Location.t ->
+    targ ->
+    targ ->
+    'a ->
+    'b ->
+    'c ->
+    (Value.t, Error.t) result) ->
     t
 end

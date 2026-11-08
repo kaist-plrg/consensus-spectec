@@ -1,6 +1,7 @@
 open Common.Domain
-open Common.Source
+open Common.Annotated
 open Lang
+open Lang.Il.Expression
 open Lang.Il
 open Envs.Make
 
@@ -23,7 +24,7 @@ let rec populate_exp_template (uenv : UEnv.t) (exp_template : exp) (exp : exp) :
   let populate_exp_template_unequal () =
     match (exp_template.it, exp.it) with
     | VarE id_template, _ when UEnv.unified id_template uenv ->
-        let prem = LetPr (exp, exp_template) $ exp.at in
+        let prem = LetPr (exp, exp_template) $$ (exp.at, None) in
         [ prem ]
     | TupleE exps_template, TupleE exps ->
         populate_exps_templates uenv exps_template exps
@@ -39,18 +40,16 @@ let rec populate_exp_template (uenv : UEnv.t) (exp_template : exp) (exp : exp) :
     | ( IterE (exp_template, (iter_template, vars_template)),
         IterE (exp, (iter, vars)) )
       when Il.Eq.eq_iter iter_template iter ->
-        let iterexp =
-          let vars =
-            List.fold_left
-              (fun vars var_template ->
-                if List.exists (Il.Eq.eq_var var_template) vars then vars
-                else var_template :: vars)
-              vars vars_template
+        let iterinstr =
+          let vars_output =
+            List.filter
+              (fun var -> not (List.exists (Il.Eq.eq_var var) vars_template))
+              vars
           in
-          (iter_template, vars)
+          { iter = iter_template; vars_input = vars_template; vars_output }
         in
-        let prem = LetPr (exp, exp_template) $ exp.at in
-        let prem = IterPr (prem, iterexp) $ exp.at in
+        let prem = LetPr (exp, exp_template) $$ (exp.at, None) in
+        let prem = IterPr (prem, iterinstr) $$ (exp.at, None) in
         [ prem ]
     | _ ->
         Format.asprintf "cannot populate anti-unified expressions %s and %s"

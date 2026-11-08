@@ -6,7 +6,8 @@
    3. Derive mutation constraints from positive dependency analysis
    4. Mutate JSON inputs; write results to output directory *)
 
-open Common.Source
+open Common.Annotated
+module Location = Common.Location
 module Il = Lang.Il
 module Legacy_checkpoint = Checkpoint
 module Checkpoint = Batch.Checkpoint
@@ -37,7 +38,7 @@ type mutation_constraint = {
 
 type premise_info = {
   uid : premise_uid;
-  key : region * string;
+  key : Location.t * string;
   relation : string;
   rule : string;
   content : string;
@@ -1156,8 +1157,8 @@ let get_uncovered_premises (coverage : Node_cov.result option) =
         List.fold_left (fun acc (key, _) -> key :: acc) [] cov.prems_succeeded
       in
       List.filter_map
-        (fun ((region, content_str), uid) ->
-          let key = (region, content_str) in
+        (fun ((location, content_str), uid) ->
+          let key = (location, content_str) in
           if List.mem key succeeded_keys then None
           else
             Some
@@ -2288,8 +2289,8 @@ let checkpoint_summary (checkpoint_file : string) =
       in
       let uncovered_count =
         List.fold_left
-          (fun count ((region, content_str), _) ->
-            if not (List.mem (region, content_str) succeeded_keys) then
+          (fun count ((location, content_str), _) ->
+            if not (List.mem (location, content_str) succeeded_keys) then
               count + 1
             else count)
           0 cov.prem_to_uid
@@ -2340,7 +2341,8 @@ let save_testgen_checkpoint ~(file : string option) ~(analyzed : string list)
         ]
       in
       let checkpoint =
-        Checkpoint.create ~spec_files:[] ~completed_inputs:analyzed ~coverage
+        Checkpoint.create ~check_determinism:false ~spec_files:[]
+          ~completed_inputs:analyzed ~coverage
       in
       Checkpoint.save_to_file ~file:checkpoint_file checkpoint;
       Format.printf "Saved testgen checkpoint: %s (%d tests analyzed)\n%!"

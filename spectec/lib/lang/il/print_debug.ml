@@ -1,7 +1,9 @@
 open Xl
+open Types.Expression
 open Types
 open Common.Print
-open Common.Source
+open Common.Annotated
+module Location = Common.Location
 
 (* Numbers *)
 
@@ -67,6 +69,7 @@ and string_of_reltyp reltyp =
 
 and string_of_deftyp deftyp =
   match deftyp.it with
+  | OpaqueT -> "opaque"
   | PlainT typ -> string_of_typ typ
   | StructT typfields -> "{" ^ string_of_typfields ", " typfields ^ "}"
   | VariantT typcases -> "\n   | " ^ string_of_typcases "\n   | " typcases
@@ -127,6 +130,7 @@ and string_of_value ?(short = false) ?(level = 0) value =
                 indent ^ string_of_value ~short ~level:(level + 2) value)
               values))
   | FuncV id -> string_of_defid id
+  | OpaqueV value -> "<opaque " ^ Opaque.name value ^ ">"
 
 and string_of_notval notval =
   Mixfix.render ~pad_brackets:true ~string_of_atom
@@ -213,6 +217,11 @@ and string_of_iterexp iterexp =
 and string_of_iterexps iterexps =
   iterexps |> List.map string_of_iterexp |> String.concat ""
 
+and string_of_iterinstr iterinstr =
+  let iter, vars = iterexp_of_iterinstr iterinstr in
+  let vars = List.sort (fun a b -> String.compare a.varid.it b.varid.it) vars in
+  string_of_iterexp (iter, vars)
+
 (* Patterns *)
 
 and string_of_pattern pattern =
@@ -285,7 +294,7 @@ and string_of_targs targs =
 
 and string_of_rule rule =
   let { ruleid; concl; prems } = rule.it in
-  ";; " ^ string_of_region rule.at ^ "\n   rule " ^ string_of_ruleid ruleid
+  ";; " ^ Location.to_string rule.at ^ ":\n   rule " ^ string_of_ruleid ruleid
   ^ ": " ^ string_of_notexp concl ^ string_of_prems prems
 
 and string_of_rules rules =
@@ -296,8 +305,10 @@ and string_of_rules rules =
 
 and string_of_clause idx clause =
   let { args; body; prems } = clause.it in
-  ";; " ^ string_of_region clause.at ^ "\n   clause " ^ string_of_int idx
-  ^ string_of_args args ^ " = " ^ string_of_exp body ^ string_of_prems prems
+  ";; "
+  ^ Location.to_string clause.at
+  ^ ":\n   clause " ^ string_of_int idx ^ string_of_args args ^ " = "
+  ^ string_of_exp body ^ string_of_prems prems
 
 and string_of_clauses clauses =
   String.concat ""
@@ -320,11 +331,15 @@ and string_of_prem prem =
   | ElsePr -> "otherwise"
   | LetPr (exp_l, exp_r) ->
       "let " ^ string_of_exp exp_l ^ " = " ^ string_of_exp exp_r
-  | IterPr (({ it = IterPr _; _ } as prem), iterexp) ->
-      string_of_prem prem ^ string_of_iterexp iterexp
-  | IterPr (prem, iterexp) ->
-      "(" ^ string_of_prem prem ^ ")" ^ string_of_iterexp iterexp
-  | FoldPr (prem, (iter, vars), accumulators) ->
+  | IterPr (({ it = IterPr _; _ } as prem), iterinstr) ->
+      string_of_prem prem ^ string_of_iterinstr iterinstr
+  | IterPr (prem, iterinstr) ->
+      "(" ^ string_of_prem prem ^ ")" ^ string_of_iterinstr iterinstr
+  | FoldPr (prem, iterinstr, accumulators) ->
+      let iter, vars = iterexp_of_iterinstr iterinstr in
+      let vars =
+        List.sort (fun a b -> String.compare a.varid.it b.varid.it) vars
+      in
       let string_of_iter_binding var =
         string_of_var var ^ " <- "
         ^ string_of_var { var with iters = var.iters @ [ iter ] }
@@ -356,9 +371,11 @@ and string_of_hints hints = String.concat "" (List.map string_of_hint hints)
 (* Definitions *)
 
 let rec string_of_def def =
-  ";; " ^ string_of_region def.at ^ "\n"
+  ";; " ^ Location.to_string def.at ^ ":\n"
   ^
   match def.it with
+  | TypD { synid = id; deftyp = { it = OpaqueT; _ }; _ } ->
+      "opaque syntax " ^ string_of_typid id
   | TypD { synid; tparams; deftyp } ->
       "syntax " ^ string_of_typid synid ^ string_of_tparams tparams ^ " = "
       ^ string_of_deftyp deftyp

@@ -12,7 +12,7 @@
    - eth_whitelist: Centralized list of relations to analyze.
 *)
 
-open Common.Source
+open Common.Annotated
 module Il = Lang.Il
 
 (* === Types === *)
@@ -93,12 +93,12 @@ let atom_field (atom : Il.atom) : string =
 
 let rec collect_chains (exp : Il.exp) : (string * field_step list) list =
   match exp.it with
-  | Il.DotE _ ->
+  | Il.Expression.DotE _ ->
       let rec peel (e : Il.exp) steps =
         match e.it with
-        | Il.DotE (base, atom) ->
+        | Il.Expression.DotE (base, atom) ->
             peel base (FieldAccess (atom_field atom) :: steps)
-        | Il.VarE id -> [ (id.it, steps) ]
+        | Il.Expression.VarE id -> [ (id.it, steps) ]
         | _ -> []
       in
       peel exp []
@@ -124,11 +124,13 @@ let rec collect_chains_prem (prem : Il.prem) : (string * field_step list) list =
 let comp_vars (clause : Il.clause) : string option list =
   let { Il.args = params; _ } = clause.it in
   match params with
-  | { it = Il.ExpA { it = Il.VarE v; _ }; _ } :: _ -> [ Some v.it ]
-  | { it = Il.ExpA { it = Il.TupleE comps; _ }; _ } :: _ ->
+  | { it = Il.Expression.ExpA { it = Il.Expression.VarE v; _ }; _ } :: _ ->
+      [ Some v.it ]
+  | { it = Il.Expression.ExpA { it = Il.Expression.TupleE comps; _ }; _ } :: _
+    ->
       List.map
         (fun (c : Il.exp) ->
-          match c.it with Il.VarE v -> Some v.it | _ -> None)
+          match c.it with Il.Expression.VarE v -> Some v.it | _ -> None)
         comps
   | _ -> []
 

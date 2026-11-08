@@ -1,6 +1,7 @@
 open Common.Domain
-open Common.Source
+open Common.Annotated
 open Lang
+open Il.Expression
 open Il
 open Ctx
 open Diagnostic
@@ -8,7 +9,8 @@ module Mixop = Lang.Il.Mixfix
 
 (* Dimension analysis :
 
-   Annotate iteration constructs with what variables are iterated over
+   Annotate iteration constructs with what variables are iterated over,
+   and record which of them an iterated premise binds
     - Check that iteration is non-empty
     - Check that the dimension of binding variables are not ambiguous,
       i.e., guided by at least one bound iteration variable
@@ -44,7 +46,7 @@ let rec annotate_exp (bounds : VEnv.t) (exp : exp) : VEnv.t * exp =
   match exp.it with
   | BoolE _ | NumE _ | TextE _ -> (empty, exp)
   | VarE id ->
-      if VEnv.mem id bounds then (singleton id (note $ at), exp)
+      if VEnv.mem id bounds then (singleton id (note.typ $ at), exp)
       else error exp.at ("free identifier: " ^ Id.to_string id)
   | UnE (op, optyp, exp) ->
       let occurs, exp = annotate_exp bounds exp in
@@ -233,53 +235,55 @@ and annotate_args (bounds : VEnv.t) (args : arg list) : VEnv.t * arg list =
 
 (* Premise *)
 
-and annotate_prem (binds : VEnv.t) (bounds : VEnv.t) (prem : prem) :
-    VEnv.t * prem =
-  let at = prem.at in
+and annotate_prem (ctx : Ctx.t) (bounds : VEnv.t) (prem : prem) :
+    IdSet.t * VEnv.t * prem =
+  let at, note = (prem.at, prem.note) in
   match prem.it with
   | RelPr { relid; notexp } ->
       let mixop, exps = Mixop.split notexp in
-      let occurs, exps = annotate_exps bounds exps in
+      let reltyp = Ctx.find_rel ctx relid in
+      let exps_input, exps_output = Mode.partition reltyp.it exps in
+      let occurs_input, exps_input = annotate_exps bounds exps_input in
+      let occurs_output, exps_output = annotate_exps bounds exps_output in
+      let exps = Mode.interleave reltyp.it ~ins:exps_input ~outs:exps_output in
       let notexp = Mixop.fill mixop exps in
-      let prem = RelPr { relid; notexp } $ at in
-      (occurs, prem)
+      let prem = RelPr { relid; notexp } $$ (at, note) in
+      let occurs = union occurs_input occurs_output in
+      (VEnv.dom occurs_output, occurs, prem)
   | IfPr { cond; role } ->
       let occurs, cond = annotate_exp bounds cond in
-      let prem = IfPr { cond; role } $ at in
-      (occurs, prem)
+      let prem = IfPr { cond; role } $$ (at, note) in
+      (IdSet.empty, occurs, prem)
   | RelAssertPr { call = { relid; notexp }; expect } ->
       let mixop, exps = Mixop.split notexp in
       let occurs, exps = annotate_exps bounds exps in
       let notexp = Mixop.fill mixop exps in
-      let prem = RelAssertPr { call = { relid; notexp }; expect } $ at in
-      (occurs, prem)
-  | ElsePr -> (empty, prem)
+      let prem =
+        RelAssertPr { call = { relid; notexp }; expect } $$ (at, note)
+      in
+      (IdSet.empty, occurs, prem)
+  | ElsePr -> (IdSet.empty, empty, prem)
   | LetPr (exp_l, exp_r) ->
       let occurs_l, exp_l = annotate_exp bounds exp_l in
       let occurs_r, exp_r = annotate_exp bounds exp_r in
-      let prem = LetPr (exp_l, exp_r) $ at in
+      let prem = LetPr (exp_l, exp_r) $$ (at, note) in
       let occurs = union occurs_l occurs_r in
-      (occurs, prem)
-  | IterPr (_, (_, _ :: _)) -> assert false
-  | IterPr (prem, (iter, [])) -> (
-      let occurs, prem = annotate_prem binds bounds prem in
+      (VEnv.dom occurs_l, occurs, prem)
+  | IterPr (prem, { iter; vars_input = []; vars_output = [] }) -> (
+      let binds, occurs, prem = annotate_prem ctx bounds prem in
       let itervars = collect_itervars bounds occurs iter in
-      match itervars with
-      | [] ->
+      let vars_output, vars_input =
+        List.partition (fun { varid; _ } -> IdSet.mem varid binds) itervars
+      in
+      match (vars_input, vars_output) with
+      | [], [] ->
           error at "empty iteration" ~code:Dataflow_empty_iter_premise
             ~detail:
               "Each iteration consumes one `*` (or `?`) from a variable inside \
                it. Here, no variable has an iteration left to consume: either \
                the body has no variables, or every variable's `*`s have \
                already been consumed by surrounding iterations."
-      | _
-        when List.for_all
-               (fun { varid; typ; iters } ->
-                 match VEnv.find_opt varid binds with
-                 | Some (typ_bind, iters_bind) ->
-                     Typ.sub (typ.it, iters) (typ_bind, iters_bind)
-                 | None -> false)
-               itervars ->
+      | [], _ ->
           error at
             ("cannot determine dimension of binding identifier(s) only: "
             ^ String.concat ", " (List.map Il.Print.string_of_var itervars)
@@ -292,16 +296,18 @@ and annotate_prem (binds : VEnv.t) (bounds : VEnv.t) (prem : prem) :
                every variable inside is newly bound rather than already bound, \
                so there is no loop variable."
       | _ ->
-          let prem = IterPr (prem, (iter, itervars)) $ at in
+          let prem =
+            IterPr (prem, { iter; vars_input; vars_output }) $$ (at, note)
+          in
           let occurs =
             List.fold_left
               (fun occurs { varid; typ; iters } ->
                 VEnv.add varid (typ, iters @ [ iter ]) occurs)
               occurs itervars
           in
-          (occurs, prem))
-  | FoldPr (_, (_, _ :: _), _) -> assert false
-  | FoldPr (prem, (iter, []), accumulators) ->
+          (binds, occurs, prem))
+  | IterPr _ -> assert false
+  | FoldPr (prem, { iter; vars_input = []; vars_output = [] }, accumulators) ->
       let add_accumulator_bounds bounds accumulators =
         List.fold_left
           (fun bounds { input; output; _ } ->
@@ -326,21 +332,28 @@ and annotate_prem (binds : VEnv.t) (bounds : VEnv.t) (prem : prem) :
             let nested_bounds =
               add_accumulator_bounds bounds nested_accumulators
             in
-            let occurs = collect_direct_occurs nested_bounds prem in
+            let binds, occurs = collect_direct_occurs nested_bounds prem in
             List.fold_left
-              (fun occurs { init; final; _ } ->
+              (fun (binds, occurs) { init; final; _ } ->
                 let occurs_init, _ = annotate_exp bounds init in
-                union occurs occurs_init
-                |> VEnv.add final.varid (final.typ, final.iters))
-              occurs nested_accumulators
-        | _ -> fst (annotate_prem binds bounds prem)
+                ( IdSet.add final.varid binds,
+                  union occurs occurs_init
+                  |> VEnv.add final.varid (final.typ, final.iters) ))
+              (binds, occurs) nested_accumulators
+        | _ ->
+            let binds, occurs, _ = annotate_prem ctx bounds prem in
+            (binds, occurs)
+      in
+      let direct_binds, direct_occurs =
+        collect_direct_occurs accumulator_bounds prem
       in
       let direct_occurs =
-        collect_direct_occurs accumulator_bounds prem
-        |> VEnv.filter (fun id _ ->
-               (not (IdSet.mem id accumulator_local_ids))
-               && VEnv.mem id accumulator_bounds
-               && not (VEnv.mem id binds))
+        VEnv.filter
+          (fun id _ ->
+            (not (IdSet.mem id accumulator_local_ids))
+            && VEnv.mem id accumulator_bounds
+            && not (IdSet.mem id direct_binds))
+          direct_occurs
       in
       let candidate_itervars =
         collect_itervars accumulator_bounds direct_occurs iter
@@ -357,23 +370,17 @@ and annotate_prem (binds : VEnv.t) (bounds : VEnv.t) (prem : prem) :
             VEnv.add varid (remove_outer_iter typ) bounds)
           accumulator_bounds candidate_itervars
       in
-      let body_binds =
-        List.fold_left
-          (fun binds { output; _ } ->
-            VEnv.add output.varid (output.typ, output.iters) binds)
-          binds accumulators
-      in
-      let occurs, prem = annotate_prem body_binds body_bounds prem in
+      let binds, occurs, prem = annotate_prem ctx body_bounds prem in
       let fold_occurs =
         VEnv.filter
           (fun id _ -> not (IdSet.mem id accumulator_local_ids))
           occurs
       in
       let itervars = collect_itervars accumulator_bounds fold_occurs iter in
-      let has_prebound_itervar =
-        List.exists (fun { varid; _ } -> not (VEnv.mem varid binds)) itervars
+      let vars_output, vars_input =
+        List.partition (fun { varid; _ } -> IdSet.mem varid binds) itervars
       in
-      if not has_prebound_itervar then
+      if vars_input = [] then
         error at "a fold must iterate over at least one list"
           ~code:Dataflow_empty_iter_premise;
       let endpoint_occurrences, accumulators =
@@ -387,7 +394,10 @@ and annotate_prem (binds : VEnv.t) (bounds : VEnv.t) (prem : prem) :
             (endpoint_occurrences, { accumulator with init }))
           empty accumulators
       in
-      let prem = FoldPr (prem, (iter, itervars), accumulators) $ at in
+      let prem =
+        FoldPr (prem, { iter; vars_input; vars_output }, accumulators)
+        $$ (at, note)
+      in
       let occurs =
         VEnv.bindings occurs
         |> List.filter (fun (id, _) -> not (IdSet.mem id accumulator_local_ids))
@@ -400,19 +410,26 @@ and annotate_prem (binds : VEnv.t) (bounds : VEnv.t) (prem : prem) :
           occurs itervars
       in
       let occurs = union occurs endpoint_occurrences in
-      (occurs, prem)
+      let binds =
+        List.fold_left
+          (fun binds { final; _ } -> IdSet.add final.varid binds)
+          (IdSet.diff binds accumulator_local_ids)
+          accumulators
+      in
+      (binds, occurs, prem)
+  | FoldPr _ -> assert false
   | DebugPr exp ->
       let occurs, exp = annotate_exp bounds exp in
-      let prem = DebugPr exp $ at in
-      (occurs, prem)
+      let prem = DebugPr exp $$ (at, note) in
+      (IdSet.empty, occurs, prem)
 
-and annotate_prems (binds : VEnv.t) (bounds : VEnv.t) (prems : prem list) :
+and annotate_prems (ctx : Ctx.t) (bounds : VEnv.t) (prems : prem list) :
     VEnv.t * prem list =
   match prems with
   | [] -> (empty, [])
   | prem :: prems ->
-      let occurs_h, prem_h = annotate_prem binds bounds prem in
-      let occurs_t, prems_t = annotate_prems binds bounds prems in
+      let _, occurs_h, prem_h = annotate_prem ctx bounds prem in
+      let occurs_t, prems_t = annotate_prems ctx bounds prems in
       let prems = prem_h :: prems_t in
       let occurs = union occurs_h occurs_t in
       (occurs, prems)
@@ -444,13 +461,12 @@ let analyze_exps (bounds : VEnv.t) (exps : exp list) : exp list =
 let analyze_args (bounds : VEnv.t) (args : arg list) : arg list =
   analyze annotate_args bounds args
 
-let analyze_prem (binds : VEnv.t) (bounds : VEnv.t) (prem : prem) : prem =
-  analyze (annotate_prem binds) bounds prem
+let analyze_prem (ctx : Ctx.t) (prem : prem) : prem =
+  analyze
+    (fun bounds prem ->
+      let _, occurs, prem = annotate_prem ctx bounds prem in
+      (occurs, prem))
+    ctx.venv prem
 
-let analyze_prems (binds : VEnv.t) (bounds : VEnv.t) (prems : prem list) :
-    prem list =
-  analyze (annotate_prems binds) bounds prems
-
-let analyze_sideconditions (bounds : VEnv.t) (sideconditions : prem list) :
-    prem list =
-  analyze (annotate_prems VEnv.empty) bounds sideconditions
+let analyze_prems (ctx : Ctx.t) (prems : prem list) : prem list =
+  analyze (annotate_prems ctx) ctx.venv prems

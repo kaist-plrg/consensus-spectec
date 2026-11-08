@@ -1,0 +1,11 @@
+(library
+ (name interp_runtime)
+ (public_name spectec.interp.runtime)
+ (libraries
+  spectec.common
+  spectec.lang
+  spectec.envs
+  spectec.instrumentation.api
+  spectec.instrumentation.dispatcher
+  builtins
+  opaque_types))

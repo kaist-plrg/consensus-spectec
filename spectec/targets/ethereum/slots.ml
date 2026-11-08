@@ -68,7 +68,7 @@ module Slots = struct
     let target_slot = Bigint.(current_slot + of_int slots_delta) in
     let slots_il = Lang.Il.Value.nat target_slot in
     (* ProcessSlots(state, target_slot) *)
-    Ok ("ProcessSlots", [ beaconState_il; slots_il ])
+    Ok (Spectec.Task.Relation ("ProcessSlots", [ beaconState_il; slots_il ]))
 
   let parse_string = parse_string
   let unparse = unparse

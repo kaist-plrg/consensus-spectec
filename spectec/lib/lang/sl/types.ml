@@ -1,4 +1,4 @@
-open Common.Source
+open Common.Annotated
 
 [@@@ocamlformat "disable"]
 
@@ -73,6 +73,7 @@ type exp' = Il.exp'
 type notexp = Il.notexp
 type iterexp = Il.iterexp
 type accumulator = Il.accumulator
+type iterinstr = Il.iterinstr
 
 (* Patterns *)
 
@@ -130,9 +131,9 @@ and guard =
 
 (* Instructions *)
 
-and instr = instr' phrase
+and instr = instr' located
 and instr' =
-  | RelI of { call : relcall; iterexps : iterexp list; block : instr list }
+  | RelI of { call : relcall; iterinstrs : iterinstr list; block : instr list }
   | RelAssertI of {
       call : relcall;
       expect : bool;
@@ -143,10 +144,10 @@ and instr' =
   | IfI of exp * iterexp list * instr list * phantom option
   | CaseI of exp * case list * phantom option
   | OtherwiseI of instr
-  | LetI of exp * exp * iterexp list * instr list
+  | LetI of exp * exp * iterinstr list * instr list
   | FoldI of {
-      fold_iterexp : iterexp;
-      outer_iterexps : iterexp list;
+      fold_iterinstr : iterinstr;
+      outer_iterinstrs : iterinstr list;
       accumulators : accumulator list;
       body : instr list;
       block : instr list;
@@ -160,14 +161,14 @@ and elseblock = instr list
 
 (* Definitions *)
 
-type def = def' phrase
+type def = def' located
 and def' =
   (* `syntax` id `<` list(tparam, `,`) `>` `=` deftyp *)
   | TypD of id * tparam list * deftyp
   (* `relation` id `:` mode `:` instr* *)
   | RelD of id * (exp, unit) Il.Mode.t * block * elseblock option
   (* `builtin` `dec` id `<` list(tparam, `,`) `>` list(arg, `,`) *)
-  | BuiltinDecD of id * tparam list * arg list
+  | BuiltinDecD of id * tparam list * arg list * typ
   (* `dec` id `<` list(tparam, `,`) `>` list(param, `,`) `:` typ instr* *)
   | DecD of id * tparam list * arg list * block * elseblock option
 

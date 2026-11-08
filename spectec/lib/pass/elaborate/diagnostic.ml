@@ -1,4 +1,4 @@
-open Common.Source
+module Location = Common.Location
 open Common.Attempt
 
 type error = Diag.t list
@@ -66,8 +66,10 @@ type code =
   | Ctx_metavar_redefined
   | Ctx_type_redefined
   | Ctx_relation_redefined
+  | Ctx_relation_fallback_redefined
   | Ctx_builtin_dec_redefined
   | Ctx_dec_redefined
+  | Ctx_dec_fallback_redefined
   (* dataflow *)
   | Dataflow_free_variable_in_output
   | Dataflow_bind_both_sides_of_equality
@@ -128,8 +130,10 @@ let string_of_code = function
   | Ctx_metavar_redefined -> "ctx-metavar-redefined"
   | Ctx_type_redefined -> "ctx-type-redefined"
   | Ctx_relation_redefined -> "ctx-relation-redefined"
+  | Ctx_relation_fallback_redefined -> "ctx-relation-fallback-redefined"
   | Ctx_builtin_dec_redefined -> "ctx-builtin-dec-redefined"
   | Ctx_dec_redefined -> "ctx-dec-redefined"
+  | Ctx_dec_fallback_redefined -> "ctx-dec-fallback-redefined"
   | Dataflow_free_variable_in_output -> "dataflow-free-variable-in-output"
   | Dataflow_bind_both_sides_of_equality ->
       "dataflow-bind-both-sides-of-equality"
@@ -143,13 +147,13 @@ let string_of_code = function
 
 let render_code (c : code) : string = "elab/" ^ string_of_code c
 
-let related_of_pairs (pairs : (region * string) list) : Diag.related list =
-  List.map (fun (region, message) -> { Diag.region; message }) pairs
+let related_of_pairs (pairs : (Location.t * string) list) : Diag.related list =
+  List.map (fun (location, message) -> { Diag.location; message }) pairs
 
 let diag_of_failtraces (failtraces : failtrace list) : Diag.t =
   Diag.of_failtraces ~source:"elab" ~fallback:"elaboration failed" failtraces
 
-let error ?code ?detail ?(related = []) (at : region) (msg : string) =
+let error ?code ?detail ?(related = []) (at : Location.t) (msg : string) =
   let d =
     Diag.error
       ?code:(Option.map render_code code)
@@ -157,7 +161,7 @@ let error ?code ?detail ?(related = []) (at : region) (msg : string) =
   in
   raise (ElabError d)
 
-let warn ?code ?detail (at : region) (msg : string) =
+let warn ?code ?detail (at : Location.t) (msg : string) =
   let d =
     Diag.warning
       ?code:(Option.map render_code code)
@@ -165,8 +169,8 @@ let warn ?code ?detail (at : region) (msg : string) =
   in
   Diag.Sink.emit (Diag.Sink.global ()) d
 
-let check ?code ?detail ?related (b : bool) (at : region) (msg : string) : unit
-    =
+let check ?code ?detail ?related (b : bool) (at : Location.t) (msg : string) :
+    unit =
   if not b then error ?code ?detail ?related at msg
 
 let error_with_traces ?code ?detail ?(related = [])
