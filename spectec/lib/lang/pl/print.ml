@@ -1,6 +1,7 @@
-open Common.Source
+open Il.Expression
 open Types
 open Annot
+open Common.Annotated
 
 (* Leaf types *)
 
@@ -15,6 +16,7 @@ let string_of_mixop = Sl.Print.string_of_mixop
 let string_of_iter = Sl.Print.string_of_iter
 let string_of_iterexp = Sl.Print.string_of_iterexp
 let string_of_iterexps = Sl.Print.string_of_iterexps
+let string_of_iterinstrs = Sl.Print.string_of_iterinstrs
 let string_of_var = Sl.Print.string_of_var
 let string_of_typ = Sl.Print.string_of_typ
 let string_of_typs = Sl.Print.string_of_typs
@@ -34,7 +36,7 @@ let string_of_phantom = Sl.Print.string_of_phantom
 (* Expressions *)
 
 let rec string_of_exp exp =
-  match exp.node.it with
+  match exp.it with
   | BoolE b -> string_of_bool b
   | NumE n -> string_of_num n
   | TextE text -> "\"" ^ String.escaped text ^ "\""
@@ -160,11 +162,11 @@ and string_of_instr ?(short = false) ?(level = 0) ?(index = 0) instr =
   let indent = String.make (level * 2) ' ' in
   let order = Format.asprintf "%s%d. " indent index in
   match instr.node.it with
-  | RelI { call = { relid = id_rel; notexp }; iterexps } ->
+  | RelI { call = { relid = id_rel; notexp }; iterinstrs } ->
       let s_short =
         Format.asprintf "(%s: %s)%s" (string_of_relid id_rel)
           (string_of_notexp notexp)
-          (string_of_iterexps iterexps)
+          (string_of_iterinstrs iterinstrs)
       in
       if short then s_short else Format.asprintf "%s%s" order s_short
   | RelAssertI { call = { relid; notexp }; expect; iterexps; block; phantom } ->
@@ -219,22 +221,22 @@ and string_of_instr ?(short = false) ?(level = 0) ?(index = 0) instr =
           |> String.concat "\n\n"
         in
         Format.asprintf "%s%s\n\n%s" order s_short s_arms
-  | LetI (exp_l, exp_r, iterexps) ->
+  | LetI (exp_l, exp_r, iterinstrs) ->
       let s_short =
         Format.asprintf "(Let %s be %s)%s" (string_of_exp exp_l)
           (string_of_exp exp_r)
-          (string_of_iterexps iterexps)
+          (string_of_iterinstrs iterinstrs)
       in
       if short then s_short else Format.asprintf "%s%s" order s_short
-  | FoldI { fold_iterexp; outer_iterexps; accumulators; body } ->
+  | FoldI { fold_iterinstr; outer_iterinstrs; accumulators; body } ->
       let string_of_accumulator ({ input; output; init; final } : accumulator) =
         Format.asprintf "%s -> %s ... %s -> %s" (string_of_exp init)
           (string_of_var input) (string_of_var output) (string_of_var final)
       in
       let s_short =
         Format.asprintf "Fold%s%s with %s"
-          (string_of_iterexp fold_iterexp)
-          (string_of_iterexps outer_iterexps)
+          (string_of_iterinstrs [ fold_iterinstr ])
+          (string_of_iterinstrs outer_iterinstrs)
           (String.concat ", " (List.map string_of_accumulator accumulators))
       in
       if short then s_short
@@ -266,10 +268,10 @@ and string_of_instr ?(short = false) ?(level = 0) ?(index = 0) instr =
           field_str
       in
       if short then s_short else Format.asprintf "%s%s" order s_short
-  | CheckLetI (exp_target, exp_source, block) ->
+  | CheckLetI { check = _; exp_l; exp_r; block } ->
       let s_short =
-        Format.asprintf "Check let %s be %s" (string_of_exp exp_target)
-          (string_of_exp exp_source)
+        Format.asprintf "Check let %s be %s" (string_of_exp exp_l)
+          (string_of_exp exp_r)
       in
       if short then s_short
       else
@@ -342,12 +344,14 @@ let string_of_defined_dec (defid, tparams, args, block, elseblock_opt) =
 
 let string_of_def def =
   match def.node.it with
+  | TypD (id, _, { it = Il.OpaqueT; _ }) ->
+      "opaque syntax " ^ string_of_typid id
   | TypD (id, tparams, deftyp) ->
       "syntax " ^ string_of_typid id ^ string_of_tparams tparams ^ " = "
       ^ string_of_deftyp deftyp
   | RelD (id, sig_, exps, block, elseblock_opt) ->
       "relation " ^ string_of_defined_rel (id, sig_, exps, block, elseblock_opt)
-  | BuiltinDecD (id, tparams, args) ->
+  | BuiltinDecD (id, tparams, args, _) ->
       "builtin def " ^ string_of_builtin_dec (id, tparams, args)
   | DecD (id, tparams, args, block, elseblock_opt) ->
       "def " ^ string_of_defined_dec (id, tparams, args, block, elseblock_opt)

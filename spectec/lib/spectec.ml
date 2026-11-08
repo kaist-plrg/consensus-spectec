@@ -34,6 +34,8 @@ let with_diagnostics f =
 
 let spec_root_of_file file = Spec_files.root_of_file file
 let collect_spec_files dir = Spec_files.collect dir
+let collect_spec_siblings dir = Spec_files.collect ~recursive:false dir
+let compare_spec_files = Spec_files.compare_paths
 
 (* --- Pipeline transformations --- *)
 
@@ -70,59 +72,52 @@ let shorten spec_pl = Pass.shorten spec_pl
 let validate_config config ~(mode : Interp_mode.request) =
   Instrumentation.Config.validate_mode config ~mode
   |> Result.map_error (fun msg ->
-         Error.ConfigError (Common.Source.no_region, msg))
+         Error.ConfigError (Common.Location.Unknown, msg))
 
 (* --- Unified interpreter entry point --- *)
 
-let eval_task (type i) (module T : Task.S with type input = i)
-    ~(mode : Interp_mode.t) ~spec_il (input : i) =
-  let source = T.source input in
-  Interp.with_target_state (module T.Target) @@ fun target_state ->
-  let* relation, values = T.parse_input ~spec:spec_il input in
-  (match mode with
-  | Il ->
-      Interp.eval_il target_state spec_il relation values source
-      |> Result.map snd
-  | Sl ->
-      let spec_sl = structure spec_il in
-      Interp.eval_sl target_state spec_sl relation values source
-      |> Result.map snd
-  | Pl henv ->
-      let spec_pl = structure spec_il |> Pass.annotate ~henv |> Pass.shorten in
-      Interp.eval_pl target_state spec_pl relation values source
-      |> Result.map snd)
-  |> Result.map_error (fun e -> Error.InterpError e)
+let interp_error e = Error.InterpError e
 
-let eval_task_with_instrumentation (type i)
-    (module T : Task.S with type input = i)
-    ?(config = Instrumentation.Config.default) ~(mode : Interp_mode.t) ~spec_il
-    (input : i) =
-  let run instrumented_spec eval =
-    Interp.with_target_state (module T.Target) @@ fun target_state ->
-    Instrumentation.with_instrumentation config instrumented_spec @@ fun () ->
-    let* relation, values = T.parse_input ~spec:spec_il input in
-    let source = T.source input in
-    eval target_state relation values source
+let eval_run ~check_determinism ~(mode : Interp_mode.t) ~spec_il target_state
+    (run : Task.run) =
+  let driver =
+    match run with
+    | Relation (relation, values) -> fun ~eval_rel -> eval_rel relation values
+    | Driver drive -> drive
+  in
+  let run_layer context =
+    let* context = Result.map_error interp_error context in
+    driver ~eval_rel:(fun rel values ->
+        Interp.eval_rel context ~rel ~values |> Result.map_error interp_error)
   in
   match mode with
   | Il ->
-      run (Instrumentation.Static.IlSpec spec_il)
-        (fun target_state relation values source ->
-          Interp.eval_il target_state spec_il relation values source
-          |> Result.map snd
-          |> Result.map_error (fun e -> Error.InterpError e))
+      run_layer
+        (Interp.context_of_il_spec ~check_determinism target_state spec_il)
   | Sl ->
       let spec_sl = structure spec_il in
-      run (Instrumentation.Static.SlSpec spec_sl)
-        (fun target_state relation values source ->
-          Interp.eval_sl target_state spec_sl relation values source
-          |> Result.map snd
-          |> Result.map_error (fun e -> Error.InterpError e))
+      run_layer
+        (Interp.context_of_sl_spec ~check_determinism target_state spec_sl)
   | Pl henv ->
       let spec_sl = structure spec_il in
       let spec_pl = Pass.annotate ~henv spec_sl |> Pass.shorten in
-      run (Instrumentation.Static.SlSpec spec_sl)
-        (fun target_state relation values source ->
-          Interp.eval_pl target_state spec_pl relation values source
-          |> Result.map snd
-          |> Result.map_error (fun e -> Error.InterpError e))
+      run_layer
+        (Interp.context_of_pl_spec ~check_determinism target_state spec_pl)
+
+let eval_task (type i) (module T : Task.S with type input = i)
+    ?(check_determinism = false) ~(mode : Interp_mode.t) ~spec_il (input : i) =
+  Interp.with_target_state (module T.Target) @@ fun target_state ->
+  let* run = T.parse_input ~spec:spec_il input in
+  eval_run ~check_determinism ~mode ~spec_il target_state run
+
+let eval_task_with_instrumentation (type i)
+    (module T : Task.S with type input = i)
+    ?(config = Instrumentation.Config.default) ?(check_determinism = false)
+    ~(mode : Interp_mode.t) ~spec_il (input : i) =
+  let instrumented_spec =
+    match mode with
+    | Il -> Instrumentation.Static.IlSpec spec_il
+    | Sl | Pl _ -> Instrumentation.Static.SlSpec (structure spec_il)
+  in
+  Instrumentation.with_instrumentation config instrumented_spec @@ fun () ->
+  eval_task (module T) ~check_determinism ~mode ~spec_il input

@@ -85,7 +85,8 @@ let expand_deftyp (lookup : string -> typ option) (dt : Il.deftyp') : typ option
           fields
       in
       Some (StructT expanded)
-  | Il.VariantT _ -> None (* Variant types aren't used for mutations *)
+  | Il.OpaqueT | Il.VariantT _ ->
+      None (* Opaque and variant types aren't used for mutations *)
 
 (* Collect (name, deftyp') pairs from the spec *)
 let collect_defs (spec : Il.spec) : (string * Il.deftyp') list =

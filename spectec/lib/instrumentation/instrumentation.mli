@@ -3,8 +3,9 @@
 
 module Dispatcher = Instrumentation_dispatcher.Dispatcher
 module Event = Instrumentation_api.Event
+module Value_event = Instrumentation_api.Value_event
+module Origin = Instrumentation_api.Origin
 module Output = Instrumentation_api.Output
-module Value_hooks = Instrumentation_core.Value_hooks
 module Util = Instrumentation_handlers.Util
 module Static = Instrumentation_static.Static
 module Premise_uid = Instrumentation_static.Premise_uid

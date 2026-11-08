@@ -45,6 +45,13 @@ val spec_root_of_file : string -> string option
     so section numbers order without zero-padding. *)
 val collect_spec_files : string -> string list
 
+(** Collect only the [.spectec] files directly inside [dir], in the same natural
+    order as {!collect_spec_files}. *)
+val collect_spec_siblings : string -> string list
+
+(** Compare file paths in natural order, component by component. *)
+val compare_spec_files : string -> string -> int
+
 (** {1 Pipeline transformations} *)
 
 (** Spec source [contents] paired with the [filename] its diagnostics are
@@ -82,18 +89,27 @@ val validate_config :
     the selected interpreter with fresh target state. *)
 
 (** Evaluate without instrumentation session. Use when a session is managed
-    externally (e.g., suite-level wrapping). *)
+    externally (e.g., suite-level wrapping). With [check_determinism=true], the
+    interpreter rejects multiple successful alternatives, even when their
+    outputs agree. [check_determinism] defaults to [false]. *)
 val eval_task :
   (module Task.S with type input = 'i) ->
+  ?check_determinism:bool ->
   mode:Interp_mode.t ->
   spec_il:Lang.Il.spec ->
   'i ->
   Lang.Il.Value.t list result
 
-(** Evaluate with instrumentation wrapping the call. *)
+(** Evaluate with instrumentation wrapping the call. The task decodes its input
+    through [parse_input] inside the instrumentation session, so handlers
+    receive the events that the decoder emits.
+    [Instrumentation.with_instrumentation] finishes handlers and closes outputs
+    when the call returns or raises, including when decoding fails. See
+    {!eval_task} for [check_determinism]. *)
 val eval_task_with_instrumentation :
   (module Task.S with type input = 'i) ->
   ?config:Instrumentation.Config.t ->
+  ?check_determinism:bool ->
   mode:Interp_mode.t ->
   spec_il:Lang.Il.spec ->
   'i ->

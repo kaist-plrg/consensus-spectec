@@ -47,7 +47,9 @@ module ProposerSlashing = struct
     let* slashing_il =
       parse_json ~spec input.proposer_slashing_file "proposerSlashing"
     in
-    Ok ("ProcessProposerSlashing", [ beaconState_il; slashing_il ])
+    Ok
+      (Spectec.Task.Relation
+         ("ProcessProposerSlashing", [ beaconState_il; slashing_il ]))
 
   let source { pre_file; _ } = pre_file
   let expectation { expect; _ } = expect
@@ -85,7 +87,9 @@ module AttesterSlashing = struct
     let* slashing_il =
       parse_json ~spec input.attester_slashing_file "attesterSlashing"
     in
-    Ok ("ProcessAttesterSlashing", [ beaconState_il; slashing_il ])
+    Ok
+      (Spectec.Task.Relation
+         ("ProcessAttesterSlashing", [ beaconState_il; slashing_il ]))
 
   let source { pre_file; _ } = pre_file
   let expectation { expect; _ } = expect
@@ -122,7 +126,9 @@ module Attestation = struct
     let* attestation_il =
       parse_json ~spec input.attestation_file "attestation"
     in
-    Ok ("ProcessAttestation", [ beaconState_il; attestation_il ])
+    Ok
+      (Spectec.Task.Relation
+         ("ProcessAttestation", [ beaconState_il; attestation_il ]))
 
   let source { pre_file; _ } = pre_file
   let expectation { expect; _ } = expect
@@ -157,7 +163,8 @@ module Deposit = struct
     let ( let* ) = Result.bind in
     let* beaconState_il = parse_json ~spec input.pre_file "beaconState" in
     let* deposit_il = parse_json ~spec input.deposit_file "deposit" in
-    Ok ("ProcessDeposit", [ beaconState_il; deposit_il ])
+    Ok
+      (Spectec.Task.Relation ("ProcessDeposit", [ beaconState_il; deposit_il ]))
 
   let source { pre_file; _ } = pre_file
   let expectation { expect; _ } = expect
@@ -194,7 +201,9 @@ module VoluntaryExit = struct
     let* exit_il =
       parse_json ~spec input.voluntary_exit_file "signedVoluntaryExit"
     in
-    Ok ("ProcessVoluntaryExit", [ beaconState_il; exit_il ])
+    Ok
+      (Spectec.Task.Relation
+         ("ProcessVoluntaryExit", [ beaconState_il; exit_il ]))
 
   let source { pre_file; _ } = pre_file
   let expectation { expect; _ } = expect
@@ -231,7 +240,9 @@ module BlsToExecutionChange = struct
     let* change_il =
       parse_json ~spec input.address_change_file "signedBlsToExecutionChange"
     in
-    Ok ("ProcessBlsToExecutionChange", [ beaconState_il; change_il ])
+    Ok
+      (Spectec.Task.Relation
+         ("ProcessBlsToExecutionChange", [ beaconState_il; change_il ]))
 
   let source { pre_file; _ } = pre_file
   let expectation { expect; _ } = expect
@@ -294,7 +305,9 @@ module ExecutionPayload = struct
     let* payload_il =
       parse_json ~spec input.execution_payload_file "beaconBlockBody"
     in
-    Ok ("ProcessExecutionPayload", [ beaconState_il; payload_il ])
+    Ok
+      (Spectec.Task.Relation
+         ("ProcessExecutionPayload", [ beaconState_il; payload_il ]))
 
   let source { pre_file; _ } = pre_file
   let expectation { expect; _ } = expect
@@ -332,7 +345,9 @@ module Withdrawals = struct
     let* payload_il =
       parse_json ~spec input.execution_payload_file "executionPayload"
     in
-    Ok ("ProcessWithdrawals", [ beaconState_il; payload_il ])
+    Ok
+      (Spectec.Task.Relation
+         ("ProcessWithdrawals", [ beaconState_il; payload_il ]))
 
   let source { pre_file; _ } = pre_file
   let expectation { expect; _ } = expect
@@ -367,7 +382,8 @@ module BlockHeader = struct
     let ( let* ) = Result.bind in
     let* beaconState_il = parse_json ~spec input.pre_file "beaconState" in
     let* block_il = parse_json ~spec input.block_file "beaconBlock" in
-    Ok ("ProcessBlockHeader", [ beaconState_il; block_il ])
+    Ok
+      (Spectec.Task.Relation ("ProcessBlockHeader", [ beaconState_il; block_il ]))
 
   let source { pre_file; _ } = pre_file
   let expectation { expect; _ } = expect
@@ -404,7 +420,9 @@ module SyncAggregate = struct
     let* aggregate_il =
       parse_json ~spec input.sync_aggregate_file "syncAggregate"
     in
-    Ok ("ProcessSyncAggregate", [ beaconState_il; aggregate_il ])
+    Ok
+      (Spectec.Task.Relation
+         ("ProcessSyncAggregate", [ beaconState_il; aggregate_il ]))
 
   let source { pre_file; _ } = pre_file
   let expectation { expect; _ } = expect

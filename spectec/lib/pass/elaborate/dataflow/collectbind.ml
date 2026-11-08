@@ -1,4 +1,6 @@
-open Common.Source
+open Common.Annotated
+module Location = Common.Location
+open Lang.Il.Expression
 open Lang.Il
 open Diagnostic
 open Ctx
@@ -8,7 +10,7 @@ module Mixop = Lang.Il.Mixfix
    while enforcing the invariant that binding identifiers
    can only occur in invertible constructs *)
 
-let collect_noninvertible (at : region) (construct : string)
+let collect_noninvertible (at : Location.t) (construct : string)
     (benv : Bind.BEnv.t) : unit =
   if not (Bind.BEnv.is_empty benv) then
     error at
@@ -28,7 +30,7 @@ let rec collect_exp (dctx : Dctx.t) (exp : exp) : Bind.BEnv.t =
   | BoolE _ | NumE _ | TextE _ -> Bind.BEnv.empty
   | VarE id ->
       if VEnv.mem id dctx.bounds then Bind.BEnv.empty
-      else Bind.BEnv.singleton id (exp.note $ exp.at)
+      else Bind.BEnv.singleton id (exp.note.typ $ exp.at)
   | UnE (_, _, exp) ->
       let binds = collect_exp dctx exp in
       collect_noninvertible exp.at "unary operator" binds;

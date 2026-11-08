@@ -1,4 +1,4 @@
-open Common.Source
+open Common.Annotated
 open Lang.Il.Print
 open Ast
 
@@ -31,10 +31,10 @@ and string_of_instr ?(level = 0) ?(index = 0) instr =
   let indent = String.make (level * 2) ' ' in
   let order = Format.asprintf "%s%d. " indent index in
   match instr.it with
-  | RelI { call = { relid; notexp }; iterexps; block } ->
+  | RelI { call = { relid; notexp }; iterinstrs; block } ->
       Format.asprintf "%s(%s: %s)%s" order (string_of_relid relid)
         (string_of_notexp notexp)
-        (string_of_iterexps iterexps)
+        (string_of_iterinstrs iterinstrs)
       ^ "\n\n"
       ^ string_of_instrs ~level:(level + 1) block
   | RelAssertI
@@ -54,20 +54,20 @@ and string_of_instr ?(level = 0) ?(index = 0) instr =
   | OtherwiseI instr ->
       Format.asprintf "%sOtherwise\n\n%s" order
         (string_of_instr ~level:(level + 1) ~index:1 instr)
-  | LetI (exp_l, exp_r, iterexps, block) ->
+  | LetI (exp_l, exp_r, iterinstrs, block) ->
       Format.asprintf "%s(Let %s be %s)%s" order (string_of_exp exp_l)
         (string_of_exp exp_r)
-        (string_of_iterexps iterexps)
+        (string_of_iterinstrs iterinstrs)
       ^ "\n\n"
       ^ string_of_instrs ~level:(level + 1) block
-  | FoldI { fold_iterexp; outer_iterexps; accumulators; body; block } ->
+  | FoldI { fold_iterinstr; outer_iterinstrs; accumulators; body; block } ->
       let string_of_accumulator { Lang.Il.input; output; init; final } =
         Format.asprintf "%s -> %s ... %s -> %s" (string_of_exp init)
           (string_of_var input) (string_of_var output) (string_of_var final)
       in
       Format.asprintf "%sFold%s%s with %s\n\n%s" order
-        (string_of_iterexp fold_iterexp)
-        (string_of_iterexps outer_iterexps)
+        (string_of_iterinstrs [ fold_iterinstr ])
+        (string_of_iterinstrs outer_iterinstrs)
         (String.concat ", " (List.map string_of_accumulator accumulators))
         (string_of_instrs ~level:(level + 1) body)
       ^ "\n\n"

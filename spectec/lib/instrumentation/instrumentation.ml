@@ -1,7 +1,8 @@
 module Dispatcher = Instrumentation_dispatcher.Dispatcher
 module Event = Instrumentation_api.Event
+module Value_event = Instrumentation_api.Value_event
+module Origin = Instrumentation_api.Origin
 module Output = Instrumentation_api.Output
-module Value_hooks = Instrumentation_core.Value_hooks
 module Util = Instrumentation_handlers.Util
 module Static = Instrumentation_static.Static
 module Premise_uid = Instrumentation_static.Premise_uid
@@ -55,13 +56,9 @@ let with_instrumentation (config : Config.t) (spec : Static.spec)
       Exn.try_record_first_error first_error (fun () ->
           Config.close_outputs config)
     in
-    Value_hooks.reset ();
     Exn.raise_recorded_error first_error
   in
   Static.reset_all ();
-  if Config.has_handler config ~name:"dep-pos" then
-    Value_hooks.set Dependency.Provenance_hooks.hooks
-  else Value_hooks.reset ();
   Config.register_static_dependencies config;
   Static.init_all spec;
   Exn.with_cleanup ~cleanup (fun () ->

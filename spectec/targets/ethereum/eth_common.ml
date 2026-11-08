@@ -1,6 +1,7 @@
 (** Ethereum Target - Common utilities and shared functions *)
 
 open Lang
+module Dep_common = Instrumentation.Dependency.Dep_common
 
 (* Source-tree fallback for builds without an installed target package. *)
 let spec_dir =
@@ -19,19 +20,8 @@ module Target : Runner.Target.S = struct
   let name = "ethereum"
   let spec_dir = spec_dir
   let builtins = Builtin_eth.builtins
-
-  (* Monotonic across target runs so vids never repeat in a process. The
-     provenance side table is keyed by vid, so a repeat would alias entries. *)
-  let vid_counter = ref 0
-
-  let with_state f =
-    let fresh_vid () =
-      let vid = !vid_counter in
-      incr vid_counter;
-      vid
-    in
-    Lang.Il.Value.GlobalVidProvider.with_provider fresh_vid f
-
+  let opaque_types = []
+  let with_state f = f ()
   let is_impure_func _ = false
   let is_impure_rel _ = false
   let state_version = ref 0
@@ -51,17 +41,17 @@ let build_tdenv spec =
 let parse_json ~spec filename input_type =
   let tdenv = build_tdenv spec in
   let json_data = Yojson.Safe.from_file filename in
-  let provenance =
+  let origin =
     match String.lowercase_ascii input_type with
-    | "beaconstate" -> Some (Il.JsonState, [])
-    | "signedbeaconblock" -> Some (Il.JsonBlock, [])
+    | "beaconstate" -> Some (Dep_common.origin_of_input_source State)
+    | "signedbeaconblock" -> Some (Dep_common.origin_of_input_source Block)
     | _ -> None
   in
-  Interface.JSON.Parse.json_to_value ~provenance tdenv
-    (Il.Typ.var input_type []) json_data
+  Interface.JSON.Parse.json_to_value ?origin tdenv (Il.Typ.var input_type [])
+    json_data
   |> Result.map_error (fun err ->
          let msg = Interface.JSON.Parse.string_of_error err in
-         Runner.Error.TaskParseError (Common.Source.no_region, msg))
+         Runner.Error.TaskParseError (Common.Location.Unknown, msg))
 
 (* Shared parse_string: parse a JSON string given a type name.
    Requires the caller to provide type context via the spec. *)
@@ -73,14 +63,14 @@ let parse_string ~spec ~filename:_ content =
   (* Try parsing as beaconState by default; callers should use parse_json
      directly when they know the type *)
   Interface.JSON.Parse.json_to_value
-    ~provenance:(Some (Il.JsonState, []))
+    ~origin:(Dep_common.origin_of_input_source State)
     tdenv
     (Il.Typ.var "beaconState" [])
     json
   |> Result.map (fun v -> [ v ])
   |> Result.map_error (fun err ->
          let msg = Interface.JSON.Parse.string_of_error err in
-         Runner.Error.TaskParseError (Common.Source.no_region, msg))
+         Runner.Error.TaskParseError (Common.Location.Unknown, msg))
 
 (* Shared unparse: convert IL values back to JSON string *)
 let unparse ~spec:_ values =
@@ -100,13 +90,17 @@ let save_state filename values =
           try
             Yojson.Safe.to_file filename json;
             Ok ()
-          with Sys_error msg -> Error (Runner.Error.TaskOutputError msg))
+          with Sys_error msg ->
+            Error (Runner.Error.TaskError (Common.Location.Unknown, msg)))
       | Error err ->
           Error
-            (Runner.Error.TaskOutputError
-               (Interface.JSON.Print.string_of_error err)))
+            (Runner.Error.TaskError
+               ( Common.Location.Unknown,
+                 Interface.JSON.Print.string_of_error err )))
   | _ ->
-      Error (Runner.Error.TaskOutputError "task must return exactly one state")
+      Error
+        (Runner.Error.TaskError
+           (Common.Location.Unknown, "task must return exactly one state"))
 
 (* Expectation filter for collecting tests *)
 type expectation_filter = All | PositiveOnly | NegativeOnly
@@ -192,7 +186,7 @@ module JsonParse = struct
   let parse_input ~spec input =
     let ( let* ) = Result.bind in
     let* value = parse_json ~spec input.json_file input.input_type in
-    Ok ("", [ value ])
+    Ok (Spectec.Task.Relation ("", [ value ]))
 
   let parse_string = parse_string
   let unparse = unparse

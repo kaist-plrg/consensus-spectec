@@ -18,6 +18,7 @@ opam install ./spectec.opam
 opam install ./spectec-target-p4.opam
 opam install ./spectec-target-miniml.opam
 opam install ./spectec-target-impty.opam
+opam install ./spectec-target-itpl.opam
 ```
 
 The `spectec` package includes the Ethereum command plugin and the Capella and Deneb specifications. Each optional target package installs its own command plugin and default specification. The `spectec` executable discovers installed target plugins at startup.
@@ -140,7 +141,7 @@ spectec/testdata/        test inputs
 
 ### Commands
 
-The P4, Mini-ML, and Impty examples require the corresponding target package. Ethereum support is included in this repository's `spectec` package.
+The P4, Mini-ML, Impty, and ITPL examples require the corresponding target package. Ethereum support is included in this repository's `spectec` package.
 
 ```bash
 # print out the IL representation of a SpecTec spec
@@ -157,6 +158,31 @@ p4_program=spectec/testdata/interp/p4/p4c/p4_16_samples/empty.p4
 # run a P4 program based on SpecTec IL/SL
 ./spectecx p4 typecheck -i spectec/testdata/interp/p4/p4c/includes -p "$p4_program"
 ./spectecx p4 typecheck -i spectec/testdata/interp/p4/p4c/includes -p "$p4_program" --sl
+
+# check determinism while typechecking a P4 program
+./spectecx p4 typecheck -i spectec/testdata/interp/p4/p4c/includes -p "$p4_program" --det
+
+# instantiate a P4 program using eBPF extern constructors
+./spectecx p4 instantiate -p spectec/test/interp/p4/counter-array.p4 --sl
+
+## ITPL commands
+
+./spectecx ae eval -p spectec/testdata/interp/itpl/ae/arithmetic.ae
+./spectecx vae eval -p spectec/testdata/interp/itpl/vae/shadowing.vae --sl
+./spectecx f1vae eval -p spectec/testdata/interp/itpl/f1vae/twice.f1vae
+./spectecx fvae eval -p spectec/testdata/interp/itpl/fvae/capture.fvae --sl
+./spectecx fae eval -p spectec/testdata/interp/itpl/fae/sugar.fae
+./spectecx rfae eval -p spectec/testdata/interp/itpl/rfae/sum.rfae --sl
+./spectecx bfae eval -p spectec/testdata/interp/itpl/bfae/alias.bfae
+./spectecx mfae eval -p spectec/testdata/interp/itpl/mfae/counter.mfae --sl
+./spectecx lfae eval -p spectec/testdata/interp/itpl/lfae/unused.lfae
+./spectecx kfae eval -p spectec/testdata/interp/itpl/kfae/escape.kfae --sl
+./spectecx tfae typecheck -p spectec/testdata/interp/itpl/tfae/twice.tfae
+./spectecx trfae eval -p spectec/testdata/interp/itpl/trfae/sum.trfae --sl
+./spectecx tvfae typecheck -p spectec/testdata/interp/itpl/tvfae/variant.tvfae
+./spectecx ptfae typecheck -p spectec/testdata/interp/itpl/ptfae/identity.ptfae
+./spectecx stfae typecheck -p spectec/testdata/interp/itpl/stfae/width.stfae
+./spectecx tifae typecheck -p spectec/testdata/interp/itpl/tifae/identity.tifae
 ```
 
 Ethereum commands are grouped under `ethereum`:
@@ -186,6 +212,12 @@ The differential runner uses the same state-transition command. Its `--run-mode`
 ```bash
 uv run --project consensus-specs --no-sync python run_test_suite.py Converter/OfficialTestSuite/capella/sanity/blocks --converter-dir Converter --spectec-bin ./spectecx --fork capella --run-mode il
 ```
+
+The `p4 instantiate` command typechecks a P4 program and creates its initial objects and state. It currently supports the eBPF `CounterArray` extern, an array of counters initialized to zero.
+
+The [ITPL specifications](spectec/specs/itpl/README.md) follow the languages in chapters 6 through 24 of *Introduction to Programming Languages* by Jaemin Hong and Sukyoung Ryu, the textbook for KAIST CS320.
+
+`--det` is opt-in and works with IL, SL, and PL alike. It rejects an input as soon as more than one alternative succeeds for it, even when the alternatives agree on their output, and it only checks inputs actually supplied to a run, not every input the spec could ever see. Evaluating the extra alternatives can invoke host operations (e.g. a builtin with a side effect) that are not rolled back. A resumed checkpoint must have been saved with the same `--det` setting as the run resuming it.
 
 ### Editor support
 
@@ -219,7 +251,7 @@ Targets live in `spectec/targets/<name>/`, separate from `spectec/lib/`. The reu
 6. Declare a target package in `dune-project`, including any named installation directories for packaged specifications.
 7. Add a Dune `plugin` stanza that installs the entry module in the core package's `target_plugins` directory. Use `generate_sites_module` when target code needs to locate packaged specifications.
 
-Ethereum is bundled with the core package. P4, Mini-ML, and Impty have separate packages. Each target registers through a plugin, so adding a target does not require changing `spectec/bin/main.ml`.
+Ethereum is bundled with the core package. P4, Mini-ML, Impty, and ITPL have separate packages. Each target registers through a plugin, so adding a target does not require changing `spectec/bin/main.ml`.
 
 Run the checkout commands from the repository root, where `Makefile` is located.
 
@@ -415,7 +447,7 @@ uv run --project consensus-specs --no-sync python check_results.py ./results/cov
 ```
 
 
-Contributions are welcome. Open an issue or pull request. See [CONTRIBUTING.md](CONTRIBUTING.md) for code conventions, commit and PR format, and rebase guidance.
+Contributions are welcome through issues and pull requests. [CONTRIBUTING.md](CONTRIBUTING.md) describes what contributors are expected to do.
 
 ### License
 

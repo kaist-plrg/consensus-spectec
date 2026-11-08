@@ -5,6 +5,7 @@
   spectec.common
   spectec.lang
   spectec.envs
-  spectec.instrumentation.core
+  spectec.instrumentation.api
+  spectec.instrumentation.dispatcher
   bignum
   yojson))

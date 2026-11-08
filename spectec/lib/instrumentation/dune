@@ -7,7 +7,6 @@
   instrumentation_api
   instrumentation_common
   instrumentation_config
-  instrumentation_core
   instrumentation_dispatcher
   instrumentation_handlers
   instrumentation_spec

@@ -5,9 +5,7 @@ module Il = Lang.Il
 (* === Types === *)
 
 type input_source = State | Block
-
-(* Type equation with Il.json_step — values of these types are identical. *)
-type field_step = Il.json_step = FieldAccess of string | IndexAccess of int
+type field_step = FieldAccess of string | IndexAccess of int
 type field_path = { source : input_source; steps : field_step list }
 
 (* === Centralized Whitelist === *)
@@ -20,6 +18,11 @@ val is_whitelisted : string -> bool
 val string_of_input_source : input_source -> string
 val string_of_field_step : field_step -> string
 val string_of_field_path : field_path -> string
+
+(* === Input origins === *)
+
+val origin_of_input_source : input_source -> Instrumentation_api.Origin.t
+val field_path_of_origin_opt : Instrumentation_api.Origin.t -> field_path option
 
 (* === Readsets: provenance rules for the spec's generic list helpers === *)
 
@@ -35,4 +38,4 @@ val call_provenance :
   lookup:(string -> readset option) ->
   string ->
   Il.Value.t list ->
-  Il.json_provenance list
+  Instrumentation_api.Origin.t list

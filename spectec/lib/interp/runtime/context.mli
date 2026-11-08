@@ -1,0 +1,192 @@
+open Common.Domain
+module Var = Envs.Interp.Var
+module Value = Lang.Il.Value
+module Typdef = Envs.Il.Typdef
+
+exception Error of Common.Location.t * string
+
+(** Raise [Error] with the combined failure locations and messages on failure.
+*)
+val get_exn : 'a Common.Attempt.attempt -> 'a
+
+module Make (Func : sig
+  type t
+end) (Rel : sig
+  type t
+end) : sig
+  (** Binding updates preserve the original context. Derived contexts share
+      global definitions, builtins, and the mutable invocation cache. *)
+  type t
+
+  module Global : sig
+    type t
+
+    type definition =
+      | Syntax of TId.t * Typdef.t
+      | Function of FId.t * Func.t
+      | Relation of RId.t * Rel.t
+
+    (** Reject duplicate identifiers within each definition category. *)
+    val of_definitions_exn : definition list -> t
+  end
+
+  val make :
+    Global.t ->
+    builtins:Builtins.t ->
+    cache:Cache.t ->
+    opaque_types:Opaque_types.t ->
+    check_determinism:bool ->
+    t
+
+  val find_value_opt : t -> var:Var.t -> Value.t option
+  val find_value_exn : t -> var:Var.t -> Value.t
+
+  (** Type and function lookups prefer local bindings to global definitions. *)
+  val find_typdef_opt : t -> id:TId.t -> Typdef.t option
+
+  val find_typdef_exn : t -> id:TId.t -> Typdef.t
+  val find_func_opt : t -> id:FId.t -> Func.t option
+  val find_func_exn : t -> id:FId.t -> Func.t
+  val find_rel_opt : t -> id:RId.t -> Rel.t option
+  val find_rel_exn : t -> id:RId.t -> Rel.t
+  val has_value : t -> var:Var.t -> bool
+  val has_local_func : t -> id:FId.t -> bool
+
+  (** Checked insertion rejects existing bindings and repeated incoming keys.
+      Type and function checks also include visible global definitions. *)
+  val add_value_exn : t -> var:Var.t -> value:Value.t -> t
+
+  val add_values_exn : t -> bindings:(Var.t * Value.t) list -> t
+  val add_typdef_exn : t -> id:TId.t -> typdef:Typdef.t -> t
+  val add_typdefs_exn : t -> bindings:(TId.t * Typdef.t) list -> t
+  val add_func_exn : t -> id:FId.t -> func:Func.t -> t
+
+  (** Insert or replace a value binding. *)
+  val set_value : t -> var:Var.t -> value:Value.t -> t
+
+  (** Insert or replace value bindings. Later entries take precedence when a
+      variable occurs more than once. *)
+  val set_values : t -> bindings:(Var.t * Value.t) list -> t
+
+  (** Remove local type, function, and value bindings. Global definitions,
+      builtins, the cache, and the determinism setting are retained. *)
+  val for_call : t -> t
+
+  (** Retain local types and functions, without local value bindings. *)
+  val without_values : t -> t
+
+  (** Substitute local type bindings in [targs]. *)
+  val resolve_targs : t -> targs:Lang.Il.targ list -> Lang.Il.targ list
+
+  (** {2 Iteration}
+
+      Expansion binds input variables in one context per body evaluation.
+      Collection combines body results into option/list values or bindings.
+      Nested [iterexps] and [iterinstrs] are ordered innermost first. *)
+
+  (** Expand [vars] into body contexts. Mixed option presence or unequal list
+      lengths return [Error]. Empty [vars] yields one context for [Opt], none
+      for [List]. *)
+  val expand_iteration_inputs :
+    t ->
+    iter:Lang.Il.iter ->
+    vars:Lang.Il.var list ->
+    t list Common.Attempt.attempt
+
+  (** Collect body results into an option/list of complete type [result_typ].
+      Raise [Error] for multiple results under [Opt]. *)
+  val collect_iteration_value :
+    Value.t list -> iter:Lang.Il.iter -> result_typ:Lang.Il.typ' -> Value.t
+
+  (** Collect [vars] across body result contexts, appending [iter] to each
+      binding's iterations. Raise [Error] for missing bindings or multiple
+      values for an [Opt] binding. *)
+  val collect_iteration_bindings :
+    t list ->
+    iter:Lang.Il.iter ->
+    vars:Lang.Il.var list ->
+    (Var.t * Value.t) list
+
+  type accumulator = {
+    input : Lang.Il.var;
+    output : Lang.Il.var;
+    final : Lang.Il.var;
+    init : Value.t;
+  }
+
+  (** Fold body [f] over the elements of the lists bound to the [vars_input] of
+      [iterinstr]. Each run binds every accumulator input to the previous run's
+      output, or to the accumulator's [init] value on the first run. Collect the
+      [vars_output] of all runs as lists, and bind each accumulator's final
+      variable to the last output. With no body runs, bind each final variable
+      to the accumulator's [init] value. Report each collected list through
+      {!emit_iteration}. Stop at the first [Error]. *)
+  val fold_iterations :
+    t ->
+    iterinstr:Lang.Il.iterinstr ->
+    accumulators:accumulator list ->
+    f:(t -> t Common.Attempt.attempt) ->
+    t Common.Attempt.attempt
+
+  (** For each record in [iterinstrs], expand its [vars_input] and collect its
+      [vars_output], replacing existing output bindings. Stop at the first
+      [Error]. Apply [f] directly when [iterinstrs] is empty. *)
+  val eval_iterations :
+    t ->
+    iterinstrs:Lang.Il.iterinstr list ->
+    f:(t -> t Common.Attempt.attempt) ->
+    t Common.Attempt.attempt
+
+  (** Test [f] in every body context, stopping at [false] or an input mismatch.
+      No body contexts yields [Ok true]. Empty [iterexps] tests [f] directly. *)
+  val for_all_body_contexts :
+    t ->
+    iterexps:Lang.Il.iterexp list ->
+    f:(t -> bool) ->
+    bool Common.Attempt.attempt
+
+  val has_determinism_checks : t -> bool
+  val opaque_types : t -> Opaque_types.t
+  val has_builtin : t -> id:Lang.Il.id -> bool
+
+  val call_builtin :
+    t ->
+    callback:Builtins.Callback.t ->
+    id:Lang.Il.id ->
+    targs:Lang.Il.targ list ->
+    values:Value.t list ->
+    Value.t Builtins.result
+
+  val check_inputs_exn :
+    t ->
+    kind:[ `Relation | `Function ] ->
+    id:Lang.Il.id ->
+    signature:Lang.Il.tparam list * Lang.Il.typ list ->
+    targs:Lang.Il.targ list ->
+    values:Value.t list ->
+    unit
+
+  (** Return [f ()] or a cached result for the same [id] and equal [values]. The
+      second component is [true] for a cache hit. *)
+  val memoize_func :
+    t ->
+    id:FId.t ->
+    values:Value.t list ->
+    f:(unit -> (Value.t, 'error) result) ->
+    (Value.t, 'error) result * bool
+
+  (** Like {!memoize_func}, for relation outputs. *)
+  val memoize_rel :
+    t ->
+    id:RId.t ->
+    values:Value.t list ->
+    f:(unit -> (Value.t list, 'error) result) ->
+    (Value.t list, 'error) result * bool
+
+  (** Emit a [Combined] value event for [value], built by an iteration of kind
+      [iter] over [vars]. The event's sources are the lists or options bound to
+      [vars] in the context, followed by the elements or content of [value].
+      Does nothing when no value handler subscribes. *)
+  val emit_iteration :
+    t -> vars:Lang.Il.var list -> iter:Lang.Il.iter -> value:Value.t -> unit
+end

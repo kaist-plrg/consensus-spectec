@@ -2,7 +2,7 @@
     which ones execute. [Summary] reports only uncovered branches; [Full] emits
     every relation and function with coverage annotations. *)
 
-open Common.Source
+open Common.Annotated
 module Il = Lang.Il
 module Sl = Lang.Sl
 open Util
@@ -76,6 +76,8 @@ module M : Instrumentation_api.Handler.S = struct
                 State.all_clauses := (id.it, 0) :: !State.all_clauses
             | _ -> ())
           sl_spec
+
+  let handle_value = None
 
   let handle : Instrumentation_api.Event.t -> unit = function
     | Rule_exit { id; rule_id; at = _; success } ->

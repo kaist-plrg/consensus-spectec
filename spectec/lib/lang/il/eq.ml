@@ -1,4 +1,5 @@
 open Xl
+open Types.Expression
 open Types
 
 (* Identifiers *)
@@ -93,6 +94,7 @@ and eq_value ?(dbg = false) (value_a : value) (value_b : value) : bool =
     | OptV None, OptV None -> true
     | ListV values_a, ListV values_b -> eq_values ~dbg values_a values_b
     | FuncV id_a, FuncV id_b -> id_a = id_b
+    | OpaqueV left, OpaqueV right -> Opaque.compare left right = 0
     | _ -> false
   in
   if dbg && not eq then
@@ -173,6 +175,16 @@ and eq_iterexp (iterexp_a : iterexp) (iterexp_b : iterexp) : bool =
 and eq_iterexps (iterexps_a : iterexp list) (iterexps_b : iterexp list) : bool =
   List.length iterexps_a = List.length iterexps_b
   && List.for_all2 eq_iterexp iterexps_a iterexps_b
+
+and eq_iterinstr (iterinstr_a : iterinstr) (iterinstr_b : iterinstr) : bool =
+  eq_iter iterinstr_a.iter iterinstr_b.iter
+  && eq_vars iterinstr_a.vars_input iterinstr_b.vars_input
+  && eq_vars iterinstr_a.vars_output iterinstr_b.vars_output
+
+and eq_iterinstrs (iterinstrs_a : iterinstr list)
+    (iterinstrs_b : iterinstr list) : bool =
+  List.length iterinstrs_a = List.length iterinstrs_b
+  && List.for_all2 eq_iterinstr iterinstrs_a iterinstrs_b
 
 (* Patterns *)
 

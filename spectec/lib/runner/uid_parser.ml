@@ -30,7 +30,7 @@ let parse_uid_file (filename : string) : int list =
 (* Validate UIDs against coverage data, returning only valid ones *)
 let validate_uids (uids : int list)
     (coverage : Instrumentation.Node_coverage_il.result option) :
-    (int * (Common.Source.region * string)) list =
+    (int * (Common.Location.t * string)) list =
   match coverage with
   | None -> []
   | Some cov ->

@@ -108,7 +108,10 @@ let range ~at (count : Num.t) : Value.t result =
     if n < 0 then Error (runtime at "range: count must be non-negative")
     else
       let range_list = List.init n (fun i -> Value.nat (Bigint.of_int i)) in
-      Ok (Value.list' Typ.int range_list)
+      Ok
+        (Value.list
+           Common.Annotated.(Typ.int $ Common.Location.Unknown)
+           range_list)
   with _ -> Error (runtime at "range: count is too large to be an integer")
 
 (* (* dec $enumerate_<X>(X*) : enumerated_<X>* *)

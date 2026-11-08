@@ -1,24 +1,26 @@
 (* Common types and utilities for dependency analysis.
 
-   Shared between positive (mutation suggestion) analysis and the runner
-   (json_mutator, testgen).
+   Shared between positive (mutation suggestion) analysis, the runner
+   (json_mutator, testgen) and the Ethereum target's input parsing.
 
    Key components:
    - input_source: Tracks which top-level input a path comes from (State/Block)
    - field_step: A single step in a path (field name or array index).
-     Defined as a type equation with Il.json_step so provenance from JSON
-     loading requires zero conversion in positive.ml.
    - field_path: Complete path to a mutable location.
+   - origin_of_input_source, field_path_of_origin_opt: Convert input sources
+     to Origin roots labeled "state" and "block", and such origins to field
+     paths.
    - eth_whitelist: Centralized list of relations to analyze.
 *)
 
-open Common.Source
+open Common.Annotated
 module Il = Lang.Il
+module Origin = Instrumentation_api.Origin
 
 (* === Types === *)
 
 type input_source = State | Block
-type field_step = Il.json_step = FieldAccess of string | IndexAccess of int
+type field_step = FieldAccess of string | IndexAccess of int
 type field_path = { source : input_source; steps : field_step list }
 
 (* === Centralized Whitelist === *)
@@ -75,6 +77,26 @@ let string_of_field_path (path : field_path) : string =
   let steps_str = String.concat "" (List.map string_of_field_step path.steps) in
   base ^ steps_str
 
+(* === Input origins === *)
+
+(* Readsets and origin paths name a field by the same JSON key. *)
+let atom_field (atom : Lang.Xl.Atom.t) : string =
+  Lang.Xl.Atom.to_string atom |> String.lowercase_ascii
+
+let origin_of_input_source = function
+  | State -> Origin.make ~label:"state"
+  | Block -> Origin.make ~label:"block"
+
+let field_path_of_origin_opt ({ label; path } : Origin.t) : field_path option =
+  let step : Origin.step -> field_step = function
+    | Struct atom -> FieldAccess (atom_field atom)
+    | List index -> IndexAccess index
+  in
+  let source =
+    match label with "state" -> Some State | "block" -> Some Block | _ -> None
+  in
+  Option.map (fun source -> { source; steps = List.map step path }) source
+
 (* === Readsets: provenance rules for the spec's generic list helpers === *)
 
 (* A filter's result depends on the fields its predicate reads on every
@@ -88,17 +110,14 @@ module StringMap = Map.Make (String)
 (* Field chains a predicate reads, per component of its element parameter *)
 type readset = field_step list list array
 
-let atom_field (atom : Il.atom) : string =
-  Lang.Xl.Atom.to_string atom.it |> String.lowercase_ascii
-
 let rec collect_chains (exp : Il.exp) : (string * field_step list) list =
   match exp.it with
-  | Il.DotE _ ->
+  | Il.Expression.DotE _ ->
       let rec peel (e : Il.exp) steps =
         match e.it with
-        | Il.DotE (base, atom) ->
-            peel base (FieldAccess (atom_field atom) :: steps)
-        | Il.VarE id -> [ (id.it, steps) ]
+        | Il.Expression.DotE (base, atom) ->
+            peel base (FieldAccess (atom_field atom.it) :: steps)
+        | Il.Expression.VarE id -> [ (id.it, steps) ]
         | _ -> []
       in
       peel exp []
@@ -124,11 +143,13 @@ let rec collect_chains_prem (prem : Il.prem) : (string * field_step list) list =
 let comp_vars (clause : Il.clause) : string option list =
   let { Il.args = params; _ } = clause.it in
   match params with
-  | { it = Il.ExpA { it = Il.VarE v; _ }; _ } :: _ -> [ Some v.it ]
-  | { it = Il.ExpA { it = Il.TupleE comps; _ }; _ } :: _ ->
+  | { it = Il.Expression.ExpA { it = Il.Expression.VarE v; _ }; _ } :: _ ->
+      [ Some v.it ]
+  | { it = Il.Expression.ExpA { it = Il.Expression.TupleE comps; _ }; _ } :: _
+    ->
       List.map
         (fun (c : Il.exp) ->
-          match c.it with Il.VarE v -> Some v.it | _ -> None)
+          match c.it with Il.Expression.VarE v -> Some v.it | _ -> None)
         comps
   | _ -> []
 
@@ -179,27 +200,27 @@ let rec walk_chain (v : Il.Value.t) (chain : field_step list) :
       | Il.StructV fields ->
           List.find_map
             (fun (atom, value_f) ->
-              if atom_field atom = f then walk_chain value_f rest else None)
+              if atom_field atom.it = f then walk_chain value_f rest else None)
             fields
       | _ -> None)
   | IndexAccess _ :: _ -> None
 
-let chain_provs (chains : field_step list list) (v : Il.Value.t) :
-    Il.json_provenance list =
-  if chains = [] then Provenance_hooks.provenance_of v
+let chain_provs (chains : field_step list list) (v : Il.Value.t) : Origin.t list
+    =
+  if chains = [] then Provenance.origins v
   else
     List.concat_map
       (fun chain ->
-        let fallback = Provenance_hooks.provenance_of v in
+        let fallback = Provenance.origins v in
         match walk_chain v chain with
         | Some sub -> (
-            match Provenance_hooks.provenance_of sub with
+            match Provenance.origins sub with
             | [] -> fallback
             | sub_provs -> sub_provs)
         | None -> fallback)
       chains
 
-let elem_provs (rs : readset) (elem : Il.Value.t) : Il.json_provenance list =
+let elem_provs (rs : readset) (elem : Il.Value.t) : Origin.t list =
   match elem.it with
   | Il.TupleV comps ->
       List.concat
@@ -216,7 +237,7 @@ let elem_provs (rs : readset) (elem : Il.Value.t) : Il.json_provenance list =
    combinator passes its predicate parameter under the local binding, not
    the global def id. *)
 let call_provenance ~(lookup : string -> readset option) (id : string)
-    (values_input : Il.Value.t list) : Il.json_provenance list =
+    (values_input : Il.Value.t list) : Origin.t list =
   match id with
   | "filter_list_" | "filter_list_2_" | "fold_" -> (
       let list_arg =
@@ -228,9 +249,9 @@ let call_provenance ~(lookup : string -> readset option) (id : string)
       match list_arg with
       | Some ({ it = Il.ListV elems; _ } as lst) ->
           if id = "fold_" then
-            Provenance_hooks.provenance_of lst
+            Provenance.origins lst
             @ List.concat_map
-                (fun (e : Il.Value.t) -> Provenance_hooks.provenance_of e)
+                (fun (e : Il.Value.t) -> Provenance.origins e)
                 elems
           else
             let rs =
@@ -243,7 +264,6 @@ let call_provenance ~(lookup : string -> readset option) (id : string)
               | Some fid -> Option.value ~default:[||] (lookup fid.it)
               | None -> [||]
             in
-            Provenance_hooks.provenance_of lst
-            @ List.concat_map (elem_provs rs) elems
+            Provenance.origins lst @ List.concat_map (elem_provs rs) elems
       | _ -> [])
   | _ -> []

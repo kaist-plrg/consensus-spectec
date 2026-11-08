@@ -89,9 +89,11 @@ module StateTransition = struct
     let* beaconState_il = parse_json ~spec input.pre_file "beaconState" in
     let* block_il = parse_json ~spec input.block_file "signedBeaconBlock" in
     Ok
-      ( "State_transition",
-        [ beaconState_il; block_il; Lang.Il.Value.bool input.validate_result ]
-      )
+      (Spectec.Task.Relation
+         ( "State_transition",
+           [
+             beaconState_il; block_il; Lang.Il.Value.bool input.validate_result;
+           ] ))
 
   let parse_string = parse_string
   let unparse = unparse

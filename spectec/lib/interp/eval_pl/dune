@@ -8,6 +8,8 @@
   spectec.diagnostic
   spectec.lang
   spectec.instrumentation
+  interp_runtime
   builtins
-  cache
+  opaque_types
+  value_typecheck
   target))

@@ -16,6 +16,7 @@ val make_task :
   string * Core.Command.t
 
 val make_parse :
+  ?tree_flag:string ->
   (module Spectec.Target.S) ->
   name:string ->
   summary:string ->

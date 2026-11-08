@@ -1,4 +1,5 @@
-open Common.Source
+module Location = Common.Location
+open Common.Annotated
 open Lang.Il
 module Xl = Lang.Xl
 
@@ -8,7 +9,7 @@ let string_of_error (e : error) : string =
   match e with
   | TypeMismatch (msg, typ) ->
       Printf.sprintf "Type mismatch: %s. Got type: %s" msg
-        (Print.string_of_typ (typ $ no_region))
+        (Print.string_of_typ (typ $ Location.Unknown))
 
 let result_all (l : ('a, error) result list) : ('a list, error) result =
   let rec aux acc = function

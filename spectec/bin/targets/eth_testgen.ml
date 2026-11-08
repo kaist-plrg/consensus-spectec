@@ -63,17 +63,10 @@ let analyze_test_case ~spec ~test_dir test_id target_uids =
         }
     in
     let handlers = [ (module (val handler) : Instrumentation.Handler.S) ] in
-    Instrumentation.Dependency.Provenance_hooks.clear ();
-    Instrumentation.Value_hooks.set
-      Instrumentation.Dependency.Provenance_hooks.hooks;
     Instrumentation.Dispatcher.init ~spec:(Instrumentation.Handler.IlSpec spec)
       ~handlers;
     let result =
-      Fun.protect
-        ~finally:(fun () ->
-          Instrumentation.Dispatcher.finish ();
-          Instrumentation.Value_hooks.reset ())
-        (fun () ->
+      Fun.protect ~finally:Instrumentation.Dispatcher.finish (fun () ->
           Instrumentation.Dispatcher.emit
             (Instrumentation.Event.Test_start { test_case_id = test_id });
           Fun.protect
@@ -141,13 +134,13 @@ let command =
         if verify then
           Error
             (Spectec.Error.ConfigError
-               (Common.Source.no_region, "testgen verification is not supported"))
+               (Common.Location.Unknown, "testgen verification is not supported"))
         else Ok ()
       in
       let* cfg = Cli.Config_file.load ~target:Target.name () in
       let source =
-        Cli.Spec_source.resolve ~cli:cli_source ~config:cfg.spec_source
-          ~default_dir:Target.spec_dir
+        Cli.Spec_source.resolve ~from_cli:cli_source
+          ~from_config_file:cfg.spec_source ~default_dir:Target.spec_dir
       in
       let test_dir =
         match test_dir with

@@ -1,4 +1,4 @@
-open Common.Source
+open Common.Annotated
 open Types
 
 (* Identifiers *)
@@ -67,6 +67,10 @@ let eq_accumulators (accumulators_a : accumulator list)
     (accumulators_b : accumulator list) : bool =
   List.length accumulators_a = List.length accumulators_b
   && List.for_all2 eq_accumulator accumulators_a accumulators_b
+
+let eq_iterinstrs (iterinstrs_a : iterinstr list)
+    (iterinstrs_b : iterinstr list) : bool =
+  Il.Eq.eq_iterinstrs iterinstrs_a iterinstrs_b
 
 (* Relation calls *)
 
@@ -152,10 +156,10 @@ and eq_guard (guard_a : guard) (guard_b : guard) : bool =
 
 and eq_instr (instr_a : instr) (instr_b : instr) : bool =
   match (instr_a.it, instr_b.it) with
-  | ( RelI { call = call_a; iterexps = iterexps_a; block = block_a },
-      RelI { call = call_b; iterexps = iterexps_b; block = block_b } ) ->
+  | ( RelI { call = call_a; iterinstrs = iterinstrs_a; block = block_a },
+      RelI { call = call_b; iterinstrs = iterinstrs_b; block = block_b } ) ->
       eq_relcall call_a call_b
-      && eq_iterexps iterexps_a iterexps_b
+      && eq_iterinstrs iterinstrs_a iterinstrs_b
       && eq_instrs block_a block_b
   | ( RelAssertI
         {
@@ -189,29 +193,29 @@ and eq_instr (instr_a : instr) (instr_b : instr) : bool =
       eq_exp exp_a exp_b && eq_cases cases_a cases_b
       && eq_phantom_opt phantom_opt_a phantom_opt_b
   | OtherwiseI instr_a, OtherwiseI instr_b -> eq_instr instr_a instr_b
-  | ( LetI (exp_l_a, exp_r_a, iterexps_a, block_a),
-      LetI (exp_l_b, exp_r_b, iterexps_b, block_b) ) ->
+  | ( LetI (exp_l_a, exp_r_a, iterinstrs_a, block_a),
+      LetI (exp_l_b, exp_r_b, iterinstrs_b, block_b) ) ->
       eq_exp exp_l_a exp_l_b && eq_exp exp_r_a exp_r_b
-      && eq_iterexps iterexps_a iterexps_b
+      && eq_iterinstrs iterinstrs_a iterinstrs_b
       && eq_instrs block_a block_b
   | ( FoldI
         {
-          fold_iterexp = iterexp_a;
-          outer_iterexps = iterexps_a;
+          fold_iterinstr = iterinstr_a;
+          outer_iterinstrs = iterinstrs_a;
           accumulators = accumulators_a;
           body = body_a;
           block = block_a;
         },
       FoldI
         {
-          fold_iterexp = iterexp_b;
-          outer_iterexps = iterexps_b;
+          fold_iterinstr = iterinstr_b;
+          outer_iterinstrs = iterinstrs_b;
           accumulators = accumulators_b;
           body = body_b;
           block = block_b;
         } ) ->
-      eq_iterexp iterexp_a iterexp_b
-      && eq_iterexps iterexps_a iterexps_b
+      Il.Eq.eq_iterinstr iterinstr_a iterinstr_b
+      && eq_iterinstrs iterinstrs_a iterinstrs_b
       && eq_accumulators accumulators_a accumulators_b
       && eq_instrs body_a body_b && eq_instrs block_a block_b
   | ResultI exps_a, ResultI exps_b -> eq_exps exps_a exps_b

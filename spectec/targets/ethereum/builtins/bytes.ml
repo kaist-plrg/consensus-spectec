@@ -1,4 +1,5 @@
-open Common.Source
+module Location = Common.Location
+open Common.Annotated
 open Lang.Xl
 module Value = Lang.Il.Value
 open Value
@@ -34,47 +35,47 @@ let bigint_of_be_bytes (b : Bytes.t) : Bigint.t =
 
 (* Helper functions for byte validation *)
 
-let validate_bytes32 (at : region) (x : Bigint.t) : unit result =
+let validate_bytes32 (at : Location.t) (x : Bigint.t) : unit result =
   let bytes32_max = Bigint.(pow (of_int 2) (of_int 256)) in
   if Bigint.(x >= zero && x < bytes32_max) then Ok ()
   else Error (runtime at "bytes32: value must be in range [0, 2^256)")
 
-let validate_bytes31 (at : region) (x : Bigint.t) : unit result =
+let validate_bytes31 (at : Location.t) (x : Bigint.t) : unit result =
   let bytes31_max = Bigint.(pow (of_int 2) (of_int 248)) in
   if Bigint.(x >= zero && x < bytes31_max) then Ok ()
   else Error (runtime at "bytes31: value must be in range [0, 2^248)")
 
-let validate_bytes28 (at : region) (x : Bigint.t) : unit result =
+let validate_bytes28 (at : Location.t) (x : Bigint.t) : unit result =
   let bytes28_max = Bigint.(pow (of_int 2) (of_int 224)) in
   if Bigint.(x >= zero && x < bytes28_max) then Ok ()
   else Error (runtime at "bytes28: value must be in range [0, 2^224)")
 
-let validate_bytes20 (at : region) (x : Bigint.t) : unit result =
+let validate_bytes20 (at : Location.t) (x : Bigint.t) : unit result =
   let bytes20_max = Bigint.(pow (of_int 2) (of_int 160)) in
   if Bigint.(x >= zero && x < bytes20_max) then Ok ()
   else Error (runtime at "bytes20: value must be in range [0, 2^160)")
 
-let validate_bytes4 (at : region) (x : Bigint.t) : unit result =
+let validate_bytes4 (at : Location.t) (x : Bigint.t) : unit result =
   let bytes4_max = Bigint.(pow (of_int 2) (of_int 32)) in
   if Bigint.(x >= zero && x < bytes4_max) then Ok ()
   else Error (runtime at "bytes4: value must be in range [0, 2^32)")
 
-let validate_bytes1 (at : region) (x : Bigint.t) : unit result =
+let validate_bytes1 (at : Location.t) (x : Bigint.t) : unit result =
   let bytes1_max = Bigint.(pow (of_int 2) (of_int 8)) in
   if Bigint.(x >= zero && x < bytes1_max) then Ok ()
   else Error (runtime at "bytes1: value must be in range [0, 2^8)")
 
-let validate_uint8 (at : region) (x : Bigint.t) : unit result =
+let validate_uint8 (at : Location.t) (x : Bigint.t) : unit result =
   let uint8_max = Bigint.(pow (of_int 2) (of_int 8)) in
   if Bigint.(x >= zero && x < uint8_max) then Ok ()
   else Error (runtime at "uint8: value must be in range [0, 2^8)")
 
-let validate_uint32 (at : region) (x : Bigint.t) : unit result =
+let validate_uint32 (at : Location.t) (x : Bigint.t) : unit result =
   let uint32_max = Bigint.(pow (of_int 2) (of_int 32)) in
   if Bigint.(x >= zero && x < uint32_max) then Ok ()
   else Error (runtime at "uint32: value must be in range [0, 2^32)")
 
-let validate_uint64 (at : region) (x : Bigint.t) : unit result =
+let validate_uint64 (at : Location.t) (x : Bigint.t) : unit result =
   let uint64_max = Bigint.(pow (of_int 2) (of_int 64)) in
   if Bigint.(x >= zero && x < uint64_max) then Ok ()
   else Error (runtime at "uint64: value must be in range [0, 2^64)")
@@ -225,7 +226,7 @@ let bytes32_to_bytes1_list ~at (bytes32_val : Num.t) : Value.t result =
         let byte_val = Bigint.bit_and byte_val (Bigint.of_int 255) in
         Value.nat byte_val)
   in
-  let typ = Lang.Il.NumT `NatT $ no_region in
+  let typ = Lang.Il.NumT `NatT $ Location.Unknown in
   Ok (Value.list typ bytes1_list)
 
 (* dec $bytes1_to_uint64(bytes1) : uint64 *)

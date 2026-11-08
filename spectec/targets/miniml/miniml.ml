@@ -26,16 +26,8 @@ module Target : Spectec.Target.S = struct
     | [] -> "spectec/specs/miniml"
 
   let builtins : (string * Builtins.Define.t) list = []
-
-  let with_state f =
-    let vid_counter = ref 0 in
-    let fresh_vid () =
-      let v = !vid_counter in
-      incr vid_counter;
-      v
-    in
-    Lang.Il.Value.GlobalVidProvider.with_provider fresh_vid f
-
+  let opaque_types = []
+  let with_state f = f ()
   let is_impure_func _ = false
   let is_impure_rel _ = false
   let state_version = ref 0
@@ -73,7 +65,8 @@ module Eval = struct
   let collect = collect_with ~classify:eval_classify
 
   let parse_input ~spec:_ { filename; _ } =
-    Lexer.parse_file filename |> Result.map (fun v -> ("Eval_expr", [ v ]))
+    Lexer.parse_file filename
+    |> Result.map (fun v -> Spectec.Task.Relation ("Eval_expr", [ v ]))
 
   let format_output = function
     | [ v ] -> Unparse.print_expr v

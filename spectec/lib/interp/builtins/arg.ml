@@ -1,13 +1,23 @@
 open Lang.Il
-open Common.Source
+open Common.Annotated
+module Location = Common.Location
 open Error
 open Mixfix
 
 let ( let* ) = Result.bind
 
-type 'a t = region -> Value.t -> 'a result
+type 'a t = Location.t -> Value.t -> 'a result
 
 let value : Value.t t = fun _at v -> Ok v
+
+let opaque (typdef : 'a Opaque.typdef) : 'a t =
+ fun at v ->
+  match v.it with
+  | OpaqueV value -> (
+      match Opaque.to_ocaml_opt ~typdef value with
+      | Some payload -> Ok payload
+      | None -> Error (type_err at ("opaque " ^ Opaque.typdef_name typdef) v))
+  | _ -> Error (type_err at ("opaque " ^ Opaque.typdef_name typdef) v)
 
 let text : string t =
  fun at v ->
@@ -59,6 +69,13 @@ let list_of (p : 'a t) : 'a list t =
   match v.it with
   | ListV vs -> result_all (List.map (p at) vs)
   | _ -> Error (type_err at "Expected ListV" v)
+
+let option_of (p : 'a t) : 'a option t =
+ fun at v ->
+  match v.it with
+  | OptV None -> Ok None
+  | OptV (Some v) -> Result.map Option.some (p at v)
+  | _ -> Error (type_err at "Expected OptV" v)
 
 module VSet = Set.Make (Value)
 

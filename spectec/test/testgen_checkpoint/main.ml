@@ -1,4 +1,4 @@
-let key = (Common.Source.no_region, "if x")
+let key = (Common.Location.Unknown, "if x")
 
 let node_coverage : Instrumentation.Node_coverage_il.result =
   {
@@ -31,8 +31,8 @@ let save_batch file =
     ]
   in
   let checkpoint =
-    Batch.Checkpoint.create ~spec_files:[] ~completed_inputs:[ "case/pre.json" ]
-      ~coverage
+    Batch.Checkpoint.create ~check_determinism:false ~spec_files:[]
+      ~completed_inputs:[ "case/pre.json" ] ~coverage
   in
   Batch.Checkpoint.save_to_file ~file checkpoint
 

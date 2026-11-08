@@ -1,4 +1,6 @@
-open Common.Source
+module Location = Common.Location
+module Origin = Instrumentation_api.Origin
+open Common.Annotated
 open Lang.Xl
 open Lang.Il
 open Envs.Il
@@ -17,7 +19,7 @@ let string_of_error = function
       Format.asprintf "JSON parse error in '%s': %s" filename msg
   | TypeError (msg, typ, json) ->
       Format.asprintf "Type error (%s) : expected %s, got JSON: %s" msg
-        (Lang.Il.Typ.to_string (typ $ no_region))
+        (Lang.Il.Typ.to_string (typ $ Location.Unknown))
         (Yojson.Safe.pretty_to_string json)
   | FieldMissing (field_name, struct_name) ->
       Format.asprintf "Field '%s' is missing in struct '%s'" field_name
@@ -39,7 +41,7 @@ let result_all results =
   aux [] results
 
 let field_atom (id : string) : atom =
-  Atom.keyword (id |> String.uppercase_ascii) $ no_region
+  Atom.keyword (id |> String.uppercase_ascii) $ Location.Unknown
 
 (* Parse hex string to BytesV *)
 let hex_string_to_bytes (s : string) : (Bigint.t * int, error) result =
@@ -62,46 +64,43 @@ let hex_string_to_bytes (s : string) : (Bigint.t * int, error) result =
     with Failure _ ->
       TypeError ("invalid hex string", NumT `NatT, `String s) |> Result.error
 
-(* Provenance helpers *)
-let extend_provenance (prov : json_provenance option) (step : json_step) :
-    json_provenance option =
-  match prov with
-  | None -> None
-  | Some (src, steps) -> Some (src, steps @ [ step ])
+let report_origin ~(origin : Origin.t option) (v : Value.t) : Value.t =
+  (match origin with
+  | Some origin when Instrumentation_dispatcher.Dispatcher.has_value_handlers ()
+    ->
+      Instrumentation_dispatcher.Dispatcher.emit_value
+        (Decoded { value = v; origin })
+  | _ -> ());
+  v
 
-let apply_provenance (prov : json_provenance option) (v : Value.t) : Value.t =
-  match prov with
-  | None -> v
-  | Some p -> Instrumentation_core.Value_hooks.on_created p v
-
-let rec json_to_value ?(provenance : json_provenance option = None)
-    (tdenv : TDEnv.t) (expected : typ') (json : Yojson.Safe.t) : parse_result =
-  let apply_prov v = apply_provenance provenance v in
-  let extend step = extend_provenance provenance step in
+let rec json_to_value ?(origin : Origin.t option) (tdenv : TDEnv.t)
+    (expected : typ') (json : Yojson.Safe.t) : parse_result =
+  let report v = report_origin ~origin v in
+  let extend step = Option.map (Origin.extend ~step) origin in
   match (expected, json) with
-  | BoolT, `Bool b -> Value.bool b |> apply_prov |> Result.ok
+  | BoolT, `Bool b -> Value.bool b |> report |> Result.ok
   | NumT `IntT, `String s when String.length s >= 2 && String.sub s 0 2 = "0x"
     ->
       (* Hex string for bytes type (int) - convert to BytesV *)
       let* num, len = hex_string_to_bytes s in
       let bytes_value' = BytesV { num; len } in
-      Value.Make.value expected bytes_value' |> apply_prov |> Result.ok
+      Value.Make.value expected bytes_value' |> report |> Result.ok
   | NumT `IntT, `String s -> (
       try
         let i = Bigint.of_string s in
-        Value.int i |> apply_prov |> Result.ok
+        Value.int i |> report |> Result.ok
       with Failure _ ->
         TypeError ("int string", expected, json) |> Result.error)
   | NumT `NatT, `Int i ->
       let n = Bigint.of_int i in
       if Bigint.compare n Bigint.zero >= 0 then
-        Value.nat n |> apply_prov |> Result.ok
+        Value.nat n |> report |> Result.ok
       else TypeError ("non-negative nat", expected, json) |> Result.error
   | NumT `NatT, `Intlit s -> (
       try
         let n = Bigint.of_string s in
         if Bigint.compare n Bigint.zero >= 0 then
-          Value.nat n |> apply_prov |> Result.ok
+          Value.nat n |> report |> Result.ok
         else TypeError ("non-negative nat", expected, json) |> Result.error
       with Failure _ ->
         TypeError ("nat string", expected, json) |> Result.error)
@@ -110,14 +109,14 @@ let rec json_to_value ?(provenance : json_provenance option = None)
       (* Hex string for bytes type - convert to BytesV *)
       let* num, len = hex_string_to_bytes s in
       let bytes_value' = BytesV { num; len } in
-      Value.Make.value expected bytes_value' |> apply_prov |> Result.ok
+      Value.Make.value expected bytes_value' |> report |> Result.ok
   | IterT { typ = elem_typ; iter = List }, `List json_list ->
       let rec parse_elements acc i = function
-        | [] -> Value.list elem_typ (List.rev acc) |> apply_prov |> Result.ok
+        | [] -> Value.list elem_typ (List.rev acc) |> report |> Result.ok
         | json_elem :: rest ->
-            let elem_prov = extend (IndexAccess i) in
             let* elem_value =
-              json_to_value ~provenance:elem_prov tdenv elem_typ.it json_elem
+              json_to_value ?origin:(extend (List i)) tdenv elem_typ.it
+                json_elem
             in
             parse_elements (elem_value :: acc) (i + 1) rest
       in
@@ -129,8 +128,8 @@ let rec json_to_value ?(provenance : json_provenance option = None)
         List.init bit_length (fun bit_index ->
             Z.testbit int bit_index |> Value.bool)
       in
-      Value.list (Lang.Il.Typ.bool $ no_region) bool_list
-      |> apply_prov |> Result.ok
+      Value.list (Lang.Il.Typ.bool $ Location.Unknown) bool_list
+      |> report |> Result.ok
   | VarT { synid = tid; targs = [] }, _ -> (
       match (TDEnv.find_opt tid tdenv, json) with
       | Some (_, { it = StructT typfields; _ }), `Assoc fields ->
@@ -143,18 +142,15 @@ let rec json_to_value ?(provenance : json_provenance option = None)
           let parse_typefield (atom, typ) =
             match find_field atom with
             | Some (_, value) ->
-                let field_name =
-                  Atom.to_string atom.it |> String.lowercase_ascii
-                in
-                let field_prov = extend (FieldAccess field_name) in
                 let* field =
-                  json_to_value ~provenance:field_prov tdenv typ.it value
+                  json_to_value ?origin:(extend (Struct atom.it)) tdenv typ.it
+                    value
                 in
                 Ok (atom, field)
             | None -> Error (FieldMissing (Atom.to_string atom.it, tid.it))
           in
           let* typfields = result_all (List.map parse_typefield typfields) in
-          Value.record tid.it typfields |> apply_prov |> Result.ok
+          Value.record tid.it typfields |> report |> Result.ok
       | Some (_, { it = PlainT typ; _ }), _ -> (
           (* Check if it's a bytes type and JSON is a hex string *)
           match (typ.it, json) with
@@ -163,8 +159,8 @@ let rec json_to_value ?(provenance : json_provenance option = None)
               (* bytes type with hex string - convert to BytesV *)
               let* num, len = hex_string_to_bytes s in
               let bytes_value' = BytesV { num; len } in
-              Value.Make.value typ.it bytes_value' |> apply_prov |> Result.ok
-          | _ -> json_to_value ~provenance tdenv typ.it json)
+              Value.Make.value typ.it bytes_value' |> report |> Result.ok
+          | _ -> json_to_value ?origin tdenv typ.it json)
       | None, _ ->
           TypeError ("typedef not found", expected, json) |> Result.error
       | _, _ -> TypeError ("type mismatch", expected, json) |> Result.error)

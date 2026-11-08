@@ -10,6 +10,8 @@
   spectec.envs
   spectec.instrumentation
   unix
+  interp_runtime
   builtins
-  cache
+  opaque_types
+  value_typecheck
   target))

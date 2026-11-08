@@ -1,5 +1,12 @@
 (test
  (name main)
- (libraries spectec spectec.interp spectec.lang core)
+ (libraries
+  spectec
+  spectec.batch
+  spectec.instrumentation
+  spectec.interface.json
+  spectec.interp
+  spectec.lang
+  core)
  (deps
   (glob_files *.spectec)))

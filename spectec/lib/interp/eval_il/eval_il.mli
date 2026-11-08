@@ -1,19 +1,21 @@
-open Common.Source
-
-module Ctx : sig
-  type t
-end
+module Location = Common.Location
 
 type error =
-  | Plain of region * string
+  | Plain of Location.t * string
   | Backtrack of Common.Attempt.failtrace list
 
 val error_to_diagnostic : error -> Diag.t
 
-val run :
+type context
+
+val context_of_spec :
+  ?check_determinism:bool ->
   (module Target.S) ->
   Lang.Il.spec ->
-  string ->
-  Lang.Il.Value.t list ->
-  string ->
-  (Ctx.t * Lang.Il.Value.t list, error) result
+  (context, error) result
+
+val eval_rel :
+  context ->
+  rel:string ->
+  values:Lang.Il.Value.t list ->
+  (Lang.Il.Value.t list, error) result

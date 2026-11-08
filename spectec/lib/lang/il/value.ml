@@ -1,5 +1,6 @@
 open Types
-open Common.Source
+open Common.Annotated
+module Location = Common.Location
 
 type t = value
 
@@ -19,6 +20,7 @@ and compare_struct (value_l : t) (value_r : t) =
     | OptV _ -> 7
     | ListV _ -> 8
     | FuncV _ -> 9
+    | OpaqueV _ -> 10
   in
   match (value_l.it, value_r.it) with
   | BoolV b_l, BoolV b_r -> Stdlib.compare b_l b_r
@@ -45,6 +47,7 @@ and compare_struct (value_l : t) (value_r : t) =
       | None, Some _ -> -1
       | None, None -> 0)
   | ListV values_l, ListV values_r -> compares values_l values_r
+  | OpaqueV left, OpaqueV right -> Opaque.compare left right
   | _ -> Int.compare (tag value_l) (tag value_r)
 
 and compares (values_l : t list) (values_r : t list) : int =
@@ -99,14 +102,14 @@ module MakeWithVid (VidProvider : VidProvider) = struct
     | StructV fields ->
         List.fold_left
           (fun hash (atom, v) ->
-            hash +! (hash_atom atom.Common.Source.it +! v.note.vhash))
+            hash +! (hash_atom atom.Common.Annotated.it +! v.note.vhash))
           3 fields
     | CaseV vc ->
         List.fold_left
           (fun h p ->
             match p with
             | Mixfix.Arg v -> h +! v.note.vhash
-            | Mixfix.Atom atom -> h +! 1 +! hash_atom atom.Common.Source.it)
+            | Mixfix.Atom atom -> h +! 1 +! hash_atom atom.Common.Annotated.it)
           4 vc
     | TupleV values ->
         List.fold_left (fun hash v -> hash +! v.note.vhash) 5 values
@@ -114,8 +117,9 @@ module MakeWithVid (VidProvider : VidProvider) = struct
     | OptV (Some v) -> 7 +! v.note.vhash
     | ListV values ->
         List.fold_left (fun hash v -> hash +! v.note.vhash) 8 values
-    | FuncV id -> 9 +! Hashtbl.hash id.Common.Source.it
-    | BytesV { num; len } -> 10 +! Bigint.hash num +! Hashtbl.hash len
+    | FuncV id -> 9 +! Hashtbl.hash id.Common.Annotated.it
+    | BytesV { num; len } -> 11 +! Bigint.hash num +! Hashtbl.hash len
+    | OpaqueV value -> 10 +! Opaque.hash value
 
   let with_fresh_vid (typ : typ') (vhash : int) : vnote =
     let vid = VidProvider.fresh () in
@@ -123,7 +127,9 @@ module MakeWithVid (VidProvider : VidProvider) = struct
 
   let make_val (typ : typ') (v : value') : t =
     let vhash = hash_of v in
-    v $$$ with_fresh_vid typ vhash
+    v $$ (Location.Unknown, with_fresh_vid typ vhash)
+
+  let ( <<<| ) (value : t) (at : Location.t) : t = { value with at }
 
   module Make = struct
     let value (t' : typ') (v : value') : t = make_val t' v
@@ -152,16 +158,19 @@ module MakeWithVid (VidProvider : VidProvider) = struct
   let text (s : string) : t = Make.text Typ.text s
   let func (id : id) : t = FuncV id |> make_val Typ.func
 
+  let opaque typdef payload : t =
+    let value = Opaque.of_ocaml ~typdef payload in
+    OpaqueV value |> make_val (Typ.var (Opaque.name value) [])
+
   let record (tid : string) (fields : valuefield list) : t =
     Make.record (Typ.var tid []) fields
 
   let tuple (vs : t list) : t =
-    let typs = List.map (fun v -> v.note.typ $ no_region) vs in
+    let typs = List.map (fun v -> v.note.typ $ Location.Unknown) vs in
     TupleV vs |> make_val (Typ.tuple typs)
 
   let opt (typ : typ) (v : t option) : t = OptV v |> make_val (Typ.opt typ)
   let list (typ : typ) (vs : t list) : t = ListV vs |> make_val (Typ.list typ)
-  let list' (typ : typ') (vs : t list) : t = list (typ $ no_region) vs
 end
 
 (* Default instance using global provider *)
@@ -201,19 +210,6 @@ let get_bytes (value : t) =
   | BytesV { num; len } -> (num, len)
   | _ -> failwith "get_bytes"
 
-let bool (b : bool) : t = Make.bool Typ.bool b
-let nat (i : Bigint.t) : t = Make.nat Typ.nat i
-let int (i : Bigint.t) : t = Make.int Typ.int i
-let text (s : string) : t = Make.text Typ.text s
-let func (id : id) : t = FuncV id |> make_val Typ.func
-
-let tuple (vs : t list) : t =
-  let typs = List.map (fun v -> v.note.typ $ no_region) vs in
-  TupleV vs |> make_val (Typ.tuple typs)
-
-let opt (typ : typ) (v : t option) : t = OptV v |> make_val (Typ.opt typ)
-let list (typ : typ) (vs : t list) : t = ListV vs |> make_val (Typ.list typ)
-
 let id_of_case_v (v : t) : string =
   match (v.it, v.note.typ) with
   | CaseV _, VarT { synid; _ } -> synid.it
@@ -225,7 +221,7 @@ let flatten_case_v (value : t) : string * string list * t list =
       let shape, values = Mixfix.split valuecase in
       let atoms =
         Mixfix.atoms shape
-        |> List.map (fun a -> Xl.Atom.to_string a.Common.Source.it)
+        |> List.map (fun a -> Xl.Atom.to_string a.Common.Annotated.it)
       in
       (synid.it, atoms, values)
   | _ -> failwith "Expected a CaseV value"

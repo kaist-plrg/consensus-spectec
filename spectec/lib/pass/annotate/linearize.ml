@@ -1,12 +1,13 @@
-open Common.Source
+open Common.Annotated
+module Location = Common.Location
 module Sl = Lang.Sl
 
 let rec linearize_instr (instr : Sl.instr) : Ll.block =
   let at = instr.at in
   match instr.it with
-  | Sl.RelI { call; iterexps; block } ->
+  | Sl.RelI { call; iterinstrs; block } ->
       let block_ll = linearize_block block in
-      let instr_ll = Ll.RelI { call; iterexps } $ at in
+      let instr_ll = Ll.RelI { call; iterinstrs } $ at in
       instr_ll :: block_ll
   | Sl.RelAssertI { call; expect; iterexps; block = block_then; phantom } ->
       let block_then_ll = linearize_block block_then in
@@ -29,15 +30,16 @@ let rec linearize_instr (instr : Sl.instr) : Ll.block =
   | Sl.OtherwiseI instr_inner ->
       let block_ll = linearize_instr instr_inner in
       [ Ll.OtherwiseI block_ll $ at ]
-  | Sl.LetI (exp_l, exp_r, iterexps, block) ->
+  | Sl.LetI (exp_l, exp_r, iterinstrs, block) ->
       let block_ll = linearize_block block in
-      let instr_ll = Ll.LetI (exp_l, exp_r, iterexps) $ at in
+      let instr_ll = Ll.LetI (exp_l, exp_r, iterinstrs) $ at in
       instr_ll :: block_ll
-  | Sl.FoldI { fold_iterexp; outer_iterexps; accumulators; body; block } ->
+  | Sl.FoldI { fold_iterinstr; outer_iterinstrs; accumulators; body; block } ->
       let body_ll = linearize_block body in
       let block_ll = linearize_block block in
       let instr_ll =
-        Ll.FoldI { fold_iterexp; outer_iterexps; accumulators; body = body_ll }
+        Ll.FoldI
+          { fold_iterinstr; outer_iterinstrs; accumulators; body = body_ll }
         $ at
       in
       instr_ll :: block_ll
@@ -47,8 +49,12 @@ let rec linearize_instr (instr : Sl.instr) : Ll.block =
       let instr_debug = Ll.DebugI exp $ at in
       instr_debug :: linearize_instr body
 
+(* Each SL alternative remains one arm when its instructions are linearized. *)
 and linearize_block (block : Sl.block) : Ll.block =
-  block |> List.concat_map linearize_instr |> wrap_try_arms
+  match List.map linearize_instr block with
+  | [] -> []
+  | [ arm ] -> arm
+  | arms -> [ Ll.TryI arms $ Location.Unknown ]
 
 and linearize_guard (g : Sl.guard) : Ll.guard =
   match g with
@@ -58,31 +64,9 @@ and linearize_guard (g : Sl.guard) : Ll.guard =
   | Sl.MatchG pat -> Ll.MatchG pat
   | Sl.MemG e -> Ll.MemG e
 
-and is_branching (instr : Ll.instr) : bool =
-  match instr.it with
-  | Ll.IfI _ | Ll.RelAssertI _ | Ll.CaseI _ -> true
-  | _ -> false
-
-and split_leading_branches (instrs : Ll.block) : Ll.instr list * Ll.block =
-  match instrs with
-  | instr :: rest when is_branching instr ->
-      let branches, remainder = split_leading_branches rest in
-      (instr :: branches, remainder)
-  | _ -> ([], instrs)
-
-and wrap_try_arms (instrs : Ll.block) : Ll.block =
-  match split_leading_branches instrs with
-  | [], [] -> []
-  | [], head :: rest -> head :: wrap_try_arms rest
-  | [ single ], remainder -> single :: wrap_try_arms remainder
-  | branches, remainder ->
-      let arms = List.map (fun i -> [ i ]) branches in
-      let wrapped = Ll.TryI arms $ no_region in
-      wrapped :: wrap_try_arms remainder
-
 let linearize_elseblock (elseblock : Sl.elseblock) : Ll.block =
   let block_ll = linearize_block elseblock in
-  [ Ll.OtherwiseI block_ll $ no_region ]
+  [ Ll.OtherwiseI block_ll $ Location.Unknown ]
 
 let linearize_elseblock_opt (elseblock_opt : Sl.elseblock option) : Ll.block =
   match elseblock_opt with
@@ -108,8 +92,8 @@ let linearize_def (def : Sl.def) : Ll.def =
         if elseblock_ll = [] then None else Some elseblock_ll
       in
       Ll.RelD (id, (mixop, inputs), exps, block_ll, elseblock_opt_ll) $ at
-  | Sl.BuiltinDecD (id, tparams, args) ->
-      Ll.BuiltinDecD (id, tparams, args) $ at
+  | Sl.BuiltinDecD (id, tparams, args, typ) ->
+      Ll.BuiltinDecD (id, tparams, args, typ) $ at
   | Sl.DecD (id, tparams, args, block, elseblock_opt) ->
       let block_ll = linearize_block block in
       let elseblock_ll = linearize_elseblock_opt elseblock_opt in

@@ -350,7 +350,7 @@ let command =
         ~name:"coverage" task_clis;
       Cli.Subcommand.make_checkpoint target ~name:"checkpoint";
       ("testgen", Eth_testgen.command);
-      Cli.Subcommand.make_parse target ~name:"parse"
+      Cli.Subcommand.make_parse ~tree_flag:"--tree" target ~name:"parse"
         ~summary:"Parse an Ethereum JSON value"
         (module Json_parse_cli);
     ]

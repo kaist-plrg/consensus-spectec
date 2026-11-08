@@ -1,6 +1,6 @@
 open Common.Attempt
 
-let at = Common.Source.no_region
+let at = Common.Location.Unknown
 let check condition message = if not condition then failwith message
 
 let () =
