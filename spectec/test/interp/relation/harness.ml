@@ -13,6 +13,7 @@ type mode = Il | Sl | Pl
 
 type expectation =
   | Returns of (unit -> Value.t list)
+  | Returns_typed of (unit -> Value.t list)
   | Fails
   | Fails_with of string
 
@@ -55,6 +56,7 @@ let compile_file filename =
   compile_source ~filename (In_channel.read_all filename)
 
 let returns expected = Returns expected
+let returns_typed expected = Returns_typed expected
 let fails = Fails
 let fails_with message = Fails_with message
 let string_of_mode = function Il -> "IL" | Sl -> "SL" | Pl -> "PL"
@@ -62,6 +64,16 @@ let string_of_mode = function Il -> "IL" | Sl -> "SL" | Pl -> "PL"
 let string_of_values values =
   values
   |> List.map ~f:Value.to_string
+  |> String.concat ~sep:", " |> sprintf "[%s]"
+
+let typ_of (value : Value.t) =
+  Common.Annotated.(value.note.typ $ Common.Location.Unknown)
+
+let string_of_typed_values values =
+  values
+  |> List.map ~f:(fun value ->
+         sprintf "%s : %s" (Value.to_string value)
+           (Lang.Il.Print.string_of_typ (typ_of value)))
   |> String.concat ~sep:", " |> sprintf "[%s]"
 
 let render_error error =
@@ -96,7 +108,18 @@ let check_result ~name ~mode ~check_determinism expectation result =
           (sprintf "expected %s but returned %s"
              (string_of_values expected)
              (string_of_values actual))
-  | Returns _, Error error ->
+  | Returns_typed expected, Ok actual ->
+      let expected = expected () in
+      let same_value_and_type expected actual =
+        Value.eq expected actual
+        && Lang.Il.Eq.eq_typ (typ_of expected) (typ_of actual)
+      in
+      if not (List.equal same_value_and_type expected actual) then
+        fail_check
+          (sprintf "expected %s but returned %s"
+             (string_of_typed_values expected)
+             (string_of_typed_values actual))
+  | (Returns _ | Returns_typed _), Error error ->
       fail_check ("evaluation failed:\n" ^ render_error error)
   | Fails, Error _ -> ()
   | Fails_with expected, Error error ->
