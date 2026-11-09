@@ -1104,55 +1104,9 @@ let hash_tree_root_executionPayload ~at (v : Value.t) : Value.t result =
   let r_block_hash = leaf_bytes32 (get_nat block_hash) in
   (* 14. transactions: ListV ByteList, tx mix_in_length →  merkleize →    mix_in_length *)
   let get_list v = match v.it with ListV xs -> xs | _ -> [] in
-  let get_list_bytes v =
-    match v.it with
-    | ListV lst ->
-        let get_nat v = v |> Value.get_num |> Num.to_int in
-        let bytes_list = List.map get_nat lst in
-        let buf = Buffer.create (List.length bytes_list) in
-        List.iter
-          (fun n ->
-            (* *)
-            if Bigint.(n < zero || n >= of_int 256) then
-              invalid_arg
-                (Printf.sprintf "get_list_bytes: byte out of range: %s"
-                   (Bigint.to_string n))
-            else Buffer.add_char buf (Stdlib.Char.chr (Bigint.to_int_exn n)))
-          bytes_list;
-        Bytes.of_string (Buffer.contents buf)
-    | BytesV { num; len } ->
-        (* BytesV: num len   (Big-endian) *)
-        be_of_bigint_fixed num ~len
-    | _ -> Bytes.make 0 '\x00'
-  in
   let txs = get_list transactions in
-  (* Printf.printf "[DEBUG exec transactions] transaction count: %d\n%!" (List.length txs); *)
-  (*  Transaction(ByteList) HTR: chunkize → merkleize → mix_in_length( ) *)
-  (* ByteList : subtree_fill_to_contents(chunks, contents_depth)  *)
-  (* contents_depth = get_depth(MAX_BYTES_PER_TRANSACTION // 32) = get_depth(33554432) = 25 *)
-  (*  limit = 33554432   *)
-  let tx_elem_root tx =
-    let data_bytes = get_list_bytes tx in
-    let len = Bytes.length data_bytes in
-    let chunks = chunkize_bytes_bytev data_bytes in
-    (* ByteList  limit = MAX_BYTES_PER_TRANSACTION // 32 = 33554432 *)
-    let tx_bytes_limit = 33554432 in
-    (* MAX_BYTES_PER_TRANSACTION // 32 *)
-    let root = merkleize_chunks_with_limit chunks tx_bytes_limit in
-    mix_in_length root (Bigint.of_int len)
-  in
-  (* tx_roots:  Transaction(ByteList) HTR (Bytes.t, 32B) *)
-  (*  tx   Transaction HTR   *)
-  let tx_roots = List.map tx_elem_root txs |> Array.of_list in
-  (* if Array.length tx_roots > 0 then ( *)
-  (*   Printf.printf "[DEBUG exec transactions] first tx root: %s\n%!" (bytes_to_hex tx_roots.(0)); *)
-  (*   Printf.printf "[DEBUG exec transactions] last tx root: %s\n%!" (bytes_to_hex tx_roots.(Array.length tx_roots - 1)); *)
-  (* ); *)
-  (* SSZ : MAX_TRANSACTIONS_PER_PAYLOAD (1048576) zero32   merkleize *)
-  let tx_limit = 1048576 in
-  (* MAX_TRANSACTIONS_PER_PAYLOAD *)
-  let r_transactions = htr_composite_list_with_limit ~limit:tx_limit tx_roots in
-  (* Printf.printf "[DEBUG exec transactions] final root (after mix_in_length): %s\n%!" (bytes_to_hex r_transactions); *)
+  let* r_transactions_v = hash_tree_root_tx ~at txs in
+  let* r_transactions = to_b32_exn ~at r_transactions_v in
   (* 15. withdrawals: hash_tree_root_withdrawals  *)
   let ws = get_list withdrawals in
   let* r_withdrawals_v = hash_tree_root_withdrawals ~at ws in
