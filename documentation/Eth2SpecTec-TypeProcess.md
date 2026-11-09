@@ -318,6 +318,8 @@ let merkleize_chunks_with_limit ~(chunk_limit: int) (leaves: Bytes.t array) : By
 - `leaves`: Array of 32-byte chunks (each representing a field/element root)
 - `chunk_limit`: Maximum number of 32-byte chunks. A vector uses its chunk count, and a list derives this count from its SSZ limit.
 
+`merkleize_chunks_with_limit` raises `Invalid_argument` when `leaves` contains more chunks than `chunk_limit`.
+
 **SSZ Specification Compliance:**
 
 The implementation follows the SSZ specification's merkleization rules:
@@ -331,6 +333,10 @@ The implementation follows the SSZ specification's merkleization rules:
 ```ocaml
 let merkleize_chunks_with_limit ~(chunk_limit: int) (leaves: Bytes.t array) : Bytes.t =
   let n = Array.length leaves in
+  if n > chunk_limit then
+    invalid_arg
+      (Printf.sprintf
+         "merkleize_chunks_with_limit: %d leaves exceed the chunk limit of %d" n chunk_limit);
   if chunk_limit = 0 then zero32
   else if n = 0 then (
     let max_depth = if chunk_limit <= 1 then 0 else bit_length_of (chunk_limit - 1) in
@@ -470,6 +476,8 @@ This ensures that lists with the same elements but different lengths produce dif
 Even if the first 3 elements are identical, the roots differ because:
 1. The merkle roots differ (different padding)
 2. The length values differ (3 vs 5)
+
+The SSZ list hashers return an error for a list longer than its limit. The error names the field, its length, and its limit.
 
 #### 4.2.6 Verification Against eth2spec
 

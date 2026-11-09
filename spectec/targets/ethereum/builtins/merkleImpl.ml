@@ -84,6 +84,11 @@ let compute_zero_hashes ~max_depth : Bytes.t array =
 let merkleize_chunks_with_limit ~(chunk_limit : int) (leaves : Bytes.t array) :
     Bytes.t =
   let n = Array.length leaves in
+  if n > chunk_limit then
+    invalid_arg
+      (Printf.sprintf
+         "merkleize_chunks_with_limit: %d leaves exceed the chunk limit of %d" n
+         chunk_limit);
   if chunk_limit = 0 then zero32
   else if n = 0 then
     let max_depth =
@@ -246,10 +251,20 @@ let mix_in_length (root : Bytes.t) (len : Bigint.t) : Bytes.t =
   done;
   merkle_hash_ root le32
 
-let htr_composite_list_with_limit ~limit (element_roots : Bytes.t array) :
-    Bytes.t =
+let check_list_length ~at ~field ~limit length =
+  if length > limit then
+    Error
+      (runtime at
+         (Printf.sprintf "%s: a list of %d elements exceeds its limit of %d"
+            field length limit))
+  else Ok ()
+
+let htr_composite_list_with_limit ~at ~field ~limit
+    (element_roots : Bytes.t array) : Bytes.t result =
+  let length = Array.length element_roots in
+  let* () = check_list_length ~at ~field ~limit length in
   let root = merkleize_list_composite_with_limit element_roots limit in
-  mix_in_length root (Bigint.of_int (Array.length element_roots))
+  Ok (mix_in_length root (Bigint.of_int length))
 
 let chunkize_bytes_bytev (raw : Bytes.t) : Bytes.t array =
   let len = Bytes.length raw in
@@ -319,8 +334,9 @@ let htr_fixed_bytevec_vector (items_be_bytes : Bytes.t list) ~(elem_size : int)
   chunkize_bytes_bytev buf |> merkleize_leaves
 
 (* Basic List with limit:   →  → limit    → mix_in_length *)
-let htr_basic_list_with_limit (items : (Bigint.t * int) list)
-    (limit_elems : int) (elem_size : int) : Bytes.t =
+let htr_basic_list_with_limit ~at ~field ~limit ~elem_size
+    (items : (Bigint.t * int) list) : Bytes.t result =
+  let* () = check_list_length ~at ~field ~limit (List.length items) in
   (*   :         *)
   let items_checked =
     List.map
@@ -332,9 +348,9 @@ let htr_basic_list_with_limit (items : (Bigint.t * int) list)
   in
   let packed = pack_basic_le items_checked in
   let chunks = chunkize_bytes_bytev packed in
-  (* limit  '  ' = ceil(limit_elems * elem_size / 32) *)
+  (* limit  '  ' = ceil(limit * elem_size / 32) *)
   let need_chunks =
-    let total_bytes = limit_elems * elem_size in
+    let total_bytes = limit * elem_size in
     if total_bytes = 0 then 0 else (total_bytes + 31) / 32
   in
   let root =
@@ -353,15 +369,16 @@ let htr_basic_list_with_limit (items : (Bigint.t * int) list)
   (*    mix_in_length *)
   (* SSZ :  List  mix_in_length     *)
   let elem_len = List.length items in
-  mix_in_length root (Bigint.of_int elem_len)
+  Ok (mix_in_length root (Bigint.of_int elem_len))
 
 (* ByteVector[N]  (: List[bytes32, L]) :
    -   "  "  (  )
    -    32B   Merkleize
    - limit   (depth )  mix_in_length  *)
-let htr_bytevec_list_with_limit
-    (items_be_bytes : Bytes.t list) (*    elem_size Bytes.t *)
-    (limit_elems : int) (elem_size : int) : Bytes.t =
+let htr_bytevec_list_with_limit ~at ~field ~limit ~elem_size
+    (items_be_bytes : Bytes.t list) (*    elem_size Bytes.t *) : Bytes.t result
+    =
+  let* () = check_list_length ~at ~field ~limit (List.length items_be_bytes) in
   (* 1)     *)
   let total = List.length items_be_bytes * elem_size in
   let buf = Bytes.make total '\x00' in
@@ -376,7 +393,7 @@ let htr_bytevec_list_with_limit
   let chunks = chunkize_bytes_bytev buf in
   (* 3) limit   ( ) *)
   let need_chunks =
-    let total_bytes = limit_elems * elem_size in
+    let total_bytes = limit * elem_size in
     if total_bytes = 0 then 0 else (total_bytes + 31) / 32
   in
   let root =
@@ -406,10 +423,12 @@ let htr_bytevec_list_with_limit
   (* 4)   mix_in_length *)
   (* SSZ :  List  mix_in_length     *)
   let elem_len = List.length items_be_bytes in
-  mix_in_length root (Bigint.of_int elem_len)
+  Ok (mix_in_length root (Bigint.of_int elem_len))
 
 (* Bitlist with limit:   →   limit   → mix_in_length *)
-let htr_bitlist_with_limit (bits : bool list) (limit_bits : int) : Bytes.t =
+let htr_bitlist_with_limit ~at ~field ~limit (bits : bool list) : Bytes.t result
+    =
+  let* () = check_list_length ~at ~field ~limit (List.length bits) in
   (*   LSB-first   *)
   let bitlen = List.length bits in
   let byte_len = (bitlen + 7) / 8 in
@@ -424,7 +443,7 @@ let htr_bitlist_with_limit (bits : bool list) (limit_bits : int) : Bytes.t =
     bits;
   let chunks = chunkize_bytes_bytev arr in
   (* limit  '  ' *)
-  let need_chunks = (limit_bits + 255) / 256 in
+  let need_chunks = (limit + 255) / 256 in
   let root =
     if need_chunks = 0 then zero32
     else if Array.length chunks = 0 then
@@ -452,7 +471,7 @@ let htr_bitlist_with_limit (bits : bool list) (limit_bits : int) : Bytes.t =
       in
       lift h0 depth
   in
-  mix_in_length root (Bigint.of_int bitlen)
+  Ok (mix_in_length root (Bigint.of_int bitlen))
 
 let leaf_uint_le (n : Bigint.t) ~(nbytes : int) : Bytes.t =
   let c = Bytes.make 32 '\x00' in
@@ -563,7 +582,6 @@ let hash_tree_root_roots ~at (lst : Num.t list) : Value.t result =
 (* transactions: List[Transaction, MAX_TRANSACTIONS_PER_PAYLOAD] = List[ByteList, 1048576] *)
 (* SSZ :   N zero-chunk   merkleize,   mix_in_length *)
 let hash_tree_root_tx ~at (txs_list : Value.t list) : Value.t result =
-  at |> ignore;
   (* get_list_bytes: Value.t (ListV of bytes) -> Bytes.t *)
   let get_list_bytes v =
     match v.it with
@@ -592,19 +610,28 @@ let hash_tree_root_tx ~at (txs_list : Value.t list) : Value.t result =
   let tx_elem_root tx =
     let data_bytes = get_list_bytes tx in
     let len = Bytes.length data_bytes in
+    let max_bytes_per_transaction = 1073741824 in
+    let* () =
+      check_list_length ~at ~field:"transaction"
+        ~limit:max_bytes_per_transaction len
+    in
     let chunks = chunkize_bytes_bytev data_bytes in
     (* ByteList  limit = MAX_BYTES_PER_TRANSACTION // 32 = 33554432 *)
     let tx_bytes_limit = 33554432 in
     (* MAX_BYTES_PER_TRANSACTION // 32 *)
     let root = merkleize_chunks_with_limit ~chunk_limit:tx_bytes_limit chunks in
-    mix_in_length root (Bigint.of_int len)
+    Ok (mix_in_length root (Bigint.of_int len))
   in
   (*  transaction root  *)
-  let tx_roots = List.map tx_elem_root txs_list |> Array.of_list in
+  let* tx_roots = Arg.result_all (List.map tx_elem_root txs_list) in
+  let tx_roots = Array.of_list tx_roots in
   (* SSZ : MAX_TRANSACTIONS_PER_PAYLOAD (1048576) zero32   merkleize *)
   let tx_limit = 1048576 in
   (* MAX_TRANSACTIONS_PER_PAYLOAD *)
-  let out = htr_composite_list_with_limit ~limit:tx_limit tx_roots in
+  let* out =
+    htr_composite_list_with_limit ~at ~field:"transactions" ~limit:tx_limit
+      tx_roots
+  in
   Ok (make_bytes ~num:(bigint_of_be_bytes out) ~len:32)
 
 (* ----- hash_tree_root_beaconBlockHeader(beaconBlockHeader) : root ----- *)
@@ -769,7 +796,10 @@ let hash_tree_root_withdrawals ~at (ws : Value.t list) : Value.t result =
   (* SSZ : MAX_WITHDRAWALS_PER_PAYLOAD (16) zero32   merkleize *)
   let wd_limit = 16 in
   (* MAX_WITHDRAWALS_PER_PAYLOAD *)
-  let root_final = htr_composite_list_with_limit ~limit:wd_limit leaves in
+  let* root_final =
+    htr_composite_list_with_limit ~at ~field:"withdrawals" ~limit:wd_limit
+      leaves
+  in
   Ok (make_bytes ~num:(bigint_of_be_bytes root_final) ~len:32)
 
 (* ----- hash_tree_root_eth1Data(eth1Data) : root ----- *)
@@ -1091,6 +1121,11 @@ let hash_tree_root_executionPayload ~at (v : Value.t) : Value.t result =
   in
   let extra_bytes = get_list_bytes extra_data in
   let extra_len = Bytes.length extra_bytes in
+  let max_extra_data_bytes = 32 in
+  let* () =
+    check_list_length ~at ~field:"extra_data" ~limit:max_extra_data_bytes
+      extra_len
+  in
   (* Printf.printf "[DEBUG exec extra_data] raw bytes (hex): %s\n%!" (bytes_to_hex extra_bytes); *)
   (* Printf.printf "[DEBUG exec extra_data] length: %d bytes\n%!" extra_len; *)
   let extra_leaves = chunkize_bytes_bytev extra_bytes in
@@ -1409,7 +1444,10 @@ let hash_tree_root_Attestation ~at (v : Value.t) : Value.t result =
   in
   let max_validators_per_committee = 2048 in
   (* MAX_VALIDATORS_PER_COMMITTEE *)
-  let r_bits = htr_bitlist_with_limit bits_list max_validators_per_committee in
+  let* r_bits =
+    htr_bitlist_with_limit ~at ~field:"aggregation_bits"
+      ~limit:max_validators_per_committee bits_list
+  in
   (* data: AttestationData *)
   let* r_data_v = hash_tree_root_AttestationData ~at v_data in
   let* r_data = to_b32_exn ~at r_data_v in
@@ -1439,8 +1477,9 @@ let hash_tree_root_IndexedAttestation ~at (v : Value.t) : Value.t result =
   let items = indices |> List.map (fun idx -> (get_nat idx, 8)) in
   let max_validators_per_committee = 2048 in
   (* MAX_VALIDATORS_PER_COMMITTEE *)
-  let r_indices =
-    htr_basic_list_with_limit items max_validators_per_committee 8
+  let* r_indices =
+    htr_basic_list_with_limit ~at ~field:"attesting_indices"
+      ~limit:max_validators_per_committee ~elem_size:8 items
   in
   (* data: AttestationData *)
   let* r_data_v = hash_tree_root_AttestationData ~at v_data in
@@ -1964,6 +2003,11 @@ let hash_tree_root_ExecutionPayloadHeader ~at (v : Value.t) : Value.t result =
   in
   let extra_bytes = get_list_bytes extra_data in
   let extra_len = Bytes.length extra_bytes in
+  let max_extra_data_bytes = 32 in
+  let* () =
+    check_list_length ~at ~field:"extra_data" ~limit:max_extra_data_bytes
+      extra_len
+  in
   (* extra_data: ByteList[MAX_EXTRA_DATA_BYTES], ExecutionPayload   *)
   let extra_leaves = chunkize_bytes_bytev extra_bytes in
   let extra_root = merkleize_leaves extra_leaves in
@@ -2171,8 +2215,8 @@ let hash_tree_root_beaconBlockBody ~at (v : Value.t) : Value.t result =
   (*   (bigint_of_be_bytes r_graffiti |> Bigint.to_string); *)
 
   (* composite List[T, N]   :   N   merkleize *)
-  let list_htr_with_limit (xs : Value.t list) (f : Value.t -> Value.t result)
-      (limit : int) : Bytes.t result =
+  let list_htr_with_limit ~field ~limit (xs : Value.t list)
+      (f : Value.t -> Value.t result) : Bytes.t result =
     let rec mapM acc = function
       | [] -> Ok (List.rev acc)
       | x :: tl ->
@@ -2183,7 +2227,7 @@ let hash_tree_root_beaconBlockBody ~at (v : Value.t) : Value.t result =
     let* leaves_list = mapM [] xs in
     let arr = Array.of_list leaves_list in
     (* SSZ :   N zero32   merkleize *)
-    Ok (htr_composite_list_with_limit ~limit arr)
+    htr_composite_list_with_limit ~at ~field ~limit arr
   in
   (* Capella    *)
   let max_proposer_slashings = 16 in
@@ -2193,43 +2237,43 @@ let hash_tree_root_beaconBlockBody ~at (v : Value.t) : Value.t result =
   let max_voluntary_exits = 16 in
   let max_bls_to_execution_changes = 16 in
   let* r_prop_slash =
-    list_htr_with_limit
+    list_htr_with_limit ~field:"proposer_slashings"
+      ~limit:max_proposer_slashings
       (get_list proposer_slashings)
       (hash_tree_root_ProposerSlashing ~at)
-      max_proposer_slashings
   in
   (* Printf.printf "[DEBUG body] 4. PROPOSER_SLASHINGS: %s (int: %s)\n%!"  *)
   (*   (bytes_to_hex r_prop_slash) *)
   (*   (bigint_of_be_bytes r_prop_slash |> Bigint.to_string); *)
   let* r_att_slash =
-    list_htr_with_limit
+    list_htr_with_limit ~field:"attester_slashings"
+      ~limit:max_attester_slashings
       (get_list attester_slashings)
       (hash_tree_root_AttesterSlashing ~at)
-      max_attester_slashings
   in
   (* Printf.printf "[DEBUG body] 5. ATTESTER_SLASHINGS: %s (int: %s)\n%!"  *)
   (*   (bytes_to_hex r_att_slash) *)
   (*   (bigint_of_be_bytes r_att_slash |> Bigint.to_string); *)
   let* r_attest =
-    list_htr_with_limit (get_list attestations)
+    list_htr_with_limit ~field:"attestations" ~limit:max_attestations
+      (get_list attestations)
       (hash_tree_root_Attestation ~at)
-      max_attestations
   in
   (* Printf.printf "[DEBUG body] 6. ATTESTATIONS: %s (int: %s)\n%!"  *)
   (*   (bytes_to_hex r_attest) *)
   (*   (bigint_of_be_bytes r_attest |> Bigint.to_string); *)
   let* r_deposits =
-    list_htr_with_limit (get_list deposits)
+    list_htr_with_limit ~field:"deposits" ~limit:max_deposits
+      (get_list deposits)
       (hash_tree_root_Deposit ~at)
-      max_deposits
   in
   (* Printf.printf "[DEBUG body] 7. DEPOSITS: %s (int: %s)\n%!"  *)
   (*   (bytes_to_hex r_deposits) *)
   (*   (bigint_of_be_bytes r_deposits |> Bigint.to_string); *)
   let* r_vol =
-    list_htr_with_limit (get_list voluntary_exits)
+    list_htr_with_limit ~field:"voluntary_exits" ~limit:max_voluntary_exits
+      (get_list voluntary_exits)
       (hash_tree_root_SignedVoluntaryExit ~at)
-      max_voluntary_exits
   in
   (* Printf.printf "[DEBUG body] 8. VOLUNTARY_EXITS: %s (int: %s)\n%!"  *)
   (*   (bytes_to_hex r_vol) *)
@@ -2245,10 +2289,10 @@ let hash_tree_root_beaconBlockBody ~at (v : Value.t) : Value.t result =
   (*   (bytes_to_hex r_exec) *)
   (*   (bigint_of_be_bytes r_exec |> Bigint.to_string); *)
   let* r_bls2exec =
-    list_htr_with_limit
+    list_htr_with_limit ~field:"bls_to_execution_changes"
+      ~limit:max_bls_to_execution_changes
       (get_list bls_to_execution_changes)
       (hash_tree_root_SignedBLSToExecutionChange ~at)
-      max_bls_to_execution_changes
   in
   (* Printf.printf "[DEBUG body] 11. BLS_TO_EXECUTION_CHANGES: %s (int: %s)\n%!"  *)
   (*   (bytes_to_hex r_bls2exec) *)
@@ -2280,7 +2324,8 @@ let hash_tree_root_beaconBlockBody ~at (v : Value.t) : Value.t result =
         let* commitment_roots = mapM [] commitments_list in
         let arr = Array.of_list commitment_roots in
         (* SSZ :   zero32   merkleize *)
-        Ok (htr_composite_list_with_limit ~limit:max_blob_commitments arr)
+        htr_composite_list_with_limit ~at ~field:"blob_kzg_commitments"
+          ~limit:max_blob_commitments arr
     | None -> Ok zero32
   in
   (* *)
@@ -2525,8 +2570,9 @@ let hash_tree_root_beaconState ~at (v : Value.t) : Value.t result =
     historical_roots_list
     |> List.map (fun r -> be_of_bigint_fixed (get_nat r) ~len:32)
   in
-  let r_historical_roots =
-    htr_bytevec_list_with_limit historical_roots_bytes historical_roots_limit 32
+  let* r_historical_roots =
+    htr_bytevec_list_with_limit ~at ~field:"historical_roots"
+      ~limit:historical_roots_limit ~elem_size:32 historical_roots_bytes
   in
   (* 9. eth1_data: Eth1Data *)
   let* r_eth1_data_v = hash_tree_root_eth1Data ~at eth1_data in
@@ -2545,8 +2591,9 @@ let hash_tree_root_beaconState ~at (v : Value.t) : Value.t result =
   let* eth1_votes_roots = process_eth1_votes [] eth1_votes_list in
   let eth1_votes_arr = Array.of_list eth1_votes_roots in
   (* SSZ :   N zero32   merkleize *)
-  let r_eth1_data_votes =
-    htr_composite_list_with_limit ~limit:eth1_data_votes_limit eth1_votes_arr
+  let* r_eth1_data_votes =
+    htr_composite_list_with_limit ~at ~field:"eth1_data_votes"
+      ~limit:eth1_data_votes_limit eth1_votes_arr
   in
   (* 11. eth1_deposit_index: uint64 *)
   let* () = ensure_fits_bytes ~at (get_nat eth1_deposit_index) ~len:8 in
@@ -2567,13 +2614,17 @@ let hash_tree_root_beaconState ~at (v : Value.t) : Value.t result =
   let* validators_roots = process_validators [] validators_list in
   let validators_arr = Array.of_list validators_roots in
   (* SSZ :   N zero32   merkleize *)
-  let r_validators =
-    htr_composite_list_with_limit ~limit:validator_registry_limit validators_arr
+  let* r_validators =
+    htr_composite_list_with_limit ~at ~field:"validators"
+      ~limit:validator_registry_limit validators_arr
   in
   (* 13. balances: List[uint64, VALIDATOR_REGISTRY_LIMIT] *)
   let balances_list = get_list balances in
   let items = balances_list |> List.map (fun b -> (get_nat b, 8)) in
-  let r_balances = htr_basic_list_with_limit items validator_registry_limit 8 in
+  let* r_balances =
+    htr_basic_list_with_limit ~at ~field:"balances"
+      ~limit:validator_registry_limit ~elem_size:8 items
+  in
   (* 14. randao_mixes: Vector[Bytes32, ...] (, basic vector) *)
   let randao_mixes_list = get_list randao_mixes in
   let randao_mixes_bytes =
@@ -2588,14 +2639,16 @@ let hash_tree_root_beaconState ~at (v : Value.t) : Value.t result =
   (* 16. previous_epoch_participation: List[uint8, VALIDATOR_REGISTRY_LIMIT] *)
   let prev_epoch_list = get_list previous_epoch_participation in
   let items = prev_epoch_list |> List.map (fun p -> (get_nat p, 1)) in
-  let r_previous_epoch_participation =
-    htr_basic_list_with_limit items validator_registry_limit 1
+  let* r_previous_epoch_participation =
+    htr_basic_list_with_limit ~at ~field:"previous_epoch_participation"
+      ~limit:validator_registry_limit ~elem_size:1 items
   in
   (* 17. current_epoch_participation: List[uint8, VALIDATOR_REGISTRY_LIMIT] *)
   let curr_epoch_list = get_list current_epoch_participation in
   let items = curr_epoch_list |> List.map (fun p -> (get_nat p, 1)) in
-  let r_current_epoch_participation =
-    htr_basic_list_with_limit items validator_registry_limit 1
+  let* r_current_epoch_participation =
+    htr_basic_list_with_limit ~at ~field:"current_epoch_participation"
+      ~limit:validator_registry_limit ~elem_size:1 items
   in
   (* 18. justification_bits: Bitvector[4] () *)
   (* SSZ : merkleize(pack_bits(value), limit=chunk_count(type)) *)
@@ -2643,8 +2696,9 @@ let hash_tree_root_beaconState ~at (v : Value.t) : Value.t result =
   (* 22. inactivity_scores: List[uint64, VALIDATOR_REGISTRY_LIMIT] *)
   let inactivity_scores_list = get_list inactivity_scores in
   let items = inactivity_scores_list |> List.map (fun s -> (get_nat s, 8)) in
-  let r_inactivity_scores =
-    htr_basic_list_with_limit items validator_registry_limit 8
+  let* r_inactivity_scores =
+    htr_basic_list_with_limit ~at ~field:"inactivity_scores"
+      ~limit:validator_registry_limit ~elem_size:8 items
   in
   (* 23. current_sync_committee: SyncCommittee *)
   let* r_current_sync_committee_v =
@@ -2691,9 +2745,9 @@ let hash_tree_root_beaconState ~at (v : Value.t) : Value.t result =
   in
   let historical_summaries_arr = Array.of_list historical_summaries_roots in
   (* SSZ :   N zero32   merkleize *)
-  let r_historical_summaries =
-    htr_composite_list_with_limit ~limit:historical_roots_limit
-      historical_summaries_arr
+  let* r_historical_summaries =
+    htr_composite_list_with_limit ~at ~field:"historical_summaries"
+      ~limit:historical_roots_limit historical_summaries_arr
   in
   (* *)
   let field_roots =

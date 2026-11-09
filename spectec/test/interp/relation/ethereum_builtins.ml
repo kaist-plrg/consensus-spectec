@@ -130,11 +130,20 @@ let list_limits () =
     ~relation:"Withdrawals_root"
     ~args:(fun () -> [ withdrawals 16 ])
     "4bd03f9352b359c8b887928d2d33a71d6327c243f5269432a72d93b1b22b7bd0";
+  check ~name:"a withdrawal list over its limit is rejected"
+    ~relation:"Withdrawals_root"
+    ~args:(fun () -> [ withdrawals 17 ])
+    (H.fails_with "withdrawals: a list of 17 elements exceeds its limit of 16");
   check_python_root
     ~name:"aggregation bits within their limit hash to the Python root"
     ~relation:"Attestation_root"
     ~args:(fun () -> [ attestation 3 ])
     "a7360c69525704a1c3c061b33c2084b5682c1b38a30980488a8e737a605b05e5";
+  check ~name:"aggregation bits over their limit are rejected"
+    ~relation:"Attestation_root"
+    ~args:(fun () -> [ attestation 2049 ])
+    (H.fails_with
+       "aggregation_bits: a list of 2049 elements exceeds its limit of 2048");
   check_python_root
     ~name:"attesting indices within their limit hash to the Python root"
     ~relation:"Indexed_attestation_root"
@@ -155,7 +164,22 @@ let list_limits () =
     ~relation:"Execution_payload_header_root"
     ~args:(fun () ->
       [ execution_payload_header ~extra_data:"\001\002\003\004\005" ])
-    "d9e569fab2c8365bc7a0af470fb4b6a0093c6d3a45d3f3ddca89dff583a93f35"
+    "d9e569fab2c8365bc7a0af470fb4b6a0093c6d3a45d3f3ddca89dff583a93f35";
+  check ~name:"attesting indices over their limit are rejected"
+    ~relation:"Indexed_attestation_root"
+    ~args:(fun () -> [ indexed_attestation 2049 ])
+    (H.fails_with
+       "attesting_indices: a list of 2049 elements exceeds its limit of 2048");
+  check ~name:"extra data over 32 bytes is rejected"
+    ~relation:"Execution_payload_root"
+    ~args:(fun () ->
+      [ execution_payload ~extra_data:(String.make 33 '\001') ~transactions:[] ])
+    (H.fails_with "extra_data: a list of 33 elements exceeds its limit of 32");
+  check ~name:"header extra data over 32 bytes is rejected"
+    ~relation:"Execution_payload_header_root"
+    ~args:(fun () ->
+      [ execution_payload_header ~extra_data:(String.make 33 '\001') ])
+    (H.fails_with "extra_data: a list of 33 elements exceeds its limit of 32")
 
 let run () =
   aggregation ();
