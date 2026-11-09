@@ -79,13 +79,16 @@ let compute_zero_hashes ~max_depth : Bytes.t array =
   arr
 
 (* Python merkleize_chunks    *)
-(* Vector  limit = count, List  limit   *)
-let merkleize_chunks_with_limit (leaves : Bytes.t array) (limit : int) : Bytes.t
-    =
+(* Vectors use their chunk count as chunk_limit, while lists derive it from
+   their SSZ limit. *)
+let merkleize_chunks_with_limit ~(chunk_limit : int) (leaves : Bytes.t array) :
+    Bytes.t =
   let n = Array.length leaves in
-  if limit = 0 then zero32
+  if chunk_limit = 0 then zero32
   else if n = 0 then
-    let max_depth = if limit <= 1 then 0 else bit_length_of (limit - 1) in
+    let max_depth =
+      if chunk_limit <= 1 then 0 else bit_length_of (chunk_limit - 1)
+    in
     let zero_hashes = compute_zero_hashes ~max_depth in
     zero_hashes.(max_depth)
   else
@@ -93,7 +96,9 @@ let merkleize_chunks_with_limit (leaves : Bytes.t array) (limit : int) : Bytes.t
     (* depth = max(count - 1, 0).bit_length() *)
     let depth = if count = 0 then 0 else bit_length_of (count - 1) in
     (* max_depth = (limit - 1).bit_length() *)
-    let max_depth = if limit = 0 then 0 else bit_length_of (limit - 1) in
+    let max_depth =
+      if chunk_limit = 0 then 0 else bit_length_of (chunk_limit - 1)
+    in
     let tmp = Array.make (max_depth + 1) None in
     let zero_hashes = compute_zero_hashes ~max_depth in
     (* Python merge    *)
@@ -180,7 +185,7 @@ let merkleize_chunks_with_limit (leaves : Bytes.t array) (limit : int) : Bytes.t
 
 let merkleize_leaves (leaves : Bytes.t array) : Bytes.t =
   let n = Array.length leaves in
-  merkleize_chunks_with_limit leaves n
+  merkleize_chunks_with_limit ~chunk_limit:n leaves
 
 let merkleize_list_composite_with_limit (leaves : Bytes.t array) (limit : int) :
     Bytes.t =
@@ -343,7 +348,7 @@ let htr_basic_list_with_limit (items : (Bigint.t * int) list)
       zero_hashes.(max_depth)
     else
       (* Python merkleize_chunks(chunks, limit=need_chunks)   *)
-      merkleize_chunks_with_limit chunks need_chunks
+      merkleize_chunks_with_limit ~chunk_limit:need_chunks chunks
   in
   (*    mix_in_length *)
   (* SSZ :  List  mix_in_length     *)
@@ -591,7 +596,7 @@ let hash_tree_root_tx ~at (txs_list : Value.t list) : Value.t result =
     (* ByteList  limit = MAX_BYTES_PER_TRANSACTION // 32 = 33554432 *)
     let tx_bytes_limit = 33554432 in
     (* MAX_BYTES_PER_TRANSACTION // 32 *)
-    let root = merkleize_chunks_with_limit chunks tx_bytes_limit in
+    let root = merkleize_chunks_with_limit ~chunk_limit:tx_bytes_limit chunks in
     mix_in_length root (Bigint.of_int len)
   in
   (*  transaction root  *)

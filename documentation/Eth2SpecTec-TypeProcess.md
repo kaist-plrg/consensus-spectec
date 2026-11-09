@@ -311,12 +311,12 @@ The core of SSZ hash tree root computation is the `merkleize_chunks_with_limit` 
 
 **Function Signature:**
 ```ocaml
-let merkleize_chunks_with_limit (leaves: Bytes.t array) (limit: int) : Bytes.t
+let merkleize_chunks_with_limit ~(chunk_limit: int) (leaves: Bytes.t array) : Bytes.t
 ```
 
 **Parameters:**
 - `leaves`: Array of 32-byte chunks (each representing a field/element root)
-- `limit`: Maximum number of chunks (for Vector: `limit = count`, for List: `limit` is the maximum length)
+- `chunk_limit`: Maximum number of 32-byte chunks. A vector uses its chunk count, and a list derives this count from its SSZ limit.
 
 **SSZ Specification Compliance:**
 
@@ -329,18 +329,18 @@ The implementation follows the SSZ specification's merkleization rules:
 **Implementation Details:**
 
 ```ocaml
-let merkleize_chunks_with_limit (leaves: Bytes.t array) (limit: int) : Bytes.t =
+let merkleize_chunks_with_limit ~(chunk_limit: int) (leaves: Bytes.t array) : Bytes.t =
   let n = Array.length leaves in
-  if limit = 0 then zero32
+  if chunk_limit = 0 then zero32
   else if n = 0 then (
-    let max_depth = if limit <= 1 then 0 else bit_length_of (limit - 1) in
+    let max_depth = if chunk_limit <= 1 then 0 else bit_length_of (chunk_limit - 1) in
     let zero_hashes = compute_zero_hashes ~max_depth:max_depth in
     zero_hashes.(max_depth)
   )
   else
     let count = n in
     let depth = if count = 0 then 0 else bit_length_of (count - 1) in
-    let max_depth = if limit = 0 then 0 else bit_length_of (limit - 1) in
+    let max_depth = if chunk_limit = 0 then 0 else bit_length_of (chunk_limit - 1) in
     let tmp = Array.make (max_depth + 1) None in
     let zero_hashes = compute_zero_hashes ~max_depth:max_depth in
     let merge (h: Bytes.t) (i: int) : unit =
