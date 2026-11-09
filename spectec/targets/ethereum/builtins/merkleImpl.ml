@@ -232,6 +232,16 @@ let chunkize_bytes_bytev (raw : Bytes.t) : Bytes.t array =
           c)
         else Bytes.make 32 '\x00')
 
+let htr_byte_list_with_limit ~at ~field ~limit (raw : Bytes.t) : Bytes.t result
+    =
+  let length = Bytes.length raw in
+  let* () = check_list_length ~at ~field ~limit length in
+  let chunks = chunkize_bytes_bytev raw in
+  let root =
+    merkleize_chunks_with_limit ~chunk_limit:((limit + 31) / 32) chunks
+  in
+  Ok (mix_in_length root (Bigint.of_int length))
+
 (* Basic      (LE) *)
 let pack_basic_le (items : (Bigint.t * int) list) : Bytes.t =
   let total = List.fold_left (fun acc (_, n) -> acc + n) 0 items in
@@ -498,19 +508,9 @@ let hash_tree_root_tx ~at (txs_list : Value.t list) : Value.t result =
   (* contents_depth = get_depth(MAX_BYTES_PER_TRANSACTION // 32) = get_depth(33554432) = 25 *)
   (*  limit = 33554432   *)
   let tx_elem_root tx =
-    let data_bytes = get_list_bytes tx in
-    let len = Bytes.length data_bytes in
     let max_bytes_per_transaction = 1073741824 in
-    let* () =
-      check_list_length ~at ~field:"transaction"
-        ~limit:max_bytes_per_transaction len
-    in
-    let chunks = chunkize_bytes_bytev data_bytes in
-    (* ByteList  limit = MAX_BYTES_PER_TRANSACTION // 32 = 33554432 *)
-    let tx_bytes_limit = 33554432 in
-    (* MAX_BYTES_PER_TRANSACTION // 32 *)
-    let root = merkleize_chunks_with_limit ~chunk_limit:tx_bytes_limit chunks in
-    Ok (mix_in_length root (Bigint.of_int len))
+    htr_byte_list_with_limit ~at ~field:"transaction"
+      ~limit:max_bytes_per_transaction (get_list_bytes tx)
   in
   (*  transaction root  *)
   let* tx_roots = Arg.result_all (List.map tx_elem_root txs_list) in
@@ -1010,22 +1010,11 @@ let hash_tree_root_executionPayload ~at (v : Value.t) : Value.t result =
     | _ -> Bytes.make 0 '\x00'
   in
   let extra_bytes = get_list_bytes extra_data in
-  let extra_len = Bytes.length extra_bytes in
   let max_extra_data_bytes = 32 in
-  let* () =
-    check_list_length ~at ~field:"extra_data" ~limit:max_extra_data_bytes
-      extra_len
+  let* r_extra_data =
+    htr_byte_list_with_limit ~at ~field:"extra_data" ~limit:max_extra_data_bytes
+      extra_bytes
   in
-  (* Printf.printf "[DEBUG exec extra_data] raw bytes (hex): %s\n%!" (bytes_to_hex extra_bytes); *)
-  (* Printf.printf "[DEBUG exec extra_data] length: %d bytes\n%!" extra_len; *)
-  let extra_leaves = chunkize_bytes_bytev extra_bytes in
-  (* Printf.printf "[DEBUG exec extra_data] chunk count: %d\n%!" (Array.length extra_leaves); *)
-  (* if Array.length extra_leaves > 0 then *)
-  (*   Printf.printf "[DEBUG exec extra_data] first chunk (hex): %s\n%!" (bytes_to_hex extra_leaves.(0)); *)
-  let extra_root = merkleize_leaves extra_leaves in
-  (* Printf.printf "[DEBUG exec extra_data] merkle root (before mix_in_length): %s\n%!" (bytes_to_hex extra_root); *)
-  let r_extra_data = mix_in_length extra_root (Bigint.of_int extra_len) in
-  (* Printf.printf "[DEBUG exec extra_data] final root (after mix_in_length): %s\n%!" (bytes_to_hex r_extra_data); *)
   (* 12. base_fee_per_gas: uint256, 32B LE *)
   let* () = ensure_fits_bytes ~at (get_nat base_fee_per_gas) ~len:32 in
   let r_base_fee = leaf_uint_le (get_nat base_fee_per_gas) ~nbytes:32 in
@@ -1892,16 +1881,12 @@ let hash_tree_root_ExecutionPayloadHeader ~at (v : Value.t) : Value.t result =
     | _ -> Bytes.make 0 '\x00'
   in
   let extra_bytes = get_list_bytes extra_data in
-  let extra_len = Bytes.length extra_bytes in
-  let max_extra_data_bytes = 32 in
-  let* () =
-    check_list_length ~at ~field:"extra_data" ~limit:max_extra_data_bytes
-      extra_len
-  in
   (* extra_data: ByteList[MAX_EXTRA_DATA_BYTES], ExecutionPayload   *)
-  let extra_leaves = chunkize_bytes_bytev extra_bytes in
-  let extra_root = merkleize_leaves extra_leaves in
-  let r_extra_data = mix_in_length extra_root (Bigint.of_int extra_len) in
+  let max_extra_data_bytes = 32 in
+  let* r_extra_data =
+    htr_byte_list_with_limit ~at ~field:"extra_data" ~limit:max_extra_data_bytes
+      extra_bytes
+  in
   (* 12. base_fee_per_gas: uint256, 32B LE *)
   let* () = ensure_fits_bytes ~at (get_nat base_fee_per_gas) ~len:32 in
   let r_base_fee = leaf_uint_le (get_nat base_fee_per_gas) ~nbytes:32 in
