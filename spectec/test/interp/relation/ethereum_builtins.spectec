@@ -1,0 +1,110 @@
+var k : nat
+
+builtin dec $eth_aggregate_pubkeys(nat*): nat
+
+relation Aggregate:
+  nat* |- nat
+  hint(input %0)
+
+rule Aggregate:
+  k* |- $eth_aggregate_pubkeys(k*)
+
+var m : nat
+var s : nat
+
+builtin dec $bls_fast_aggregate_verify(nat*, nat, nat): bool
+
+relation Fast_aggregate_verify:
+  nat*; nat; nat |- bool
+  hint(input %0 %1 %2)
+
+rule Fast_aggregate_verify:
+  k*; m; s |- $bls_fast_aggregate_verify(k*, m, s)
+
+syntax withdrawal = (nat, nat, nat, nat)
+
+var w : withdrawal
+
+builtin dec $hash_tree_root_withdrawals(withdrawal*): nat
+
+relation Withdrawals_root:
+  withdrawal* |- nat
+  hint(input %0)
+
+rule Withdrawals_root:
+  w* |- $hash_tree_root_withdrawals(w*)
+
+syntax checkpoint = (nat, nat)
+
+syntax attestationData = (nat, nat, nat, checkpoint, checkpoint)
+
+syntax attestation = (bool*, attestationData, nat)
+
+syntax indexedAttestation = (nat*, attestationData, nat)
+
+var att : attestation
+var ia : indexedAttestation
+
+builtin dec $hash_tree_root_Attestation(attestation): nat
+
+builtin dec $hash_tree_root_IndexedAttestation(indexedAttestation): nat
+
+relation Attestation_root:
+  attestation |- nat
+  hint(input %0)
+
+rule Attestation_root:
+  att |- $hash_tree_root_Attestation(att)
+
+relation Indexed_attestation_root:
+  indexedAttestation |- nat
+  hint(input %0)
+
+rule Indexed_attestation_root:
+  ia |- $hash_tree_root_IndexedAttestation(ia)
+
+syntax executionPayload =
+  (nat, nat, nat, nat, nat, nat, nat, nat, nat, nat, nat, nat, nat, nat*, withdrawal*)
+
+var ep : executionPayload
+
+builtin dec $hash_tree_root_executionPayload(executionPayload): nat
+
+relation Execution_payload_root:
+  executionPayload |- nat
+  hint(input %0)
+
+rule Execution_payload_root:
+  ep |- $hash_tree_root_executionPayload(ep)
+
+syntax executionPayloadHeader =
+  (nat, nat, nat, nat, nat, nat, nat, nat, nat, nat, nat, nat, nat, nat, nat)
+
+var eph : executionPayloadHeader
+
+builtin dec $hash_tree_root_ExecutionPayloadHeader(executionPayloadHeader): nat
+
+relation Execution_payload_header_root:
+  executionPayloadHeader |- nat
+  hint(input %0)
+
+rule Execution_payload_header_root:
+  eph |- $hash_tree_root_ExecutionPayloadHeader(eph)
+
+builtin dec $enumerate_<X>(X*): (nat, X)*
+
+relation Enumerate:
+  nat* |- (nat, nat)*
+  hint(input %0)
+
+rule Enumerate:
+  k* |- $enumerate_<nat>(k*)
+
+builtin dec $range(nat): nat*
+
+relation Range:
+  nat |- nat*
+  hint(input %0)
+
+rule Range:
+  k |- $range(k)

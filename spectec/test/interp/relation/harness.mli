@@ -19,6 +19,12 @@ val compile_file : string -> compiled_spec
     constructed by [expected]. *)
 val returns : (unit -> Lang.Il.Value.t list) -> expectation
 
+(** [returns_typed expected] requires evaluation to return values equal to those
+    constructed by [expected], with equal type annotations on each returned
+    value. It does not compare type annotations on nested values. On failure,
+    the harness prints the expected and returned values with their types. *)
+val returns_typed : (unit -> Lang.Il.Value.t list) -> expectation
+
 (** [fails] accepts any evaluation error. *)
 val fails : expectation
 

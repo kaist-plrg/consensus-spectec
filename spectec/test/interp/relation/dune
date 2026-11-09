@@ -6,6 +6,9 @@
   spectec.instrumentation
   spectec.interface.json
   spectec.interp
+  spectec.interp.builtins.eth
+  bls12-381
+  bls12-381-signature
   spectec.lang
   core)
  (deps

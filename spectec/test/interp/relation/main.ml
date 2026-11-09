@@ -16,4 +16,5 @@ let () =
   Fold.run ();
   Structuring.run ();
   Value_handlers.run ();
-  Consensus_provenance.run ()
+  Consensus_provenance.run ();
+  Ethereum_builtins.run ()
