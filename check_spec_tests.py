@@ -2,7 +2,7 @@
 """
 Check SpecTec against the official consensus-spec test vectors.
 
-  uv run --project consensus-specs --no-sync python check_spec_tests.py [--jobs N] DIR...
+  uv run --project consensus-specs --no-sync python check_spec_tests.py [--jobs N] [--spec-dir DIR] DIR...
 
 The checker requires the pyspec environment created by
 `make -C consensus-specs build` and ./spectecx built by make exe.
@@ -62,7 +62,7 @@ def ssz(path):
     return snappy.decompress(path.read_bytes())
 
 
-def check(case):
+def check(case, spec_dir=None):
     """Return (verdict, detail) for one case directory."""
 
     fork = next((p for p in case.parts if p in FORKS), None)
@@ -89,7 +89,7 @@ def check(case):
             out.unlink(missing_ok=True)
 
             p = subprocess.run([str(ROOT / "spectecx"), "ethereum", "run", *args,
-                                "--spec-dir", str(ROOT / f"spec/spec_{fork}"), "--output", str(out)],
+                                "--spec-dir", str(spec_dir or ROOT / f"spec/spec_{fork}"), "--output", str(out)],
                                capture_output=True, text=True)
 
             log = p.stderr + p.stdout
@@ -135,6 +135,7 @@ def main():
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("dirs", nargs="+", type=Path)
     ap.add_argument("--jobs", type=int, default=os.cpu_count())
+    ap.add_argument("--spec-dir", type=Path, help="SpecTec spec directory; spec/spec_<fork> by default")
     args = ap.parse_args()
     cases = sorted({p.parent for d in args.dirs for p in d.glob("**/pre.ssz_snappy")})
     if not cases:
@@ -143,7 +144,7 @@ def main():
     def run(case):
         t0 = time.time()
         try:
-            verdict, detail = check(case)
+            verdict, detail = check(case, args.spec_dir)
         except Exception as e:  # a broken case must not stop the others
             verdict, detail = "FAIL", f"{type(e).__name__}: {e}"
         name = str(case)

@@ -1,0 +1,122 @@
+(rule
+ (alias pyspec)
+ (deps
+  (universe)
+  (sandbox none)
+  (package spectec)
+  extract.py
+  ../../bin/main.exe
+  (glob_files *.expected)
+  (source_tree fixtures)
+  (source_tree ../../targets/ethereum/pyspec/export)
+  ../../targets/ethereum/pyspec/prelude.spectec
+  (glob_files ../../../spec/spec_capella/*.spectec))
+ (action
+  (no-infer
+   (progn
+    (setenv
+     PYTHONPATH
+     ../../targets/ethereum/pyspec
+     (run
+      %{env:CAPELLA_PYTHON=python3}
+      extract.py
+      %{env:CAPELLA_SOURCE=consensus-specs-capella}
+      fixtures/arithmetic.py
+      fixtures/sequences.py
+      fixtures/state.py
+      fixtures/bytes.py
+      fixtures/rejected.py
+      fixtures/rejected_bitvector_slice.py
+      fixtures/rejected_loop_optional.py
+      fixtures/rejected_argument_class.py
+      fixtures/rejected_return_class.py
+      fixtures/rejected_store_width.py
+      fixtures/rejected_list_store.py))
+    (with-stdout-to
+     capella.actual
+     (run %{exe:../../bin/main.exe} ethereum translate capella.json))
+    (with-stdout-to
+     arithmetic.actual
+     (run %{exe:../../bin/main.exe} ethereum translate arithmetic.json))
+    (with-stdout-to
+     sequences.actual
+     (run %{exe:../../bin/main.exe} ethereum translate sequences.json))
+    (with-stdout-to
+     state.actual
+     (run %{exe:../../bin/main.exe} ethereum translate state.json))
+    (with-stdout-to
+     bytes.actual
+     (run %{exe:../../bin/main.exe} ethereum translate bytes.json))
+    (with-stdout-to
+     state-transition.spectec
+     (run %{exe:../../bin/main.exe} ethereum translate state-transition.json))
+    (ignore-stdout
+     (run
+      %{exe:../../bin/main.exe}
+      struct
+      ../../../spec/spec_capella/00-types.spectec
+      ../../../spec/spec_capella/00.1-constants.spectec
+      ../../../spec/spec_capella/00.2-containers.spectec
+      ../../../spec/spec_capella/01-variables.spectec
+      ../../targets/ethereum/pyspec/prelude.spectec
+      state-transition.spectec))
+    (with-outputs-to
+     rejected.actual
+     (progn
+      (with-accepted-exit-codes
+       1
+       (run %{exe:../../bin/main.exe} ethereum translate rejected.json))
+      (with-accepted-exit-codes
+       1
+       (run
+        %{exe:../../bin/main.exe}
+        ethereum
+        translate
+        rejected_bitvector_slice.json))
+      (with-accepted-exit-codes
+       1
+       (run
+        %{exe:../../bin/main.exe}
+        ethereum
+        translate
+        rejected_loop_optional.json))
+      (with-accepted-exit-codes
+       1
+       (run
+        %{exe:../../bin/main.exe}
+        ethereum
+        translate
+        rejected_argument_class.json))
+      (with-accepted-exit-codes
+       1
+       (run
+        %{exe:../../bin/main.exe}
+        ethereum
+        translate
+        rejected_return_class.json))
+      (with-accepted-exit-codes
+       1
+       (run
+        %{exe:../../bin/main.exe}
+        ethereum
+        translate
+        rejected_store_width.json))
+      (with-accepted-exit-codes
+       1
+       (run
+        %{exe:../../bin/main.exe}
+        ethereum
+        translate
+        rejected_list_store.json))
+      (with-accepted-exit-codes
+       1
+       (run %{exe:../../bin/main.exe} ethereum translate missing.json))
+      (with-accepted-exit-codes
+       1
+       (run %{exe:../../bin/main.exe} ethereum translate extract.py))))
+    (diff capella.expected capella.actual)
+    (diff arithmetic.expected arithmetic.actual)
+    (diff sequences.expected sequences.actual)
+    (diff state.expected state.actual)
+    (diff bytes.expected bytes.actual)
+    (diff rejected.expected rejected.actual)))))

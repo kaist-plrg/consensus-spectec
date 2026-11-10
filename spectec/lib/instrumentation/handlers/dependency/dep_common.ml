@@ -29,7 +29,7 @@ type field_path = { source : input_source; steps : field_step list }
 let eth_whitelist =
   [
     (* Top-level *)
-    "State_transition";
+    "StateTransition";
     (* Block Processing *)
     "ProcessBlockHeader";
     "ProcessWithdrawals";

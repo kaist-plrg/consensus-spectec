@@ -225,6 +225,10 @@ syntax forkdata =
   { CURRENT_VERSION version,
     GENESIS_VALIDATORS_ROOT root }
 
+syntax signingData =
+  { OBJECT_ROOT root,
+    DOMAIN domain }
+
 syntax depositMessage =
   { PUBKEY blsPubkey,
     WITHDRAWAL_CREDENTIALS bytes32,

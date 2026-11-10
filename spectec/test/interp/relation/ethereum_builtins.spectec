@@ -9,6 +9,15 @@ relation Aggregate:
 rule Aggregate:
   k* |- $eth_aggregate_pubkeys(k*)
 
+builtin dec $bls_aggregate_pubkeys(nat*): nat
+
+relation Aggregate_translated:
+  nat* |- nat
+  hint(input %0)
+
+rule Aggregate_translated:
+  k* |- $bls_aggregate_pubkeys(k*)
+
 var m : nat
 var s : nat
 
@@ -90,6 +99,133 @@ relation Execution_payload_header_root:
 
 rule Execution_payload_header_root:
   eph |- $hash_tree_root_ExecutionPayloadHeader(eph)
+
+builtin dec $bls_key_validate(nat): bool
+builtin dec $bls_g1_canonicalize(nat): nat
+builtin dec $bls_g1_add(nat, nat): nat
+builtin dec $bls_g1_neg(nat): nat
+
+relation Key_validate:
+  nat |- bool
+  hint(input %0)
+
+rule Key_validate:
+  k |- $bls_key_validate(k)
+
+relation G1_canonicalize:
+  nat |- nat
+  hint(input %0)
+
+rule G1_canonicalize:
+  k |- $bls_g1_canonicalize(k)
+
+relation G1_double:
+  nat |- nat
+  hint(input %0)
+
+rule G1_double:
+  k |- $bls_g1_add(k, k)
+
+relation G1_cancel:
+  nat |- nat
+  hint(input %0)
+
+rule G1_cancel:
+  k |- $bls_g1_add(k, $bls_g1_neg(k))
+
+relation G1_add:
+  nat; nat |- nat
+  hint(input %0 %1)
+
+rule G1_add:
+  k; m |- $bls_g1_add(k, m)
+
+var b : nat
+var n : nat
+
+builtin dec $fixed_bytes(nat, nat): nat
+builtin dec $bytes_valid(nat): bool
+builtin dec $bytes_length(nat): nat
+builtin dec $bytes_slice(nat, nat, nat): nat
+
+relation Fixed_bytes:
+  nat; nat |- nat
+  hint(input %0 %1)
+
+rule Fixed_bytes:
+  b; n |- $fixed_bytes(b, n)
+
+relation Bytes_valid:
+  nat |- bool
+  hint(input %0)
+
+rule Bytes_valid:
+  b |- $bytes_valid(b)
+
+relation Bytes_length:
+  nat |- nat
+  hint(input %0)
+
+rule Bytes_length:
+  b |- $bytes_length(b)
+
+relation Bytes_slice:
+  nat; nat; nat |- nat
+  hint(input %0 %1 %2)
+
+rule Bytes_slice:
+  b; m; n |- $bytes_slice(b, m, n)
+
+builtin dec $bytes_get(nat, nat): nat
+
+relation Bytes_get:
+  nat; nat |- nat
+  hint(input %0 %1)
+
+rule Bytes_get:
+  b; n |- $bytes_get(b, n)
+
+syntax epoch = nat
+syntax other = nat
+
+var e : epoch
+var x : other
+
+builtin dec $ssz_hash_tree_root<X>(X): nat
+
+relation Hash_epoch:
+  epoch |- nat
+  hint(input %0)
+
+rule Hash_epoch:
+  e |- $ssz_hash_tree_root<epoch>(e)
+
+relation Hash_other:
+  other |- nat
+  hint(input %0)
+
+rule Hash_other:
+  x |- $ssz_hash_tree_root<other>(x)
+
+syntax root = nat
+syntax signingData = { OBJECT_ROOT root, DOMAIN nat }
+
+var r : root
+var d : signingData
+
+relation Hash_root:
+  root |- nat
+  hint(input %0)
+
+rule Hash_root:
+  r |- $ssz_hash_tree_root<root>(r)
+
+relation Hash_signing_data:
+  signingData |- nat
+  hint(input %0)
+
+rule Hash_signing_data:
+  d |- $ssz_hash_tree_root<signingData>(d)
 
 builtin dec $enumerate_<X>(X*): (nat, X)*
 

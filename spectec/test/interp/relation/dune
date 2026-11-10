@@ -9,6 +9,7 @@
   spectec.interp.builtins.eth
   bls12-381
   bls12-381-signature
+  digestif.ocaml
   spectec.lang
   core)
  (deps

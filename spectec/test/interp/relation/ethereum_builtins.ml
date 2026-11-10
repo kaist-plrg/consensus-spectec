@@ -38,6 +38,10 @@ let check ~name ~relation ~args expectation =
   H.check spec ~target:(module Target) ~name ~relation ~args expectation
 
 let aggregation () =
+  check ~name:"translated aggregation has its own builtin entry point"
+    ~relation:"Aggregate_translated"
+    ~args:(fun () -> [ keys [ key ] ])
+    (H.returns (fun () -> [ bytes key ]));
   check ~name:"aggregation rejects an empty key list" ~relation:"Aggregate"
     ~args:(fun () -> [ keys [] ])
     (H.fails_with "empty public key list");
@@ -181,6 +185,157 @@ let list_limits () =
       [ execution_payload_header ~extra_data:(String.make 33 '\001') ])
     (H.fails_with "extra_data: a list of 33 elements exceeds its limit of 32")
 
+let doubled_key =
+  Bls12_381.G1.(
+    let point = of_compressed_bytes_exn (Stdlib.Bytes.of_string key) in
+    add point point |> to_compressed_bytes)
+  |> Stdlib.Bytes.to_string
+
+let other_key =
+  Signature.(
+    derive_pk (Bls12_381_signature.generate_sk (Stdlib.Bytes.make 32 '\002'))
+    |> pk_to_bytes)
+  |> Stdlib.Bytes.to_string
+
+let key_sum =
+  Bls12_381.G1.(
+    let point text = of_compressed_bytes_exn (Stdlib.Bytes.of_string text) in
+    add (point key) (point other_key) |> to_compressed_bytes)
+  |> Stdlib.Bytes.to_string
+
+let key_validation () =
+  check ~name:"a valid public key passes key validation"
+    ~relation:"Key_validate"
+    ~args:(fun () -> [ bytes key ])
+    (H.returns (fun () -> [ V.bool true ]));
+  check ~name:"the point at infinity fails key validation"
+    ~relation:"Key_validate"
+    ~args:(fun () -> [ bytes infinity ])
+    (H.returns (fun () -> [ V.bool false ]))
+
+(* x = 4 lies on the curve, and its point is outside the prime-order subgroup. *)
+let outside_subgroup = "\x80" ^ String.make 46 '\000' ^ "\x04"
+
+(* x = 1 is not the x-coordinate of any curve point. *)
+let off_curve = "\x80" ^ String.make 46 '\000' ^ "\x01"
+
+(* The coordinate is the base field's modulus, with the compression flag set. *)
+let outside_field =
+  "9a0111ea397fe69a4b1ba7b6434bacd764774b84f38512bf6730d2a0f6b0f6241eabfffeb153ffffb9feffffffffaaab"
+
+let g1_points () =
+  check ~name:"G1 canonicalization accepts a curve point outside the subgroup"
+    ~relation:"G1_canonicalize"
+    ~args:(fun () -> [ bytes outside_subgroup ])
+    (H.returns (fun () -> [ bytes outside_subgroup ]));
+  check ~name:"G1 canonicalization rejects a coordinate outside the base field"
+    ~relation:"G1_canonicalize"
+    ~args:(fun () -> [ bytes_of_hex outside_field ])
+    (H.fails_with "G1 coordinate outside the base field");
+  check ~name:"G1 canonicalization rejects a point off the curve"
+    ~relation:"G1_canonicalize"
+    ~args:(fun () -> [ bytes off_curve ])
+    (H.fails_with "G1 point is not on the curve");
+  check ~name:"G1 canonicalization returns a canonical point"
+    ~relation:"G1_canonicalize"
+    ~args:(fun () -> [ bytes key ])
+    (H.returns (fun () -> [ bytes key ]));
+  check ~name:"G1 canonicalization rejects an uncompressed encoding"
+    ~relation:"G1_canonicalize"
+    ~args:(fun () -> [ nat 0 ])
+    (H.fails_with "invalid compressed G1 point");
+  check
+    ~name:"G1 canonicalization clears the other bits of an infinity encoding"
+    ~relation:"G1_canonicalize"
+    ~args:(fun () -> [ bytes ("\xe0" ^ String.make 47 '\000') ])
+    (H.returns (fun () -> [ bytes infinity ]));
+  check ~name:"G1 addition doubles a point" ~relation:"G1_double"
+    ~args:(fun () -> [ bytes key ])
+    (H.returns (fun () -> [ bytes doubled_key ]));
+  check ~name:"G1 addition adds two different points" ~relation:"G1_add"
+    ~args:(fun () -> [ bytes key; bytes other_key ])
+    (H.returns (fun () -> [ bytes key_sum ]));
+  check ~name:"G1 addition of a point and its negation is infinity"
+    ~relation:"G1_cancel"
+    ~args:(fun () -> [ bytes key ])
+    (H.returns (fun () -> [ bytes infinity ]))
+
+let byte_strings () =
+  check ~name:"fixed_bytes encodes a number at its width"
+    ~relation:"Fixed_bytes"
+    ~args:(fun () -> [ nat 255; nat 1 ])
+    (H.returns (fun () -> [ bytes "\xff" ]));
+  check ~name:"fixed_bytes rejects a number wider than its width"
+    ~relation:"Fixed_bytes"
+    ~args:(fun () -> [ nat 256; nat 1 ])
+    (H.fails_with "value does not fit its width");
+  check ~name:"fixed_bytes keeps a byte value of its width"
+    ~relation:"Fixed_bytes"
+    ~args:(fun () -> [ bytes "\001\002"; nat 2 ])
+    (H.returns (fun () -> [ bytes "\001\002" ]));
+  check ~name:"fixed_bytes rejects bytes of another width"
+    ~relation:"Fixed_bytes"
+    ~args:(fun () -> [ bytes "\001\002"; nat 1 ])
+    (H.fails_with "value has an incompatible width");
+  check ~name:"bytes_valid accepts a byte string" ~relation:"Bytes_valid"
+    ~args:(fun () -> [ bytes "\001" ])
+    (H.returns (fun () -> [ V.bool true ]));
+  check ~name:"bytes_valid refuses a number" ~relation:"Bytes_valid"
+    ~args:(fun () -> [ nat 5 ])
+    (H.returns (fun () -> [ V.bool false ]));
+  check ~name:"bytes_length measures a byte string" ~relation:"Bytes_length"
+    ~args:(fun () -> [ bytes "\001\002\003" ])
+    (H.returns (fun () -> [ nat 3 ]));
+  check ~name:"bytes_length measures an empty byte string"
+    ~relation:"Bytes_length"
+    ~args:(fun () -> [ bytes "" ])
+    (H.returns (fun () -> [ nat 0 ]));
+  check ~name:"bytes_length rejects a number" ~relation:"Bytes_length"
+    ~args:(fun () -> [ nat 5 ])
+    (H.fails_with "not a well-formed byte string");
+  check ~name:"bytes_slice reads a range" ~relation:"Bytes_slice"
+    ~args:(fun () -> [ bytes "\001\002\003"; nat 1; nat 2 ])
+    (H.returns (fun () -> [ bytes "\002\003" ]));
+  check ~name:"bytes_slice rejects a range past the end" ~relation:"Bytes_slice"
+    ~args:(fun () -> [ bytes "\001\002\003"; nat 2; nat 2 ])
+    (H.fails_with "invalid byte value or slice bounds");
+  check ~name:"bytes_get reads one byte" ~relation:"Bytes_get"
+    ~args:(fun () -> [ bytes "\001\002\003"; nat 1 ])
+    (H.returns (fun () -> [ nat 2 ]));
+  check ~name:"bytes_get rejects an index past the end" ~relation:"Bytes_get"
+    ~args:(fun () -> [ bytes "\001\002\003"; nat 3 ])
+    (H.fails_with "invalid byte value or slice bounds")
+
+let object_root = String.init 32 ~f:(fun index -> Char.of_int_exn index)
+let domain = String.make 32 '\007'
+
+let signing_root =
+  Digestif.SHA256.(digest_string (object_root ^ domain) |> to_raw_string)
+
+let ssz_roots () =
+  check ~name:"ssz_hash_tree_root hashes a uint64 alias" ~relation:"Hash_epoch"
+    ~args:(fun () -> [ nat 1 ])
+    (H.returns (fun () -> [ bytes ("\001" ^ String.make 31 '\000') ]));
+  check ~name:"ssz_hash_tree_root rejects an unsupported type"
+    ~relation:"Hash_other"
+    ~args:(fun () -> [ nat 0 ])
+    (H.fails_with "Unsupported SSZ hash type: other");
+  check ~name:"ssz_hash_tree_root returns a root unchanged"
+    ~relation:"Hash_root"
+    ~args:(fun () -> [ bytes object_root ])
+    (H.returns (fun () -> [ bytes object_root ]));
+  check ~name:"ssz_hash_tree_root hashes signing data"
+    ~relation:"Hash_signing_data"
+    ~args:(fun () ->
+      [
+        V.Make.record (Typ.var "signingData" [])
+          [
+            (Lang.Xl.Atom.keyword "OBJECT_ROOT" $ at, bytes object_root);
+            (Lang.Xl.Atom.keyword "DOMAIN" $ at, bytes domain);
+          ];
+      ])
+    (H.returns (fun () -> [ bytes signing_root ]))
+
 let enumeration () =
   List.iter
     [ []; [ 4; 9 ] ]
@@ -210,4 +365,8 @@ let run () =
   fast_verification ();
   list_limits ();
   enumeration ();
-  range_annotation ()
+  range_annotation ();
+  key_validation ();
+  g1_points ();
+  byte_strings ();
+  ssz_roots ()

@@ -36,6 +36,7 @@ syntax boolean = bool
 syntax domainType = bytes4
 syntax forkDigest = bytes4
 syntax domain = bytes32
+syntax executionEngine = ()
 syntax blsPubkey = bytes48
 syntax blsSignature = bytes96
 syntax nodeID = bytes256

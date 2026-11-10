@@ -1,0 +1,257 @@
+;; Generated definitions depend on this prelude.
+;; Include this file alongside the output of `spectec ethereum translate`.
+;; The Ethereum target implements every builtin declared here.
+
+;;
+;; Byte builtins
+;;
+
+builtin dec $bytes_valid(bytes) : bool
+
+builtin dec $bytes_length(bytes) : nat
+
+builtin dec $bytes_get(bytes, nat) : int
+
+builtin dec $bytes_slice(bytes, nat, nat) : bytes
+
+builtin dec $concat_bytes(bytes, bytes) : bytes
+
+builtin dec $fixed_bytes(int, nat) : bytes
+
+builtin dec $bytes4_to_bytes(bytes4) : bytes
+
+builtin dec $bytes32_to_bytes(bytes32) : bytes
+
+builtin dec $uint8_to_bytes_le(uint8) : bytes
+
+builtin dec $uint32_to_bytes_le(uint32) : bytes
+
+builtin dec $uint64_to_bytes_le(uint64) : bytes
+
+;;
+;; Integer and list builtins
+;;
+
+builtin dec $and_uint64(uint64, uint64) : uint64
+
+builtin dec $count_occurrences_<X>(X*, X) : nat
+
+builtin dec $index_of_<X>(X*, X) : nat
+
+builtin dec $repeat_<X>(X, nat) : X*
+
+builtin dec $to_set_<X>(X*) : X*
+
+builtin dec $set_intersection_<X>(X*, X*) : X*
+
+;;
+;; Hashing builtins
+;;
+
+builtin dec $hash_<X>(X) : bytes32
+
+builtin dec $ssz_hash_tree_root<X>(X) : root
+
+builtin dec $hash_tree_root_beaconState(beaconState) : root
+
+builtin dec $hash_tree_root_beaconBlockHeader(beaconBlockHeader) : root
+
+builtin dec $hash_tree_root_beaconBlockBody(beaconBlockBody) : root
+
+builtin dec $hash_tree_root_forkdata(forkdata) : root
+
+builtin dec $hash_tree_root_depositData(depositData) : root
+
+builtin dec $hash_tree_root_roots(root*) : root
+
+builtin dec $hash_tree_root_withdrawals(withdrawal*) : root
+
+builtin dec $hash_tree_root_tx(bytes*) : root
+
+;;
+;; BLS builtins
+;;
+
+builtin dec $bls_key_validate(blsPubkey) : boolean
+
+builtin dec $bls_verify(blsPubkey, root, blsSignature) : boolean
+
+builtin dec $bls_fast_aggregate_verify(blsPubkey*, root, blsSignature) : boolean
+
+builtin dec $bls_aggregate_pubkeys(blsPubkey*) : blsPubkey
+
+builtin dec $bls_g1_canonicalize(bytes48) : bytes48
+
+builtin dec $bls_g1_add(bytes48, bytes48) : bytes48
+
+builtin dec $bls_g1_neg(bytes48) : bytes48
+
+;;
+;; Execution engine builtins
+;;
+
+builtin dec $ee_verify_and_notify_new_payload(executionPayload) : bool
+
+;;
+;; State helpers
+;;
+
+;; Nested helpers that apply a mutator to each sequence element share this
+;; definition.
+dec $translated_apply_each<X>(beaconState, X*, def $f(beaconState, X) : beaconState) : beaconState
+
+def $translated_apply_each<X>(beaconState_state, eps, def $f) = beaconState_state
+
+def $translated_apply_each<X>(beaconState_state, X_element :: X_tail*, def $f)
+  = $translated_apply_each<X>($f(beaconState_state, X_element), X_tail*, def $f)
+
+;;
+;; Integer helpers
+;;
+
+dec $translated_bit_or(nat, nat) : nat
+
+def $translated_bit_or(0, 0) = 0
+
+def $translated_bit_or(nat_left, nat_right)
+  = $(((((nat_left \ 2) + (nat_right \ 2)) + 1) / 2)
+  + (2 * $translated_bit_or($(nat_left / 2), $(nat_right / 2))))
+  -- if $((nat_left + nat_right) > 0)
+
+dec $translated_bit_xor(nat, nat) : nat
+
+def $translated_bit_xor(0, 0) = 0
+
+def $translated_bit_xor(nat_left, nat_right)
+  = $((((nat_left \ 2) + (nat_right \ 2)) \ 2)
+  + (2 * $translated_bit_xor($(nat_left / 2), $(nat_right / 2))))
+  -- if $((nat_left + nat_right) > 0)
+
+dec $translated_shift_right(nat, nat, nat) : nat
+
+def $translated_shift_right(nat_value, nat_amount, nat_bits)
+  = $(nat_value / (2 ^ nat_amount))
+  -- if $(nat_amount < nat_bits)
+
+def $translated_shift_right(nat_value, nat_amount, nat_bits) = 0
+  -- if $(nat_bits <= nat_amount)
+
+;;
+;; Byte helpers
+;;
+
+dec $translated_byte_elements(bytes, nat) : int*
+
+def $translated_byte_elements(bytes, nat_index) = eps
+  -- if $(nat_index >= $bytes_length(bytes))
+
+def $translated_byte_elements(bytes, nat_index)
+  = [int_byte] ++ $translated_byte_elements(bytes, $(nat_index + 1))
+  -- if $(nat_index < $bytes_length(bytes))
+  -- if int_byte = $bytes_get(bytes, nat_index)
+  -- if $(0 <= int_byte)
+  -- if $(int_byte < 256)
+
+dec $translated_bytes_from_ints(int*, int) : int
+
+def $translated_bytes_from_ints(eps, int_acc) = int_acc
+
+def $translated_bytes_from_ints(int_byte :: int_tail*, int_acc)
+  = $translated_bytes_from_ints(int_tail*, $(int_acc * 256 + int_byte))
+  -- if $(0 <= int_byte)
+  -- if $(int_byte < 256)
+
+dec $translated_bytes_le(bytes, nat) : int
+
+def $translated_bytes_le(bytes_value, 0) = 0
+
+def $translated_bytes_le(bytes_value, nat_count)
+  = $($translated_bytes_le(bytes_value, $(nat_count - 1))
+  + ($bytes_get(bytes_value, $(nat_count - 1)) * (256 ^ (nat_count - 1))))
+  -- if $(nat_count > 0)
+
+;;
+;; Sequence helpers
+;;
+
+dec $translated_list_index(int, nat) : nat
+
+def $translated_list_index(int_index, nat_length) = nat_index
+  -- if $(0 <= int_index)
+  -- if int_index = nat_index
+
+def $translated_list_index(int_index, nat_length) = nat_index
+  -- if $(int_index < 0)
+  -- if $(0 <= nat_length + int_index)
+  -- if $(nat_length + int_index) = nat_index
+
+dec $translated_range(int, int) : int*
+
+def $translated_range(int_range_start, int_range_stop) = eps
+  -- if $(int_range_start >= int_range_stop)
+
+def $translated_range(int_range_start, int_range_stop)
+  = [int_range_start] ++ $translated_range($(int_range_start + 1),
+                                           int_range_stop)
+  -- if $(int_range_start < int_range_stop)
+
+dec $translated_all(bool*) : bool
+
+def $translated_all(eps) = true
+
+def $translated_all(false :: bool_tail*) = false
+
+def $translated_all(true :: bool_tail*) = $translated_all(bool_tail*)
+
+dec $translated_zip<X, Y>(X*, Y*) : (X, Y)*
+
+def $translated_zip<X, Y>(eps, Y_tail*) = eps
+
+def $translated_zip<X, Y>(X_head :: X_tail*, eps) = eps
+
+def $translated_zip<X, Y>(X_head :: X_tail*, Y_head :: Y_tail*)
+  = [(X_head, Y_head)] ++ $translated_zip<X, Y>(X_tail*, Y_tail*)
+
+dec $translated_sum_booleans(bool*) : int
+
+def $translated_sum_booleans(eps) = 0
+
+def $translated_sum_booleans(true :: bool_tail*)
+  = $(1 + $translated_sum_booleans(bool_tail*))
+
+def $translated_sum_booleans(false :: bool_tail*)
+  = $translated_sum_booleans(bool_tail*)
+
+;;
+;; State list helpers
+;;
+
+;; `$translated_set_or_append_list` implements `set_or_append_list` of the
+;; pinned pyspec.
+;; The exporter rejects a pyspec whose `set_or_append_list` source differs from
+;; `REVIEWED_SET_OR_APPEND_LIST` in export/forks/capella.py.
+
+dec $translated_set_or_append_list<X>(X*, validatorIndex, X, nat, bool) : X*
+
+def $translated_set_or_append_list<X>(X_list*,
+                                      validatorIndex_index,
+                                      X_value,
+                                      nat_capacity,
+                                      bool_valid)
+  = X_translated0*
+  -- if validatorIndex_index = |X_list*|
+  -- if $(|X_list*| < nat_capacity)
+  -- if bool_valid
+  -- if X_list* ++ [X_value] = X_translated0*
+
+def $translated_set_or_append_list<X>(X_list*,
+                                      validatorIndex_index,
+                                      X_value,
+                                      nat_capacity,
+                                      bool_valid)
+  = X_translated1*
+  -- if validatorIndex_index =/= |X_list*|
+  -- if $(0 <= validatorIndex_index)
+  -- if $(validatorIndex_index < |X_list*|)
+  -- if bool_valid
+  -- if X_list*[[validatorIndex_index] = X_value] = X_translated1*

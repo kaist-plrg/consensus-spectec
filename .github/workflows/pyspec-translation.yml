@@ -1,0 +1,108 @@
+name: Capella translation
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: pyspec-translation-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+jobs:
+  checks:
+    name: Pinned translation output
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Check out the pinned Capella source
+        uses: actions/checkout@v4
+        with:
+          repository: ethereum/consensus-specs
+          ref: f96d3e7acf35125295d234da4b0c67591fdef49c
+          path: consensus-specs-capella
+
+      - uses: ocaml/setup-ocaml@v3
+        with:
+          ocaml-compiler: "5.1.1"
+          opam-pin: false
+          opam-local-packages: "*.opam"
+
+      - name: Install compiler dependencies
+        run: opam install . --deps-only --locked
+
+      - uses: astral-sh/setup-uv@v6
+        with:
+          enable-cache: true
+          cache-dependency-glob: consensus-specs-capella/uv.lock
+
+      - name: Set up source extraction dependencies
+        run: uv sync --project consensus-specs-capella --python 3.12 --frozen --no-install-project
+
+      - name: Check pinned translation output
+        run: make test-pyspec SWITCH="$(opam switch show -s)"
+
+  vectors:
+    strategy:
+      fail-fast: false
+      matrix:
+        suites: ["operations epoch_processing", "sanity/blocks random", "finality"]
+        # Pull requests skip finality because it is the slowest suite.
+        exclude:
+          - suites: ${{ github.event_name == 'pull_request' && 'finality' || '' }}
+    name: Official vectors ${{ matrix.suites }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 120
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: true
+
+      - name: Check out the pinned Capella source
+        uses: actions/checkout@v4
+        with:
+          repository: ethereum/consensus-specs
+          ref: f96d3e7acf35125295d234da4b0c67591fdef49c
+          path: consensus-specs-capella
+
+      - uses: ocaml/setup-ocaml@v3
+        with:
+          ocaml-compiler: "5.1.1"
+          opam-pin: false
+          opam-local-packages: "*.opam"
+
+      - name: Install compiler dependencies
+        run: opam install . --deps-only --locked
+
+      - uses: astral-sh/setup-uv@v6
+        with:
+          enable-cache: true
+          cache-dependency-glob: |
+            consensus-specs/uv.lock
+            consensus-specs-capella/uv.lock
+
+      - name: Build pyspec
+        run: make -C consensus-specs build
+
+      - name: Generate the Capella spec
+        run: |
+          uv sync --project consensus-specs-capella --python 3.12 --frozen --no-install-project
+          make pyspec-capella SWITCH="$(opam switch show -s)"
+
+      - name: Cache test vectors
+        uses: actions/cache@v4
+        with:
+          path: Converter/.fixture-cache
+          key: spec-tests-${{ hashFiles('Makefile') }}
+
+      - name: Fetch test vectors
+        run: make download-fixture SPEC_TESTS_FORKS=capella SPEC_TESTS_SUITES="${{ matrix.suites }}"
+
+      - name: Check generated Capella against the vectors
+        run: uv run --project consensus-specs --no-sync python check_spec_tests.py --jobs 4 --spec-dir _build/pyspec-capella Converter/OfficialTestSuite/capella
